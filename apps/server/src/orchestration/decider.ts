@@ -393,6 +393,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          ...(command.team === undefined ? {} : { team: command.team }),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },

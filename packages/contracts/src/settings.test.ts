@@ -49,6 +49,28 @@ describe("ServerSettings default permissions", () => {
   });
 });
 
+describe("ServerSettings team workflows", () => {
+  it("defaults old settings to an empty workflow list", () => {
+    expect(decodeServerSettings({}).teamWorkflows).toEqual([]);
+  });
+
+  it("accepts workflow list replacement patches", () => {
+    const teamWorkflows = [
+      {
+        id: "full-stack-team",
+        name: "Full-stack team",
+        builtIn: true,
+        roles: [],
+        maxParallelWorkers: 4,
+        maxReviewRounds: 2,
+        maxAutoReports: 30,
+        orchestratorInstructions: "",
+      },
+    ];
+    expect(decodeServerSettingsPatch({ teamWorkflows }).teamWorkflows).toEqual(teamWorkflows);
+  });
+});
+
 describe("ServerSettings usage price overrides", () => {
   const prices = { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 8 };
 

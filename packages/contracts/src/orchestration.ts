@@ -31,6 +31,7 @@ import {
   PullRequestReviewDecision,
   PullRequestState,
 } from "./pullRequest.ts";
+import { ThreadTeamInfo } from "./team.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -727,6 +728,7 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  team: Schema.optional(ThreadTeamInfo),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   // Optional so payloads from pre-link servers still decode.
   pullRequests: Schema.Array(ThreadPullRequestLink).pipe(
@@ -814,6 +816,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  team: Schema.optional(ThreadTeamInfo),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.Array(ThreadPullRequestLink).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -1048,6 +1051,7 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  team: Schema.optional(ThreadTeamInfo),
   createdAt: IsoDateTime,
   historyImport: Schema.optional(Schema.Literal(true)),
 });
@@ -1208,6 +1212,7 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  team: Schema.optional(ThreadTeamInfo),
   createdAt: IsoDateTime,
 });
 
@@ -1658,6 +1663,7 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  team: Schema.optional(ThreadTeamInfo),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

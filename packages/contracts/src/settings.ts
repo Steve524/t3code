@@ -39,6 +39,7 @@ import {
   type ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
+import { TeamWorkflow } from "./team.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -1017,6 +1018,7 @@ export const ServerSettings = Schema.Struct({
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  teamWorkflows: Schema.Array(TeamWorkflow).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   /**
    * Whether agents may drive the in-app preview browser. Turning this off
    * withholds the MCP credential, so the `t3-code` server (and with it every
@@ -1348,6 +1350,7 @@ export const ServerSettingsPatch = Schema.Struct({
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
+  teamWorkflows: Schema.optionalKey(Schema.Array(TeamWorkflow)),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   projectAgentBrowserAccessOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),

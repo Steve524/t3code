@@ -11,6 +11,7 @@ import {
   ServerSettingsPatch,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
+import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
@@ -78,6 +79,30 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
   });
 
 it.layer(NodeServices.layer)("server settings", (it) => {
+  it.effect("resolves an empty workflow setting to the built-in preset", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const settings = yield* serverSettings.getSettings;
+
+      assert.deepEqual(settings.teamWorkflows, [BUILT_IN_TEAM_WORKFLOW]);
+      const custom = {
+        ...BUILT_IN_TEAM_WORKFLOW,
+        id: "custom-team",
+        name: "Custom team",
+        builtIn: false,
+        roles: [],
+      };
+      assert.deepEqual(
+        (yield* serverSettings.updateSettings({ teamWorkflows: [custom] })).teamWorkflows,
+        [custom],
+      );
+      assert.deepEqual(
+        (yield* serverSettings.updateSettings({ teamWorkflows: [] })).teamWorkflows,
+        [BUILT_IN_TEAM_WORKFLOW],
+      );
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("preserves context when reading a provider environment secret fails", () => {
     const platformCause = PlatformError.systemError({
       _tag: "PermissionDenied",

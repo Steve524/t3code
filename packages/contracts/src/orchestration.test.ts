@@ -36,6 +36,7 @@ import {
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import { TeamRoleId } from "./team.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
@@ -69,6 +70,72 @@ const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
 const decodeDispatchCommandError = Schema.decodeUnknownEffect(OrchestrationDispatchCommandError);
 const decodeSnapShotAccessibility = Schema.decodeUnknownEffect(SnapShotAccessibility);
+
+const threadCreatedInput = {
+  threadId: "thread-team",
+  projectId: "project-1",
+  title: "Team thread",
+  modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+  branch: null,
+  worktreePath: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+} as const;
+
+const teamWorkflowInput = {
+  id: "full-stack-team",
+  name: "Full-stack team",
+  builtIn: true,
+  roles: [
+    {
+      id: "backend",
+      label: "Backend",
+      kind: "implementer",
+      enabled: true,
+      summary: "APIs, logic",
+      modelSelection: null,
+      runtimeMode: null,
+      instructions: "",
+    },
+  ],
+  maxParallelWorkers: 4,
+  maxReviewRounds: 2,
+  maxAutoReports: 30,
+  orchestratorInstructions: "",
+} as const;
+
+it.effect("decodes historical thread.created payloads without team info", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadCreatedPayload(threadCreatedInput);
+    assert.strictEqual(parsed.team, undefined);
+  }),
+);
+
+it.effect("decodes orchestrator and worker thread.created team info", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* decodeThreadCreatedPayload({
+      ...threadCreatedInput,
+      team: { role: "orchestrator", workflow: teamWorkflowInput },
+    });
+    const worker = yield* decodeThreadCreatedPayload({
+      ...threadCreatedInput,
+      threadId: "thread-worker",
+      team: {
+        role: "worker",
+        orchestratorThreadId: "thread-team",
+        roleId: "backend",
+        roleLabel: "Backend",
+        taskTitle: "Add the API",
+        reviewRound: 0,
+      },
+    });
+
+    if (orchestrator.team?.role !== "orchestrator") throw new Error("Expected orchestrator");
+    if (worker.team?.role !== "worker") throw new Error("Expected worker");
+    assert.strictEqual(orchestrator.team.workflow.roles[0]?.id, TeamRoleId.make("backend"));
+    assert.strictEqual(worker.team.orchestratorThreadId, ThreadId.make("thread-team"));
+  }),
+);
 
 it.effect("decodes a dispatch error after its bootstrap thread was deleted", () =>
   Effect.gen(function* () {
@@ -683,6 +750,8 @@ it.effect("defaults settled fields when decoding historical thread data", () =>
     assert.strictEqual(thread.settledAt, null);
     assert.strictEqual(shell.settledOverride, null);
     assert.strictEqual(shell.settledAt, null);
+    assert.strictEqual(thread.team, undefined);
+    assert.strictEqual(shell.team, undefined);
     // Pre-link servers omit the array entirely.
     assert.deepStrictEqual(thread.pullRequests, []);
     assert.deepStrictEqual(shell.pullRequests, []);
@@ -1004,6 +1073,38 @@ it.effect("accepts a title seed in thread.turn.start", () =>
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.titleSeed, "Investigate reconnect failures");
+  }),
+);
+
+it.effect("decodes team info in a bootstrap thread creation", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadTurnStartCommand({
+      type: "thread.turn.start",
+      commandId: "cmd-team-bootstrap",
+      threadId: "thread-team",
+      message: {
+        messageId: "msg-team-bootstrap",
+        role: "user",
+        text: "Build the feature",
+        attachments: [],
+      },
+      bootstrap: {
+        createThread: {
+          projectId: "project-1",
+          title: "Team thread",
+          modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          team: { role: "orchestrator", workflow: teamWorkflowInput },
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(parsed.bootstrap?.createThread?.team?.role, "orchestrator");
   }),
 );
 

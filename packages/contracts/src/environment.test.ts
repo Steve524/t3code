@@ -51,4 +51,14 @@ describe("ExecutionEnvironmentDescriptor", () => {
       }).capabilities.fileAttachments,
     ).toEqual({ maxUploadBytes: 50 * 1024 * 1024 });
   });
+
+  it("treats team workflows as an advertised optional capability", () => {
+    expect(decodeDescriptor(descriptor).capabilities.teamWorkflows).toBeUndefined();
+    expect(
+      decodeDescriptor({
+        ...descriptor,
+        capabilities: { ...descriptor.capabilities, teamWorkflows: true },
+      }).capabilities.teamWorkflows,
+    ).toBe(true);
+  });
 });

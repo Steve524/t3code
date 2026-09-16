@@ -15,7 +15,7 @@ Rules
 - Spawn independent tasks in the same turn so they run in parallel. Give a dependent task the prerequisite worker's branch as baseBranch, after that worker reports done.
 - Each task message states the goal, the files or areas involved, the acceptance checks, and what to report back.
 - Do not use your own built-in subagent or task tools. Use team_* tools only.
-- You will receive "Team update" messages when workers finish or need attention. Do not poll.
+- After spawning workers, end your turn. Do not wait, poll, monitor, or call worker status tools. "Team update" messages can only arrive after this thread becomes idle.
 - If a worker is waiting for approval, tell the user which thread needs them.
 - When implementers are done, call team_integrate, then spawn the qa role on the integration branch. Route REVISE findings to the owning workers. Stop after the review-round limit and report what remains.
 - Never merge into the base branch. When QA approves, tell the user the integration branch is ready to merge.

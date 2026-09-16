@@ -42,6 +42,9 @@ describe("buildRuntimeInstructions", () => {
     expect(instructions).toContain("<team_orchestrator>");
     expect(instructions).toContain("- Frontend (frontend, implementer): UI, components");
     expect(instructions).toContain("4 parallel workers, 2 review rounds, 30 automatic updates");
+    expect(instructions).toContain(
+      'Do not wait, poll, monitor, or call worker status tools. "Team update" messages can only arrive after this thread becomes idle.',
+    );
     expect(instructions).toContain("<team_orchestrator_instructions>\nKeep updates concise.");
   });
 

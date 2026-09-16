@@ -86,6 +86,7 @@ import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import type { RuntimeInstructionTeam } from "../RuntimeInstructions.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const encodePromptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -953,9 +954,43 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     } satisfies Record<string, string>;
   });
 
+  const resolveRuntimeInstructionTeam = Effect.fn("ProviderService.resolveRuntimeInstructionTeam")(
+    function* (threadId: ThreadId) {
+      if (Option.isNone(projectionQuery)) return undefined;
+      const thread = yield* projectionQuery.value.getThreadShellById(threadId);
+      if (Option.isNone(thread) || !thread.value.team) return undefined;
+      const { team } = thread.value;
+      if (team.role === "orchestrator") {
+        return { role: "orchestrator", workflow: team.workflow } satisfies RuntimeInstructionTeam;
+      }
+      const orchestrator = yield* projectionQuery.value.getThreadShellById(
+        team.orchestratorThreadId,
+      );
+      const orchestratorShell = Option.getOrUndefined(orchestrator);
+      const role =
+        orchestratorShell?.team?.role === "orchestrator"
+          ? orchestratorShell.team.workflow.roles.find((candidate) => candidate.id === team.roleId)
+          : undefined;
+      return {
+        role: "worker",
+        roleId: team.roleId,
+        roleLabel: team.roleLabel,
+        roleInstructions: role?.instructions ?? "",
+        orchestratorTitle: orchestratorShell?.title ?? team.orchestratorThreadId,
+        branch: thread.value.branch ?? "the assigned branch",
+      } satisfies RuntimeInstructionTeam;
+    },
+    Effect.catch((cause) =>
+      Effect.logWarning("Could not resolve team instructions for provider session.", {
+        cause,
+      }).pipe(Effect.as(undefined)),
+    ),
+  );
+
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
       const capabilities = yield* agentAccessCapabilities(threadId);
+      const team = yield* resolveRuntimeInstructionTeam(threadId);
       const credential = yield* issueMcpCredential({ threadId, providerInstanceId, capabilities });
       if (credential) {
         const deviceEnvironment = capabilities.has("device")
@@ -965,6 +1000,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           McpProviderSession.setMcpProviderSession({
             ...credential.config,
             ...(deviceEnvironment ? { agentDeviceEnvironment: deviceEnvironment } : {}),
+            ...(team ? { team } : {}),
           }),
         );
       }

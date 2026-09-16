@@ -131,6 +131,7 @@ interface PendingUserInput {
 
 interface CursorSessionContext {
   readonly threadId: ThreadId;
+  readonly team: McpProviderSession.McpProviderSessionConfig["team"];
   session: ProviderSession;
   readonly scope: Scope.Closeable;
   readonly acp: AcpSessionRuntime.AcpSessionRuntime["Service"];
@@ -786,6 +787,7 @@ export function makeCursorAdapter(
 
           ctx = {
             threadId: input.threadId,
+            team: mcpSession?.team,
             session,
             scope: sessionScope,
             acp,
@@ -1064,7 +1066,11 @@ export function makeCursorAdapter(
                 ...promptParts,
                 {
                   type: "text",
-                  text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
+                  text: buildRuntimeInstructions({
+                    harness: "Cursor",
+                    model: resolvedModel,
+                    team: ctx.team,
+                  }),
                 },
               ],
             })

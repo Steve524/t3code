@@ -2287,6 +2287,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
                 ],
                 mcpCapabilities: mcpSession.capabilities,
+                team: mcpSession.team,
               }
             : {}),
         };

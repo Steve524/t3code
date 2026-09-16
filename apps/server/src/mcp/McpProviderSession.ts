@@ -1,4 +1,5 @@
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import type { RuntimeInstructionTeam } from "../provider/RuntimeInstructions.ts";
 
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
@@ -9,6 +10,8 @@ export interface McpProviderSessionConfig {
   readonly authorizationHeader: string;
   /** Capabilities the credential grants ("preview", "device"). */
   readonly capabilities: ReadonlySet<string>;
+  /** Resolved once at session start so every provider receives the same team prompt. */
+  readonly team?: RuntimeInstructionTeam;
   /**
    * Set when the session may drive devices. Adapters spread this into the
    * provider subprocess environment so the `agent-device` CLI is on PATH and

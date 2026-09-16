@@ -4988,17 +4988,24 @@ describe("agent browser access", () => {
         getThreadRuntimeContext: () => Effect.die("unused"),
         getThreadShellById: (requestedThreadId) =>
           Effect.gen(function* () {
-            assert.equal(requestedThreadId, threadId);
+            const isWorkerOrchestrator =
+              options?.team?.role === "worker" &&
+              requestedThreadId === options.team.orchestratorThreadId;
+            assert.isTrue(requestedThreadId === threadId || isWorkerOrchestrator);
             return Option.some(
               yield* decodeBrowserAccessThreadShell({
-                id: threadId,
+                id: requestedThreadId,
                 projectId,
-                title: "Browser access test",
+                title: isWorkerOrchestrator ? "Team orchestrator" : "Browser access test",
                 modelSelection: createModelSelection(codexInstanceId, "gpt-5.4"),
                 runtimeMode: "full-access",
                 branch: null,
                 worktreePath: null,
-                ...(options?.team === undefined ? {} : { team: options.team }),
+                ...(isWorkerOrchestrator
+                  ? { team: { role: "orchestrator", workflow: BUILT_IN_TEAM_WORKFLOW } }
+                  : options?.team === undefined
+                    ? {}
+                    : { team: options.team }),
                 latestTurn: null,
                 createdAt: "2026-01-01T00:00:00.000Z",
                 updatedAt: "2026-01-01T00:00:00.000Z",

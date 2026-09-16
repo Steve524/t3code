@@ -134,6 +134,7 @@ interface GrokTurnLivenessSignal {
 
 interface GrokSessionContext {
   readonly threadId: ThreadId;
+  readonly team: McpProviderSession.McpProviderSessionConfig["team"];
   readonly acpSessionId: string;
   session: ProviderSession;
   readonly scope: Scope.Closeable;
@@ -1285,6 +1286,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
 
           const ctx: GrokSessionContext = {
             threadId: input.threadId,
+            team: mcpSession?.team,
             acpSessionId: started.sessionId,
             session,
             scope: sessionScope,
@@ -1620,6 +1622,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 harness: "Grok",
                 model: displayModel,
                 reasoningEffort: normalizeGrokReasoningEffort(requestedTurnReasoningEffort),
+                team: ctx.team,
               });
               for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
                 yield* Effect.yieldNow;

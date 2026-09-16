@@ -335,6 +335,7 @@ type OpenCodeStepUsage = Pick<Extract<Part, { readonly type: "step-finish" }>, "
 
 interface OpenCodeSessionContext {
   session: ProviderSession;
+  readonly team: McpProviderSession.McpProviderSessionConfig["team"];
   readonly client: OpencodeClient;
   readonly server: OpenCodeServerConnection;
   readonly directory: string;
@@ -2949,6 +2950,7 @@ export function makeOpenCodeAdapter(
                 client,
                 openCodeSession: resolved.openCodeSession,
                 created: resolved.created,
+                team: mcpSession?.team,
               };
             }).pipe(Effect.provideService(Scope.Scope, sessionScope)),
           );
@@ -2981,6 +2983,7 @@ export function makeOpenCodeAdapter(
 
         const context: OpenCodeSessionContext = {
           session,
+          team: started.team,
           client: started.client,
           server: started.server,
           directory,
@@ -3223,6 +3226,7 @@ export function makeOpenCodeAdapter(
                 system: buildRuntimeInstructions({
                   harness: "OpenCode",
                   model: `${parsedModel.providerID}/${parsedModel.modelID}`,
+                  team: context.team,
                 }),
                 parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
               },

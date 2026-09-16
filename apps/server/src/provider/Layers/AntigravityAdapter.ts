@@ -191,6 +191,7 @@ interface TurnIntent {
 
 interface SessionContext {
   readonly threadId: ThreadId;
+  readonly team: McpProviderSession.McpProviderSessionConfig["team"];
   readonly cwd: string;
   readonly nativeSessionId: string;
   readonly scope: Scope.Closeable;
@@ -864,6 +865,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
               };
               context = {
                 threadId: input.threadId,
+                team: mcp?.team,
                 cwd,
                 nativeSessionId: started.sessionId,
                 scope: sessionScope,
@@ -1085,7 +1087,11 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                   ...prompt,
                   {
                     type: "text",
-                    text: buildRuntimeInstructions({ harness: "Antigravity", model }),
+                    text: buildRuntimeInstructions({
+                      harness: "Antigravity",
+                      model,
+                      team: context.team,
+                    }),
                   },
                 ],
               },

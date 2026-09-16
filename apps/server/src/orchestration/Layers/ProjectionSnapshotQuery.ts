@@ -33,6 +33,7 @@ import {
   ThreadId,
   ThreadPullRequestSnapshot,
   ThreadPullRequestStack,
+  ThreadTeamInfo,
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { legacyLinkedPullRequestOf } from "@t3tools/shared/threadPullRequests";
@@ -129,6 +130,7 @@ const ProjectionThreadPullRequestDbRowSchema = ProjectionThreadPullRequest.mapFi
 const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    team: Schema.NullOr(Schema.fromJsonString(ThreadTeamInfo)),
     titleState: Schema.NullOr(Schema.fromJsonString(ThreadTitleState)),
     linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
     branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
@@ -371,6 +373,12 @@ function mapTitleRegeneration(row: Schema.Schema.Type<typeof ProjectionThreadDbR
     : null;
 }
 
+function mapThreadTeam(
+  row: Schema.Schema.Type<typeof ProjectionThreadDbRowSchema>,
+): Pick<OrchestrationThread, "team"> {
+  return row.team == null ? {} : { team: row.team };
+}
+
 function mapSessionRow(
   row: Schema.Schema.Type<typeof ProjectionThreadSessionDbRowSchema>,
 ): OrchestrationSession {
@@ -568,6 +576,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          team_json AS team,
           linked_pull_request_json AS "linkedPullRequest",
           branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",
@@ -609,6 +618,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          team_json AS team,
           linked_pull_request_json AS "linkedPullRequest",
           branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",
@@ -652,6 +662,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          team_json AS team,
           linked_pull_request_json AS "linkedPullRequest",
           branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",
@@ -1213,6 +1224,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          team_json AS team,
           linked_pull_request_json AS "linkedPullRequest",
           branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",
@@ -2284,6 +2296,7 @@ pending_approval_requests AS (
                 interactionMode: row.interactionMode,
                 branch: row.branch,
                 worktreePath: row.worktreePath,
+                ...mapThreadTeam(row),
                 ...mapThreadPullRequests(
                   pullRequestsByThread.get(row.threadId) ?? [],
                   row.projectId,
@@ -2529,6 +2542,7 @@ pending_approval_requests AS (
                   interactionMode: row.interactionMode,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
+                  ...mapThreadTeam(row),
                   ...mapThreadPullRequests(
                     pullRequestsByThread.get(row.threadId) ?? [],
                     row.projectId,
@@ -2685,6 +2699,7 @@ pending_approval_requests AS (
                         interactionMode: row.interactionMode,
                         branch: row.branch,
                         worktreePath: row.worktreePath,
+                        ...mapThreadTeam(row),
                         branchPullRequest: row.branchPullRequest,
                         ...mapThreadPullRequests(
                           pullRequestsByThread.get(row.threadId) ?? [],
@@ -2848,6 +2863,7 @@ pending_approval_requests AS (
                   interactionMode: row.interactionMode,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
+                  ...mapThreadTeam(row),
                   branchPullRequest: row.branchPullRequest,
                   ...mapThreadPullRequests(
                     pullRequestsByThread.get(row.threadId) ?? [],
@@ -3201,6 +3217,7 @@ pending_approval_requests AS (
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
+        ...mapThreadTeam(threadRow.value),
         ...mapThreadPullRequests(
           pullRequestRows.map(mapPullRequestRow),
           threadRow.value.projectId,
@@ -3502,6 +3519,7 @@ pending_approval_requests AS (
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
+        ...mapThreadTeam(threadRow.value),
         ...mapThreadPullRequests(
           pullRequestRows.map(mapPullRequestRow),
           threadRow.value.projectId,

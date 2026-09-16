@@ -25,6 +25,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionStartInput,
+  type ThreadTeamInfo,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -33,6 +34,7 @@ import {
   serializeAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
 import { createModelSelection } from "@t3tools/shared/model";
+import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
 import { it, assert, describe, vi } from "@effect/vitest";
 import { afterAll } from "vite-plus/test";
 
@@ -4945,7 +4947,10 @@ describe("agent browser access", () => {
     access: boolean | { readonly browser: boolean; readonly device: boolean },
     threadId: ThreadId,
     projectOverride?: boolean | { readonly browser?: boolean; readonly device?: boolean },
-    options?: { readonly withoutOrchestration?: boolean },
+    options?: {
+      readonly withoutOrchestration?: boolean;
+      readonly team?: ThreadTeamInfo;
+    },
   ) =>
     Effect.gen(function* () {
       const enableAgentBrowserAccess = typeof access === "boolean" ? access : access.browser;
@@ -4993,6 +4998,7 @@ describe("agent browser access", () => {
                 runtimeMode: "full-access",
                 branch: null,
                 worktreePath: null,
+                ...(options?.team === undefined ? {} : { team: options.team }),
                 latestTurn: null,
                 createdAt: "2026-01-01T00:00:00.000Z",
                 updatedAt: "2026-01-01T00:00:00.000Z",
@@ -5075,6 +5081,30 @@ describe("agent browser access", () => {
       const issued = yield* startSessionWith(false, threadId);
 
       assert.deepEqual(issued, [{ threadId, capabilities: ["pull-requests"] }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("grants team tools only to orchestrator threads", () =>
+    Effect.gen(function* () {
+      const orchestratorId = asThreadId("thread-team-orchestrator");
+      const orchestrator = yield* startSessionWith(false, orchestratorId, undefined, {
+        team: { role: "orchestrator", workflow: BUILT_IN_TEAM_WORKFLOW },
+      });
+      assert.deepEqual(orchestrator, [
+        { threadId: orchestratorId, capabilities: ["pull-requests", "team"] },
+      ]);
+
+      const workerId = asThreadId("thread-team-worker");
+      const worker = yield* startSessionWith(false, workerId, undefined, {
+        team: {
+          role: "worker",
+          orchestratorThreadId: orchestratorId,
+          roleId: BUILT_IN_TEAM_WORKFLOW.roles[0]!.id,
+          roleLabel: "Frontend",
+          taskTitle: "Build the UI",
+        },
+      });
+      assert.deepEqual(worker, [{ threadId: workerId, capabilities: ["pull-requests"] }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

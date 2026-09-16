@@ -907,6 +907,19 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     threadId: ThreadId,
   ) {
     const capabilities = new Set<McpInvocationContext.McpCapability>(["pull-requests"]);
+    if (Option.isSome(projectionQuery)) {
+      const thread = yield* projectionQuery.value.getThreadShellById(threadId).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Could not read thread team access; withholding team tools.", {
+            cause,
+            threadId,
+          }).pipe(Effect.as(Option.none())),
+        ),
+      );
+      if (Option.isSome(thread) && thread.value.team?.role === "orchestrator") {
+        capabilities.add("team");
+      }
+    }
     const access = yield* agentAccessSettings(threadId);
     if (access.browser) capabilities.add("preview");
     if (access.device) capabilities.add("device");

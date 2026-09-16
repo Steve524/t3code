@@ -6,7 +6,6 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -15,6 +14,9 @@ import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/uns
 
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ThreadBootstrap from "../orchestration/Services/ThreadBootstrap.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
 import * as ServerConfig from "../config.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -56,9 +58,24 @@ const PullRequestsTestLayer = McpHttpServer.PullRequestsToolkitRegistrationLive.
   Layer.provide(
     Layer.mergeAll(
       Layer.mock(ProjectionSnapshotQuery)({
-        getThreadShellById: () => Effect.succeed(Option.none()),
+        getThreadShellById: () => Effect.succeedNone,
       }),
       Layer.mock(OrchestrationEngineService)({}),
+      NodeServices.layer,
+    ),
+  ),
+);
+const TeamTestLayer = McpHttpServer.TeamToolkitRegistrationLive.pipe(
+  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.mock(ProjectionSnapshotQuery)({
+        getThreadShellById: () => Effect.succeedNone,
+      }),
+      Layer.mock(OrchestrationEngineService)({}),
+      Layer.mock(ThreadBootstrap.ThreadBootstrap)({}),
+      Layer.mock(ProviderInstanceRegistry)({}),
+      Layer.mock(GitWorkflowService.GitWorkflowService)({}),
       NodeServices.layer,
     ),
   ),
@@ -398,6 +415,31 @@ it.effect(
         { type: "text", text: "MCP credential does not grant the pull-requests capability." },
       ]);
     }).pipe(Effect.provide(PullRequestsTestLayer)),
+);
+
+it.effect("registers the team toolkit and requires its capability", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    expect(server.tools.map(({ tool }) => tool.name)).toEqual(
+      expect.arrayContaining([
+        "team_roster",
+        "team_spawn_worker",
+        "team_get_worker",
+        "team_message_worker",
+        "team_stop_worker",
+      ]),
+    );
+    const denied = yield* server
+      .callTool({ name: "team_roster", arguments: {} })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(denied.isError).toBe(true);
+    expect(denied.content).toEqual([
+      { type: "text", text: "MCP credential does not grant the team capability." },
+    ]);
+  }).pipe(Effect.provide(TeamTestLayer)),
 );
 
 it.effect("keeps the snapshot text under the agent's output ceiling", () =>

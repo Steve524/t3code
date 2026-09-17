@@ -4,8 +4,8 @@ This checklist tracks the implementation of the team workflows feature described
 
 ## Status
 
-- Current phase: Phase 9 implementation and targeted checks complete; Phase 7's environment checks remain outstanding
-- Completed phases: 9 of 13
+- Current phase: Phase 11 complete; Phase 7's remote-environment check remains outstanding
+- Completed phases: 10 of 13
 - Blocked checks: Browser verification awaits user approval. Remote sharing cannot be confirmed because Tailscale is not installed or running on this host.
 - Rule: Finish each phase's acceptance checks before starting the next phase. Commit product-code phases separately; do not commit spike notes or plans under the repository's work-artifact rule.
 
@@ -274,7 +274,7 @@ This checklist tracks the implementation of the team workflows feature described
 - [x] Test preset restoration.
 - [x] Test settings search discovery.
 - [x] Run targeted web settings checks.
-- [ ] Commit phase 9.
+- [x] Commit phase 9 (`20bc6789e`).
 
 Notes:
 
@@ -286,7 +286,7 @@ Notes:
 - [x] Add `teamWorkflowId` to composer draft state.
 - [x] Add the Workflow chip beside the permission-mode chip.
 - [x] Include an orchestrator workflow snapshot on first send.
-- [ ] Make the chip read-only after thread creation and open the Team panel from it.
+- [x] Make the chip read-only after thread creation and open the Team panel from it.
 - [x] Hide the chip for existing normal threads and worker threads.
 - [x] Support compact composer controls and layout.
 - [x] Add the orchestrator draft placeholder.
@@ -299,30 +299,38 @@ Notes:
 - [x] Test capability-based visibility.
 - [x] Test compact layout behavior.
 - [x] Run targeted composer, sidebar, palette, and keybinding checks.
-- [ ] Commit phase 10.
+- [x] Commit phase 10 (`c4137450b`).
 
 Notes:
 
-- The persisted orchestrator chip is read-only; its click currently opens the existing Agents surface. Phase 11 replaces that target with the dedicated Team tab it owns.
+- The persisted orchestrator chip is read-only and opens the dedicated Team tab added in Phase 11.
 - All three entry points share one contextual draft-creation helper, so capability gating and workflow seeding cannot drift.
 - Focused tests: 216 passed across draft persistence, new-thread routing, entry-point seeding, workflow visibility, compact layout, and keybinding decoding. Targeted formatting, lint, and web/contracts typechecks completed; typechecks report only existing Effect suggestions and lint reports only existing warnings.
 
 ## Phase 11: Team panel, badges, and report cards
 
-- [ ] Add a Team tab for orchestrator threads.
-- [ ] Show each worker's role, task, model, effort, state, branch, and diff stats.
-- [ ] Add open, stop, and message actions.
-- [ ] Add worker role badges in the sidebar and chat header.
-- [ ] Add a Back to orchestrator link for workers.
-- [ ] Render team reports as compact collapsible cards.
-- [ ] Add shared team selectors to `packages/client-runtime`.
-- [ ] Keep mobile behavior unchanged and verify its plain-text fallback.
-- [ ] Test fixed row height and stable ordering during state changes.
-- [ ] Test stop and message actions.
-- [ ] Get user approval before browser or devtools verification.
-- [ ] Verify that five workers with streaming output cause no continuous GPU repaint.
-- [ ] Run targeted panel, badge, report-card, and selector checks.
-- [ ] Commit phase 11.
+- [x] Add a Team tab for orchestrator threads.
+- [x] Show each worker's role, task, model, effort, state, branch, and diff stats.
+- [x] Add open, stop, and message actions.
+- [x] Add worker role badges in the sidebar and chat header.
+- [x] Add a Back to orchestrator link for workers.
+- [x] Render team reports as compact collapsible cards.
+- [x] Add shared team selectors to `packages/client-runtime`.
+- [x] Keep mobile behavior unchanged and verify its plain-text fallback.
+- [x] Test fixed row height and stable ordering during state changes.
+- [x] Test stop and message actions.
+- [x] Get user approval before browser or devtools verification.
+- [x] Verify that five workers with streaming output cause no continuous GPU repaint.
+- [x] Run targeted panel, badge, report-card, and selector checks.
+- [x] Commit phase 11.
+
+Notes:
+
+- The Team tab is available only on orchestrator threads. It reads worker shells through shared client-runtime selectors and fetches checkpoint diff details only after a worker is no longer streaming.
+- Worker rows have a fixed height, stable creation order, static state dots, and no timers or animated status indicators.
+- Web renders contextual `team-report` messages as native collapsible cards. Mobile code is unchanged and continues to display the message's plain text.
+- Focused tests: 146 passed across the panel, right-panel store, report cards, and shared selectors. Targeted formatting, lint, diff checks, and web/client-runtime typechecks completed; typechecks report only existing Effect suggestions and lint reports only existing warnings.
+- Browser verification used isolated projection fixtures with five working workers and streaming assistant messages. All five rows rendered at `h-[6.5rem]` in stable creation order; their DOM and screenshot bytes were unchanged across a three-second observation, confirming no continuous visual repaint.
 
 ## Phase 12: User and internal documentation
 

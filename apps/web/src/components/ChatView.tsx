@@ -46,6 +46,7 @@ import {
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
 import { readPastedComposerContext } from "./composerInlineTokenPaste";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
@@ -210,6 +211,7 @@ import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
+import { TeamPanel } from "./TeamPanel";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
 import { useDeviceState } from "~/state/device";
@@ -1489,6 +1491,7 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
+  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, { reportFailure: false });
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -1947,6 +1950,7 @@ export default function ChatView(props: ChatViewProps) {
         : null,
     [activeThreadEnvironmentId, activeThreadId],
   );
+  const activeWorkerTeam = activeThread?.team?.role === "worker" ? activeThread.team : null;
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
   const [timelineAnchor, setTimelineAnchor] = useState<{
@@ -4482,7 +4486,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const openTeamPanel = useCallback(() => {
     if (!activeThreadRef || !composerTeam.readOnly) return;
-    useRightPanelStore.getState().open(activeThreadRef, "agents");
+    useRightPanelStore.getState().open(activeThreadRef, "team");
   }, [activeThreadRef, composerTeam.readOnly]);
   const openProviderSetup = useCallback(
     (instanceId: ProviderInstanceId) => {
@@ -4529,6 +4533,64 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
+  const addTeamSurface = useCallback(() => {
+    if (!activeThreadRef || activeThread?.team?.role !== "orchestrator") return;
+    useRightPanelStore.getState().open(activeThreadRef, "team");
+  }, [activeThread, activeThreadRef]);
+  const openTeamWorker = useCallback(
+    (worker: EnvironmentThreadShell) => {
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(worker.environmentId, worker.id)),
+      });
+    },
+    [navigate],
+  );
+  const stopTeamWorker = useCallback(
+    async (worker: EnvironmentThreadShell) => {
+      const result = await stopThreadSession({
+        environmentId: worker.environmentId,
+        input: { threadId: worker.id },
+      });
+      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: "Could not stop worker",
+        description: error instanceof Error ? error.message : "An unexpected error occurred.",
+      });
+    },
+    [stopThreadSession],
+  );
+  const messageTeamWorker = useCallback(
+    async (worker: EnvironmentThreadShell, text: string) => {
+      const result = await startThreadTurn({
+        environmentId: worker.environmentId,
+        input: {
+          threadId: worker.id,
+          message: {
+            messageId: newMessageId(),
+            role: "user",
+            text,
+            attachments: [],
+          },
+          runtimeMode: worker.runtimeMode,
+          interactionMode: worker.interactionMode,
+        },
+      });
+      if (result._tag !== "Failure") return true;
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: "Could not message worker",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        });
+      }
+      return false;
+    },
+    [startThreadTurn],
+  );
   const supportsThreadPullRequests =
     serverConfig?.environment.capabilities.threadPullRequests === true;
   const visiblePullRequestCount = visibleThreadPullRequests(
@@ -9218,6 +9280,13 @@ export default function ChatView(props: ChatViewProps) {
       />
     ) : renderedRightPanelSurface?.kind === "pull-requests" && activeThreadRef ? (
       <ThreadPullRequestsPanel threadRef={activeThreadRef} />
+    ) : renderedRightPanelSurface?.kind === "team" && activeThreadRef ? (
+      <TeamPanel
+        orchestratorRef={activeThreadRef}
+        onOpenWorker={openTeamWorker}
+        onStopWorker={stopTeamWorker}
+        onMessageWorker={messageTeamWorker}
+      />
     ) : renderedRightPanelSurface?.kind === "agents" ? (
       <AgentsPanel
         model={agentPanelModel}
@@ -9346,6 +9415,22 @@ export default function ChatView(props: ChatViewProps) {
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
             activeThreadTitle={activeThread.title}
+            team={activeThread.team}
+            onBackToOrchestrator={
+              activeWorkerTeam
+                ? () => {
+                    void navigate({
+                      to: "/$environmentId/$threadId",
+                      params: buildThreadRouteParams(
+                        scopeThreadRef(
+                          activeThread.environmentId,
+                          activeWorkerTeam.orchestratorThreadId,
+                        ),
+                      ),
+                    });
+                  }
+                : undefined
+            }
             isServerThread={isServerThread}
             activeProject={activeProject}
             openInCwd={gitCwd}
@@ -9871,6 +9956,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequest={addPullRequestSurface}
           onAddPullRequests={addPullRequestsSurface}
           onAddAgents={addAgentsSurface}
+          onAddTeam={addTeamSurface}
           onAddDevice={addDeviceSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
@@ -9879,6 +9965,7 @@ export default function ChatView(props: ChatViewProps) {
           pullRequestAvailable={pullRequestSurfaceAvailable}
           pullRequestsAvailable={pullRequestsSurfaceAvailable}
           agentsAvailable
+          teamAvailable={activeThread.team?.role === "orchestrator"}
           deviceAvailable={activeThreadRef !== null}
           liveAgentCount={agentPanelModel.liveCount}
         >
@@ -9929,6 +10016,7 @@ export default function ChatView(props: ChatViewProps) {
             onAddPullRequest={addPullRequestSurface}
             onAddPullRequests={addPullRequestsSurface}
             onAddAgents={addAgentsSurface}
+            onAddTeam={addTeamSurface}
             onAddDevice={addDeviceSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
@@ -9937,6 +10025,7 @@ export default function ChatView(props: ChatViewProps) {
             pullRequestAvailable={pullRequestSurfaceAvailable}
             pullRequestsAvailable={pullRequestsSurfaceAvailable}
             agentsAvailable
+            teamAvailable={activeThread.team?.role === "orchestrator"}
             deviceAvailable={activeThreadRef !== null}
             liveAgentCount={agentPanelModel.liveCount}
           >

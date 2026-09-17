@@ -21,6 +21,14 @@ beforeEach(() => {
 });
 
 describe("rightPanelStore", () => {
+  it("opens a singleton team surface", () => {
+    useRightPanelStore.getState().open(refA, "team");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "team",
+      kind: "team",
+    });
+  });
+
   it("gives each host/device its own tab and preserves renamed tabs", () => {
     const store = useRightPanelStore.getState();
     const android = {

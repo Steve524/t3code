@@ -1498,6 +1498,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       {thread.title}
     </span>
   );
+  const workerRoleBadge =
+    thread.team?.role === "worker" ? (
+      <span className="max-w-24 shrink-0 truncate rounded-sm border border-sidebar-border/70 px-1 font-mono text-[.625rem] text-sidebar-muted-foreground">
+        {thread.team.roleLabel}
+      </span>
+    ) : null;
 
   // Stacks show their layer count; multiple unrelated links show their total count.
   // Plain clicks open T3; individual PR links also support opening the host in a new tab.
@@ -1619,6 +1625,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             </span>
             {draftIndicator}
             {title}
+            {workerRoleBadge}
             {pinIndicator}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
@@ -1916,6 +1923,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             </div>
             <div className="mt-1 flex min-w-0">
               {title}
+              {workerRoleBadge}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title

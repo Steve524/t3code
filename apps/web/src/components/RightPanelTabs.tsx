@@ -26,6 +26,7 @@ import {
   Globe2,
   Plus,
   TerminalSquare,
+  Users,
   Volume2,
   VolumeOff,
 } from "lucide-react";
@@ -117,6 +118,7 @@ interface RightPanelTabsProps {
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
   onAddAgents: () => void;
+  onAddTeam?: (() => void) | undefined;
   onAddDevice: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
@@ -125,6 +127,7 @@ interface RightPanelTabsProps {
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
   agentsAvailable: boolean;
+  teamAvailable?: boolean | undefined;
   deviceAvailable: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   /** Running + waiting subagents; badges the Agents card in the empty state. */
@@ -156,6 +159,7 @@ const SURFACE_DISABLED_REASONS = {
   pullRequest: "This thread's branch has no pull request yet.",
   pullRequests: "No linked pull requests are available for this thread.",
   agents: "Agents are only available from a thread.",
+  team: "Team is only available from an orchestrator thread.",
   device: "Devices are only available from a thread.",
 } as const;
 
@@ -180,6 +184,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
   pullRequest: "No pull request on this branch yet.",
   pullRequests: "No linked pull requests available.",
   agents: "Available from a thread.",
+  team: "Available from an orchestrator thread.",
   device: "Available from a thread.",
 } as const;
 
@@ -320,6 +325,7 @@ function RightPanelEmptyState(props: {
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
   onAddAgents: () => void;
+  onAddTeam?: (() => void) | undefined;
   onAddDevice: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
@@ -328,6 +334,7 @@ function RightPanelEmptyState(props: {
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
   agentsAvailable: boolean;
+  teamAvailable?: boolean | undefined;
   deviceAvailable: boolean;
   liveAgentCount: number;
 }) {
@@ -398,6 +405,19 @@ function RightPanelEmptyState(props: {
       onClick: props.onAddAgents,
       badgeCount: props.liveAgentCount,
     },
+    ...(props.teamAvailable && props.onAddTeam
+      ? [
+          {
+            label: "Team",
+            icon: Users,
+            shortcut: "W",
+            available: true,
+            disabledReason: SURFACE_UNAVAILABLE_HINTS.team,
+            onClick: props.onAddTeam,
+            badgeCount: 0,
+          },
+        ]
+      : []),
     {
       label: "Device",
       description: "Watch an iOS Simulator or Android Emulator.",
@@ -630,6 +650,8 @@ function surfaceTitle(
       return "Pull requests";
     case "agents":
       return "Agents";
+    case "team":
+      return "Team";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "preview": {
@@ -715,6 +737,8 @@ function SurfaceIcon({
       return <GitPullRequestArrow className="size-3 shrink-0" />;
     case "agents":
       return <Bot className="size-3 shrink-0" />;
+    case "team":
+      return <Users className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -917,6 +941,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.agents,
       onClick: props.onAddAgents,
     },
+    ...(props.teamAvailable && props.onAddTeam
+      ? [
+          {
+            label: "Team",
+            icon: Users,
+            shortcut: "W",
+            available: true,
+            disabledReason: SURFACE_DISABLED_REASONS.team,
+            onClick: props.onAddTeam,
+          },
+        ]
+      : []),
     {
       label: "Device",
       icon: Smartphone,
@@ -1396,6 +1432,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequest={props.onAddPullRequest}
             onAddPullRequests={props.onAddPullRequests}
             onAddAgents={props.onAddAgents}
+            onAddTeam={props.onAddTeam}
             onAddDevice={props.onAddDevice}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
@@ -1404,6 +1441,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             pullRequestAvailable={props.pullRequestAvailable}
             pullRequestsAvailable={props.pullRequestsAvailable}
             agentsAvailable={props.agentsAvailable}
+            teamAvailable={props.teamAvailable}
             deviceAvailable={props.deviceAvailable}
             liveAgentCount={props.liveAgentCount}
           />

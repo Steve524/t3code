@@ -15,6 +15,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/snap-shot"
   | "/settings/providers"
+  | "/settings/workflows"
   | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/connections"
@@ -78,6 +79,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",
+  "/settings/workflows": "Workflows",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
@@ -90,6 +92,16 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
  * that may not be mounted point at their nearest stable section instead.
  */
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "team-workflows",
+    title: "Team workflows",
+    to: "/settings/workflows",
+    scope: "environment",
+    environmentOnly: true,
+    searchTerms: [
+      "orchestrator preset roles workers provider model effort permissions review parallel automatic updates",
+    ],
+  },
   {
     id: "project-defaults",
     title: "Project defaults and overrides",
@@ -733,6 +745,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   // environment at any selection. Neither needs a particular scope to render.
   "/settings/keybindings": null,
   "/settings/providers": null,
+  "/settings/workflows": "environment",
   "/settings/integrations": null,
   "/settings/source-control": "environment-defaults",
   "/settings/connections": "connections",

@@ -53,6 +53,7 @@ import {
   SettingsIcon,
   SquarePenIcon,
   TextSearchIcon,
+  WorkflowIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -86,7 +87,11 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
-import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
+import {
+  resolveThreadActionProjectRef,
+  startNewThreadFromContext,
+  startOrchestratorThreadFromContext,
+} from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
@@ -117,6 +122,7 @@ import {
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
+import { firstTeamWorkflow } from "../teamWorkflows";
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,
@@ -664,7 +670,8 @@ function OpenCommandPaletteDialog(props: {
         ? scopeThreadRef(activeThread.environmentId, activeThread.id)
         : null;
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(referenceThreadRef);
-  const activeThreadServerConfig = useServerConfigs().get(
+  const serverConfigs = useServerConfigs();
+  const activeThreadServerConfig = serverConfigs.get(
     activeThread?.environmentId ?? ("" as EnvironmentId),
   );
   const activeThreadReferenceCopyTarget =
@@ -844,6 +851,9 @@ function OpenCommandPaletteDialog(props: {
         preferredProjectRef: contextualProjectRef,
       }),
     [contextualProjectRef, projectGroups],
+  );
+  const orchestratorWorkflow = firstTeamWorkflow(
+    contextualProjectRef ? serverConfigs.get(contextualProjectRef.environmentId) : null,
   );
   const pickerProjects = useMemo(
     () =>
@@ -1675,6 +1685,31 @@ function OpenCommandPaletteDialog(props: {
           });
         },
       });
+      if (contextualProjectRef && orchestratorWorkflow) {
+        actionItems.push({
+          kind: "action",
+          value: "action:new-orchestrator-thread",
+          searchTerms: ["new orchestrator thread", "team", "workflow", "delegate"],
+          title: (
+            <>
+              New orchestrator thread in <span className="font-semibold">{activeProjectTitle}</span>
+            </>
+          ),
+          icon: <WorkflowIcon className={ITEM_ICON_CLASS} />,
+          shortcutCommand: "chat.newOrchestrator",
+          run: async () => {
+            await startOrchestratorThreadFromContext(
+              {
+                activeDraftThread,
+                activeThread: activeThread ?? undefined,
+                defaultProjectRef,
+                handleNewThread,
+              },
+              orchestratorWorkflow.id,
+            );
+          },
+        });
+      }
     }
 
     actionItems.push({

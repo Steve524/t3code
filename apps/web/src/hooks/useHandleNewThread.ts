@@ -72,6 +72,7 @@ export function useNewThreadHandler() {
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
         startFromOrigin?: boolean;
+        teamWorkflowId?: string | null;
         replace?: boolean;
       },
       // Which draft the thread ended up in, so a caller that has something to put in it — a
@@ -173,6 +174,7 @@ export function useNewThreadHandler() {
       const hasWorktreePathOption = options?.worktreePath !== undefined;
       const hasEnvModeOption = options?.envMode !== undefined;
       const hasStartFromOriginOption = options?.startFromOrigin !== undefined;
+      const teamWorkflowId = options?.teamWorkflowId ?? null;
       const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       const storedDraftThreadRef = storedDraftThread
         ? scopeThreadRef(storedDraftThread.environmentId, storedDraftThread.threadId)
@@ -264,13 +266,12 @@ export function useNewThreadHandler() {
               }),
             };
           }
-          if (workspaceContext) {
-            setDraftThreadContext(emptyStoredDraftThread.draftId, {
-              ...workspaceContext,
-              ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
-              ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
-            });
-          }
+          setDraftThreadContext(emptyStoredDraftThread.draftId, {
+            ...workspaceContext,
+            ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
+            ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
+            teamWorkflowId,
+          });
           // Model intent: an explicit human pick always stands. Seeds and
           // legacy entries alike re-resolve here — sticky first, mirroring
           // the mint-fresh path, then the project default or carried
@@ -306,6 +307,7 @@ export function useNewThreadHandler() {
               ...workspaceContext,
               ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
               ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
+              teamWorkflowId,
             },
           );
           const opened = {
@@ -340,19 +342,16 @@ export function useNewThreadHandler() {
         // invested draft mints a fresh one instead of repurposing it.
         !composerDraftHasUserContent(getComposerDraft(currentRouteTarget.draftId))
       ) {
-        if (
-          hasBranchOption ||
-          hasWorktreePathOption ||
-          hasEnvModeOption ||
-          hasStartFromOriginOption
-        ) {
-          setDraftThreadContext(currentRouteTarget.draftId, pickExplicitWorkspaceOptions(options));
-        }
+        setDraftThreadContext(currentRouteTarget.draftId, {
+          ...pickExplicitWorkspaceOptions(options),
+          teamWorkflowId,
+        });
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, currentRouteTarget.draftId, {
           threadId: latestActiveDraftThread.threadId,
           createdAt: latestActiveDraftThread.createdAt,
           runtimeMode: latestActiveDraftThread.runtimeMode,
           interactionMode: latestActiveDraftThread.interactionMode,
+          teamWorkflowId,
           ...pickExplicitWorkspaceOptions(options),
         });
         return Promise.resolve({
@@ -396,6 +395,7 @@ export function useNewThreadHandler() {
             createdAt: racedDraft.createdAt,
             runtimeMode: racedDraft.runtimeMode,
             interactionMode: racedDraft.interactionMode,
+            teamWorkflowId,
             ...pickExplicitWorkspaceOptions(options),
           });
           await router.navigate({
@@ -419,6 +419,7 @@ export function useNewThreadHandler() {
             }),
           runtimeMode: defaultRuntimeMode,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
+          teamWorkflowId,
         });
         applyStickyState(draftId);
         const modelSelectionOverride = resolveModelSelectionOverride(draftId);

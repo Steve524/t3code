@@ -1639,6 +1639,20 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(useComposerDraftStore.getState().getDraftThread(draftId)?.startFromOrigin).toBe(false);
   });
 
+  it("stores and clears the selected team workflow with the draft session", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, {
+      threadId,
+      teamWorkflowId: "full-stack-team",
+    });
+
+    expect(store.getDraftThread(draftId)?.teamWorkflowId).toBe("full-stack-team");
+
+    store.setDraftThreadContext(draftId, { teamWorkflowId: null });
+
+    expect(store.getDraftThread(draftId)?.teamWorkflowId).toBeNull();
+  });
+
   it("preserves existing branch and worktree when setProjectDraftThreadId receives undefined", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, {

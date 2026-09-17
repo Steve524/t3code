@@ -12,6 +12,7 @@ import {
   resolveNewDraftStartFromOrigin,
   resolveNewThreadModelSelectionOverride,
   startNewThreadFromContext,
+  startOrchestratorThreadFromContext,
   type ChatThreadActionContext,
 } from "./chatThreadActions";
 
@@ -167,5 +168,22 @@ describe("chatThreadActions", () => {
 
     expect(didStart).toBe(false);
     expect(handleNewThread).not.toHaveBeenCalled();
+  });
+
+  it("starts orchestrator drafts through the same contextual project path", async () => {
+    const handleNewThread = vi.fn<ChatThreadActionContext["handleNewThread"]>(async () => {});
+
+    const didStart = await startOrchestratorThreadFromContext(
+      createContext({
+        activeThread: { environmentId: ENVIRONMENT_ID, projectId: PROJECT_ID },
+        handleNewThread,
+      }),
+      "full-stack-team",
+    );
+
+    expect(didStart).toBe(true);
+    expect(handleNewThread).toHaveBeenCalledWith(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), {
+      teamWorkflowId: "full-stack-team",
+    });
   });
 });

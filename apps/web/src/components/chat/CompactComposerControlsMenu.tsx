@@ -1,9 +1,10 @@
-import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
+import { ProviderInteractionMode, RuntimeMode, type TeamWorkflow } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
 import { EllipsisIcon } from "lucide-react";
 import {
   Menu,
   MenuPopup,
+  MenuItem,
   MenuRadioGroup,
   MenuRadioItem,
   MenuSeparator as MenuDivider,
@@ -18,6 +19,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
+  teamWorkflows: readonly TeamWorkflow[];
+  teamWorkflow?: TeamWorkflow | null;
+  teamWorkflowReadOnly?: boolean;
   size?: "sm" | "xs";
   /**
    * The resting strip keeps this menu mounted out of flow while every block
@@ -27,6 +31,8 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   hidden?: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
+  onTeamWorkflowChange?: ((workflowId: string | null) => void) | undefined;
+  onOpenTeamPanel?: (() => void) | undefined;
 }) {
   const size = props.size ?? "sm";
   const [open, setOpen] = useComposerMenuState(props.hidden);
@@ -84,6 +90,29 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="auto">Auto</MenuRadioItem>
           <MenuRadioItem value="full-access">Full access</MenuRadioItem>
         </MenuRadioGroup>
+        {props.teamWorkflows.length > 0 ? (
+          <>
+            <MenuDivider />
+            <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Team</div>
+            {props.teamWorkflowReadOnly && props.teamWorkflow ? (
+              <MenuItem onClick={props.onOpenTeamPanel}>{props.teamWorkflow.name}</MenuItem>
+            ) : (
+              <MenuRadioGroup
+                value={props.teamWorkflow?.id ?? "none"}
+                onValueChange={(value) =>
+                  props.onTeamWorkflowChange?.(value === "none" ? null : value)
+                }
+              >
+                <MenuRadioItem value="none">No team</MenuRadioItem>
+                {props.teamWorkflows.map((workflow) => (
+                  <MenuRadioItem key={workflow.id} value={workflow.id}>
+                    {workflow.name}
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
+            )}
+          </>
+        ) : null}
       </MenuPopup>
     </Menu>
   );

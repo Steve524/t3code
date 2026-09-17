@@ -25,6 +25,7 @@ interface NewThreadHandler {
       worktreePath?: string | null;
       envMode?: DraftThreadEnvMode;
       startFromOrigin?: boolean;
+      teamWorkflowId?: string | null;
     },
     // The opened draft's identity, which most callers have no use for.
   ): Promise<unknown>;
@@ -98,5 +99,18 @@ export async function startNewThreadFromContext(
   }
 
   await context.handleNewThread(projectRef);
+  return true;
+}
+
+export async function startOrchestratorThreadFromContext(
+  context: ChatThreadActionContext,
+  teamWorkflowId: string,
+): Promise<boolean> {
+  const projectRef = resolveThreadActionProjectRef(context);
+  if (!projectRef) {
+    return false;
+  }
+
+  await context.handleNewThread(projectRef, { teamWorkflowId });
   return true;
 }

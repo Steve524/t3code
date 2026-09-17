@@ -75,6 +75,7 @@ import {
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { truncate } from "@t3tools/shared/String";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
+import { resolveComposerTeamWorkflow } from "../teamWorkflows";
 import {
   getTerminalLabel,
   nextTerminalId,
@@ -2535,6 +2536,13 @@ export default function ChatView(props: ChatViewProps) {
     ? (activeEnvironment?.serverConfig ?? null)
     : (primaryEnvironment?.serverConfig ?? null);
   const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
+  const composerTeam = resolveComposerTeamWorkflow({
+    config: environmentById.get(environmentId)?.serverConfig,
+    draftWorkflowId: draftThread?.teamWorkflowId ?? null,
+    isDraft: isLocalDraftThread,
+    threadTeam: activeServerThread?.team,
+  });
+  const teamWorkflow = composerTeam.workflow;
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
@@ -4464,6 +4472,18 @@ export default function ChatView(props: ChatViewProps) {
     if (!interactionModeEnabled) return;
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode, interactionModeEnabled]);
+  const handleTeamWorkflowChange = useCallback(
+    (workflowId: string | null) => {
+      if (!isLocalDraftThread || !draftId) return;
+      setDraftThreadContext(draftId, { teamWorkflowId: workflowId });
+      scheduleComposerFocus();
+    },
+    [draftId, isLocalDraftThread, scheduleComposerFocus, setDraftThreadContext],
+  );
+  const openTeamPanel = useCallback(() => {
+    if (!activeThreadRef || !composerTeam.readOnly) return;
+    useRightPanelStore.getState().open(activeThreadRef, "agents");
+  }, [activeThreadRef, composerTeam.readOnly]);
   const openProviderSetup = useCallback(
     (instanceId: ProviderInstanceId) => {
       void navigate({
@@ -7908,6 +7928,9 @@ export default function ChatView(props: ChatViewProps) {
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
+                      ...(teamWorkflow
+                        ? { team: { role: "orchestrator" as const, workflow: teamWorkflow } }
+                        : {}),
                     },
                   }
                 : {}),
@@ -9605,6 +9628,9 @@ export default function ChatView(props: ChatViewProps) {
                             threadSyncPhase={activeEnvironmentUnavailable ? null : threadSyncPhase}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
+                            teamWorkflows={composerTeam.workflows}
+                            teamWorkflow={teamWorkflow}
+                            teamWorkflowReadOnly={composerTeam.readOnly}
                             lockedProvider={lockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
                             providerCatalogKnown={serverConfig !== null}
@@ -9664,6 +9690,8 @@ export default function ChatView(props: ChatViewProps) {
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}
                             handleInteractionModeChange={handleInteractionModeChange}
+                            handleTeamWorkflowChange={handleTeamWorkflowChange}
+                            onOpenTeamPanel={openTeamPanel}
                             focusComposer={focusComposer}
                             scheduleComposerFocus={scheduleComposerFocus}
                             setThreadError={setThreadError}

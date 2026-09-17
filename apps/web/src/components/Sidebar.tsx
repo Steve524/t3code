@@ -118,7 +118,12 @@ import {
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import {
+  resolveThreadActionProjectRef,
+  startNewThreadFromContext,
+  startOrchestratorThreadFromContext,
+} from "../lib/chatThreadActions";
+import { firstTeamWorkflow } from "../teamWorkflows";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -4324,6 +4329,23 @@ export default function Sidebar() {
     },
     [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
   );
+  const orchestratorProjectRef = resolveThreadActionProjectRef({
+    activeDraftThread: newThreadContext.activeDraftThread,
+    activeThread: newThreadContext.activeThread ?? undefined,
+    defaultProjectRef: newThreadContext.defaultProjectRef,
+    handleNewThread: newThreadContext.handleNewThread,
+  });
+  const orchestratorWorkflow = firstTeamWorkflow(
+    orchestratorProjectRef ? serverConfigs.get(orchestratorProjectRef.environmentId) : null,
+  );
+  const handleNewOrchestratorThread = useCallback(() => {
+    if (!orchestratorProjectRef || !orchestratorWorkflow) return;
+    if (isMobile) setOpenMobile(false);
+    void startOrchestratorThreadFromContext(
+      { ...newThreadContext, activeThread: newThreadContext.activeThread ?? undefined },
+      orchestratorWorkflow.id,
+    );
+  }, [isMobile, newThreadContext, orchestratorProjectRef, orchestratorWorkflow, setOpenMobile]);
 
   // The button mirrors chat.new: in multi-project setups both route through
   // the command palette's "New thread in..." picker, and in single-project
@@ -4485,6 +4507,9 @@ export default function Sidebar() {
               }
               onNewProject={openAddProjectCommandPalette}
               onNewThread={handleNewThreadClick}
+              onNewOrchestratorThread={
+                orchestratorWorkflow ? handleNewOrchestratorThread : undefined
+              }
               newThreadDisabled={projects.length === 0}
               newThreadShortcutLabel={newThreadShortcutLabel}
               newThreadInProjectShortcutLabel={newThreadInProjectShortcutLabel}

@@ -11,7 +11,11 @@ import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import {
+  resolveThreadActionProjectRef,
+  startNewThreadFromContext,
+  startOrchestratorThreadFromContext,
+} from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
@@ -20,7 +24,8 @@ import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
-import { primaryServerKeybindingsAtom } from "~/state/server";
+import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "~/state/server";
+import { firstTeamWorkflow } from "../teamWorkflows";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -28,6 +33,7 @@ function ChatRouteGlobalShortcuts() {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
@@ -41,6 +47,15 @@ function ChatRouteGlobalShortcuts() {
         resolveEnvironmentLabel: () => null,
       }).length,
     [primaryEnvironmentId, projectGroupingSettings, projects],
+  );
+  const orchestratorProjectRef = resolveThreadActionProjectRef({
+    activeDraftThread,
+    activeThread: activeThread ?? undefined,
+    defaultProjectRef,
+    handleNewThread,
+  });
+  const orchestratorWorkflow = firstTeamWorkflow(
+    orchestratorProjectRef ? serverConfigs.get(orchestratorProjectRef.environmentId) : null,
   );
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
@@ -86,6 +101,21 @@ function ChatRouteGlobalShortcuts() {
           defaultProjectRef,
           handleNewThread,
         });
+        return;
+      }
+
+      if (command === "chat.newOrchestrator" && orchestratorProjectRef && orchestratorWorkflow) {
+        event.preventDefault();
+        event.stopPropagation();
+        void startOrchestratorThreadFromContext(
+          {
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+          },
+          orchestratorWorkflow.id,
+        );
         return;
       }
 
@@ -168,6 +198,8 @@ function ChatRouteGlobalShortcuts() {
     routeThreadRef,
     selectedThreadKeysSize,
     legacySidebarEnabled,
+    orchestratorProjectRef,
+    orchestratorWorkflow,
     terminalOpen,
   ]);
 

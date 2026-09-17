@@ -31,6 +31,7 @@ import type {
   ServerProvider,
   ThreadId,
   SnapShotSource,
+  TeamWorkflow,
 } from "@t3tools/contracts";
 import {
   ProviderDriverKind,
@@ -75,7 +76,10 @@ import {
   formatAssistantCitationForComposer,
   replaceTextRange,
 } from "../../composer-logic";
-import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
+import {
+  DISCONNECTED_COMPOSER_PLACEHOLDER,
+  ORCHESTRATOR_COMPOSER_PLACEHOLDER,
+} from "../../composerPlaceholder";
 import {
   deriveComposerSendState,
   getAntigravitySendBlockReason,
@@ -243,6 +247,7 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import { WorkflowPicker } from "./WorkflowPicker";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
@@ -1034,6 +1039,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   runtimeMode: RuntimeMode;
   size?: "sm" | "xs";
   hidden?: boolean;
+  workflowControl?: ReactNode;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
@@ -1138,6 +1144,13 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
         </Select>
         <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
       </Tooltip>
+
+      {props.workflowControl ? (
+        <>
+          <ComposerControlSeparator size={size} />
+          {props.workflowControl}
+        </>
+      ) : null}
 
       {interactionModeToggle}
     </>
@@ -1344,6 +1357,9 @@ export interface ChatComposerProps {
   // Mode
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
+  teamWorkflows: readonly TeamWorkflow[];
+  teamWorkflow: TeamWorkflow | null;
+  teamWorkflowReadOnly: boolean;
 
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
@@ -1418,6 +1434,8 @@ export interface ChatComposerProps {
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
+  handleTeamWorkflowChange: (workflowId: string | null) => void;
+  onOpenTeamPanel: () => void;
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -1469,6 +1487,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProposedPlan,
     runtimeMode,
     interactionMode: requestedInteractionMode,
+    teamWorkflows,
+    teamWorkflow,
+    teamWorkflowReadOnly,
     lockedProvider,
     providerStatuses,
     providerCatalogKnown,
@@ -1517,6 +1538,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     toggleInteractionMode,
     handleRuntimeModeChange,
     handleInteractionModeChange,
+    handleTeamWorkflowChange,
+    onOpenTeamPanel,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
@@ -2477,7 +2500,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (!activePendingProgress ||
       (supportsQuestionAttachments &&
         activePendingProgress.activeQuestion?.allowCustomAnswer !== false));
-  const composerFooterHasWideActions = showPlanFollowUpPrompt || activePendingProgress !== null;
+  const composerFooterHasWideActions =
+    showPlanFollowUpPrompt || activePendingProgress !== null || teamWorkflows.length > 0;
   const composerFooterActionLayoutKey = useMemo(() => {
     if (activePendingProgress) {
       return `pending:${activePendingProgress.questionIndex}:${activePendingProgress.isLastQuestion}:${activePendingIsResponding}`;
@@ -4864,6 +4888,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           runtimeMode={runtimeMode}
           size={composerControlsInStrip ? "xs" : "sm"}
           hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+          workflowControl={
+            teamWorkflows.length > 0 ? (
+              <WorkflowPicker
+                workflows={teamWorkflows}
+                workflow={teamWorkflow}
+                readOnly={teamWorkflowReadOnly}
+                size={composerControlsInStrip ? "xs" : "sm"}
+                hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+                onWorkflowChange={handleTeamWorkflowChange}
+                onOpenTeamPanel={onOpenTeamPanel}
+              />
+            ) : undefined
+          }
           onToggleInteractionMode={toggleInteractionMode}
           onRuntimeModeChange={handleRuntimeModeChange}
         />
@@ -4951,8 +4988,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           runtimeMode={runtimeMode}
           showInteractionModeToggle={planModeUiEnabled}
           traitsMenuContent={providerTraitsMenuContent}
+          teamWorkflows={teamWorkflows}
+          teamWorkflow={teamWorkflow}
+          teamWorkflowReadOnly={teamWorkflowReadOnly}
           onToggleInteractionMode={toggleInteractionMode}
           onRuntimeModeChange={handleRuntimeModeChange}
+          onTeamWorkflowChange={handleTeamWorkflowChange}
+          onOpenTeamPanel={onOpenTeamPanel}
         />
       ) : (
         <>
@@ -4997,8 +5039,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 traitsMenuContent={
                   hiddenRestingBlockIds.includes("traits") ? providerTraitsMenuContent : undefined
                 }
+                teamWorkflows={hiddenRestingBlockIds.includes("mode") ? teamWorkflows : []}
+                teamWorkflow={teamWorkflow}
+                teamWorkflowReadOnly={teamWorkflowReadOnly}
                 onToggleInteractionMode={toggleInteractionMode}
                 onRuntimeModeChange={handleRuntimeModeChange}
+                onTeamWorkflowChange={handleTeamWorkflowChange}
+                onOpenTeamPanel={onOpenTeamPanel}
               />
             </div>
           ) : null}
@@ -6700,7 +6747,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 ? "Enable a provider in Settings to send a message"
                                 : phase === "disconnected"
                                   ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                  : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                  : teamWorkflow
+                                    ? ORCHESTRATOR_COMPOSER_PLACEHOLDER
+                                    : "Ask anything, @tag files/folders, $use skills, or / for commands"
                     }
                     disabled={
                       isConnecting ||

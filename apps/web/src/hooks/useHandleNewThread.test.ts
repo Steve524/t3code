@@ -279,4 +279,24 @@ describe.each([
       );
     },
   );
+
+  it("seeds the requested team workflow on the opened draft", async () => {
+    testState.reset(draft);
+    const projectRef = {
+      environmentId: "environment-ssh",
+      projectId: "project-remote",
+    } as never;
+    const pendingOpen = useNewThreadHandler()(projectRef, {
+      teamWorkflowId: "full-stack-team",
+    });
+    testState.completeProjectFileRead(null);
+    const opened = await pendingOpen;
+
+    expect(testState.draftStore.setLogicalProjectDraftThreadId).toHaveBeenCalledWith(
+      "remote-project",
+      projectRef,
+      opened!.draftId,
+      expect.objectContaining({ teamWorkflowId: "full-stack-team" }),
+    );
+  });
 });

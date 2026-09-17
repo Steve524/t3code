@@ -427,6 +427,7 @@ it.effect("registers the team toolkit and requires its capability", () =>
         "team_get_worker",
         "team_message_worker",
         "team_stop_worker",
+        "team_integrate",
       ]),
     );
     const denied = yield* server

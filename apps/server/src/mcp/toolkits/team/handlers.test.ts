@@ -168,12 +168,16 @@ const testCrypto = Crypto.make({
 interface HarnessOptions {
   readonly threads?: ReadonlyArray<OrchestrationThreadShell>;
   readonly providerAvailable?: boolean;
+  readonly integrateResult?: GitWorkflowService.GitIntegrateBranchesResult;
 }
 
 const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: HarnessOptions = {}) {
   const threads = options.threads ?? [orchestrator()];
   const bootstrapCommands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
   const engineCommands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+  const integrationInputs = yield* Ref.make<
+    ReadonlyArray<GitWorkflowService.GitIntegrateBranchesInput>
+  >([]);
   const recordBootstrap: ThreadBootstrap.ThreadBootstrapShape["dispatch"] = (command) =>
     Ref.update(bootstrapCommands, (commands) => [...commands, command]).pipe(
       Effect.as({ sequence: 1 }),
@@ -243,6 +247,17 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
           nextCursor: null,
           totalCount: 1,
         }),
+      integrateBranches: (input) =>
+        Ref.update(integrationInputs, (inputs) => [...inputs, input]).pipe(
+          Effect.as(
+            options.integrateResult ?? {
+              status: "merged",
+              branch: "team/thread-t/integration",
+              worktreePath: "/workspace/integration",
+              headSha: "abc123",
+            },
+          ),
+        ),
     }),
     Layer.succeed(Crypto.Crypto, testCrypto),
   );
@@ -261,7 +276,7 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
       Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(capabilities)),
       Effect.provide(dependencies),
     );
-  return { bootstrapCommands, engineCommands, call };
+  return { bootstrapCommands, engineCommands, integrationInputs, call };
 });
 
 describe("team toolkit handlers", () => {
@@ -413,6 +428,23 @@ describe("team toolkit handlers", () => {
           })
           .pipe(Effect.flip),
       ).toMatchObject({ _tag: "TeamReviewRoundLimitError", limit: 1, reviewRound: 2 });
+
+      yield* reviewHarness.call("team_spawn_worker", {
+        roleId: TeamRoleId.make("qa"),
+        title: "Review integration",
+        task: "Review the integrated changes.",
+        baseBranch: "team/thread-t/integration",
+        reviewRound: 1,
+      });
+      expect((yield* Ref.get(reviewHarness.bootstrapCommands))[0]).toMatchObject({
+        bootstrap: {
+          createThread: {
+            branch: "team/thread-t/integration",
+            team: { roleId: "qa", reviewRound: 1 },
+          },
+          prepareWorktree: { baseBranch: "team/thread-t/integration" },
+        },
+      });
     }),
   );
 
@@ -487,6 +519,72 @@ describe("team toolkit handlers", () => {
       expect(yield* Ref.get(harness.engineCommands)).toMatchObject([
         { type: "thread.session.stop", threadId: WORKER_ID },
       ]);
+    }),
+  );
+
+  it.effect("integrates owned worker branches in order without targeting the base branch", () =>
+    Effect.gen(function* () {
+      const ownedWorker = worker();
+      const harness = yield* makeHarness({ threads: [orchestrator(), ownedWorker] });
+      const result = yield* harness.call("team_integrate", {
+        branches: ["team/thread-t/frontend-build-ui"],
+      });
+
+      expect(result).toEqual({
+        status: "merged",
+        branch: "team/thread-t/integration",
+        headSha: "abc123",
+      });
+      expect(yield* Ref.get(harness.integrationInputs)).toEqual([
+        {
+          cwd: "/workspace/project",
+          baseBranch: "main",
+          integrationBranch: "team/thread-t/integration",
+          branches: ["team/thread-t/frontend-build-ui"],
+        },
+      ]);
+
+      const foreign = yield* harness
+        .call("team_integrate", { branches: ["feature/not-owned"] })
+        .pipe(Effect.flip);
+      expect(foreign).toMatchObject({
+        _tag: "TeamIntegrationBranchOwnershipError",
+        branch: "feature/not-owned",
+      });
+
+      const baseTarget = yield* harness
+        .call("team_integrate", {
+          branches: ["team/thread-t/frontend-build-ui"],
+          targetBranch: "main",
+        })
+        .pipe(Effect.flip);
+      expect(baseTarget).toMatchObject({ _tag: "TeamIntegrationTargetError", branch: "main" });
+      expect(yield* Ref.get(harness.integrationInputs)).toHaveLength(1);
+    }),
+  );
+
+  it.effect("returns the conflicting worker branch and files", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        threads: [orchestrator(), worker()],
+        integrateResult: {
+          status: "conflict",
+          branch: "team/thread-t/integration",
+          worktreePath: "/workspace/integration",
+          conflictingBranch: "team/thread-t/frontend-build-ui",
+          conflictingFiles: ["src/ui.ts"],
+        },
+      });
+      expect(
+        yield* harness.call("team_integrate", {
+          branches: ["team/thread-t/frontend-build-ui"],
+        }),
+      ).toEqual({
+        status: "conflict",
+        branch: "team/thread-t/integration",
+        conflictingBranch: "team/thread-t/frontend-build-ui",
+        conflictingFiles: ["src/ui.ts"],
+      });
     }),
   );
 

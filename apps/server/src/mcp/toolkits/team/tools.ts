@@ -129,6 +129,24 @@ export class TeamWorkerOwnershipError extends Schema.TaggedError<TeamWorkerOwner
   }
 }
 
+export class TeamIntegrationBranchOwnershipError extends Schema.TaggedError<TeamIntegrationBranchOwnershipError>()(
+  "TeamIntegrationBranchOwnershipError",
+  { branch: TrimmedNonEmptyString },
+) {
+  override get message(): string {
+    return `Branch ${this.branch} does not belong to one of your workers.`;
+  }
+}
+
+export class TeamIntegrationTargetError extends Schema.TaggedError<TeamIntegrationTargetError>()(
+  "TeamIntegrationTargetError",
+  { branch: TrimmedNonEmptyString },
+) {
+  override get message(): string {
+    return `Integration cannot target the base branch ${this.branch}. Use a dedicated integration branch.`;
+  }
+}
+
 export class WorkerBusyError extends Schema.TaggedError<WorkerBusyError>()("WorkerBusyError", {
   workerThreadId: ThreadId,
 }) {
@@ -140,7 +158,7 @@ export class WorkerBusyError extends Schema.TaggedError<WorkerBusyError>()("Work
 export class TeamOperationFailedError extends Schema.TaggedError<TeamOperationFailedError>()(
   "TeamOperationFailedError",
   {
-    operation: Schema.Literals(["roster", "spawn", "get", "message", "stop"]),
+    operation: Schema.Literals(["roster", "spawn", "get", "message", "stop", "integrate"]),
     cause: Schema.Defect(),
   },
 ) {
@@ -151,6 +169,7 @@ export class TeamOperationFailedError extends Schema.TaggedError<TeamOperationFa
       get: "Could not read the team worker.",
       message: "Could not message the team worker.",
       stop: "Could not stop the team worker.",
+      integrate: "Could not integrate the team branches.",
     }[this.operation];
   }
 }
@@ -168,6 +187,8 @@ export const TeamToolError = Schema.Union([
   TeamBaseBranchUnavailableError,
   TeamWorkerNotFoundError,
   TeamWorkerOwnershipError,
+  TeamIntegrationBranchOwnershipError,
+  TeamIntegrationTargetError,
   WorkerBusyError,
   TeamOperationFailedError,
 ]);
@@ -241,6 +262,25 @@ const MessageWorkerInput = Schema.Struct({
 
 const WorkerActionResult = Schema.Struct({ workerThreadId: ThreadId });
 
+const IntegrateInput = Schema.Struct({
+  branches: Schema.Array(TrimmedNonEmptyString).check(Schema.isMinLength(1)),
+  targetBranch: Schema.optional(TrimmedNonEmptyString),
+});
+
+const IntegrateResult = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literal("merged"),
+    branch: TrimmedNonEmptyString,
+    headSha: TrimmedNonEmptyString,
+  }),
+  Schema.Struct({
+    status: Schema.Literal("conflict"),
+    branch: TrimmedNonEmptyString,
+    conflictingBranch: TrimmedNonEmptyString,
+    conflictingFiles: Schema.Array(TrimmedNonEmptyString),
+  }),
+]);
+
 const RosterTool = Tool.make("team_roster", {
   description:
     "List enabled team roles, workflow limits, and every worker owned by this orchestrator. Use this before spawning workers and do not duplicate an existing task.",
@@ -309,10 +349,25 @@ const StopWorkerTool = Tool.make("team_stop_worker", {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, false);
 
+const IntegrateTool = Tool.make("team_integrate", {
+  description:
+    "Merge owned worker branches in the supplied order into a dedicated integration worktree. Returns the integration head or the first conflict without modifying the base branch.",
+  parameters: IntegrateInput,
+  success: IntegrateResult,
+  failure: TeamToolError,
+  dependencies,
+})
+  .annotate(Tool.Title, "Integrate team branches")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, false);
+
 export const TeamToolkit = Toolkit.make(
   RosterTool,
   SpawnWorkerTool,
   GetWorkerTool,
   MessageWorkerTool,
   StopWorkerTool,
+  IntegrateTool,
 );

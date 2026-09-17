@@ -14,6 +14,8 @@ import * as ProviderInstanceRegistry from "../../../provider/Services/ProviderIn
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import {
   TeamBaseBranchUnavailableError,
+  TeamIntegrationBranchOwnershipError,
+  TeamIntegrationTargetError,
   TeamOperationFailedError,
   TeamOrchestratorRequiredError,
   TeamProjectNotFoundError,
@@ -38,6 +40,9 @@ const isRunning = (thread: OrchestrationThreadShell) =>
 
 const workerState = (thread: OrchestrationThreadShell) =>
   thread.session?.status ?? thread.latestTurn?.state ?? "idle";
+
+const orchestratorSlug = (threadId: ThreadId) =>
+  sanitizeBranchFragment(threadId).replaceAll("/", "-").slice(0, 8);
 
 const workerSummary = (thread: OrchestrationThreadShell) => {
   const team = thread.team;
@@ -197,10 +202,7 @@ const make = Effect.gen(function* () {
           input.baseBranch ??
           orchestrator.branch ??
           (yield* defaultBranch(project.value.workspaceRoot, "spawn"));
-        const orchestratorSlug = sanitizeBranchFragment(orchestrator.id)
-          .replaceAll("/", "-")
-          .slice(0, 8);
-        const branch = `team/${orchestratorSlug}/${role.id}-${sanitizeBranchFragment(input.title)}`;
+        const branch = `team/${orchestratorSlug(orchestrator.id)}/${role.id}-${sanitizeBranchFragment(input.title)}`;
         const workerThreadId = yield* randomId(ThreadId.make);
         const messageId = yield* randomId(MessageId.make);
         const commandId = yield* randomId((id) => CommandId.make(`server:team-spawn:${id}`));
@@ -325,6 +327,47 @@ const make = Effect.gen(function* () {
           })
           .pipe(mapFailure("stop"));
         return { workerThreadId };
+      }),
+
+    team_integrate: (input) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* requireOrchestrator("integrate");
+        const project = yield* snapshots
+          .getProjectShellById(orchestrator.projectId)
+          .pipe(mapFailure("integrate"));
+        if (Option.isNone(project)) return yield* new TeamProjectNotFoundError({});
+
+        const baseBranch =
+          orchestrator.branch ?? (yield* defaultBranch(project.value.workspaceRoot, "integrate"));
+        const integrationBranch =
+          input.targetBranch ?? `team/${orchestratorSlug(orchestrator.id)}/integration`;
+        if (integrationBranch === baseBranch) {
+          return yield* new TeamIntegrationTargetError({ branch: baseBranch });
+        }
+
+        const workers = yield* listWorkers(orchestrator.id, "integrate");
+        for (const branch of input.branches) {
+          if (!workers.some((worker) => worker.branch === branch)) {
+            return yield* new TeamIntegrationBranchOwnershipError({ branch });
+          }
+        }
+
+        const result = yield* git
+          .integrateBranches({
+            cwd: project.value.workspaceRoot,
+            baseBranch,
+            integrationBranch,
+            branches: input.branches,
+          })
+          .pipe(mapFailure("integrate"));
+        return result.status === "merged"
+          ? { status: result.status, branch: result.branch, headSha: result.headSha }
+          : {
+              status: result.status,
+              branch: result.branch,
+              conflictingBranch: result.conflictingBranch,
+              conflictingFiles: result.conflictingFiles,
+            };
       }),
   });
 });

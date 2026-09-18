@@ -334,12 +334,19 @@ Notes:
 
 ## Phase 12: User and internal documentation
 
-- [ ] Add a concise Team workflows section to the user documentation.
-- [ ] Explain how to start a workflow, where its settings live, and that the user merges the integration branch.
-- [ ] Add only the cross-component report-reactor design note to internal documentation.
-- [ ] Check existing guidance for conflicts with the new behavior.
-- [ ] Review the documentation for shipped-product voice and remove implementation detail from user docs.
-- [ ] Commit phase 12.
+- [x] Add a concise Team workflows section to the user documentation.
+- [x] Explain how to start a workflow, where its settings live, and that the user merges the integration branch.
+- [x] Add only the cross-component report-reactor design note to internal documentation.
+- [x] Check existing guidance for conflicts with the new behavior.
+- [x] Review the documentation for shipped-product voice and remove implementation detail from user docs.
+- [x] Commit phase 12.
+
+Notes:
+
+- `docs/user/thread-sidebar.md` covers the web and desktop entry points, environment-owned workflow settings, the immutable running-workflow snapshot, the Team panel, the user-owned merge, and mobile's view-only behavior.
+- Existing Agents-panel guidance now distinguishes provider subagents from team workflow workers.
+- `docs/internals/overview.md` records only the cross-component report-reactor contract: committed signals are batched after the orchestrator becomes idle, reconstructed after restart, bounded until a real user message, and still readable as plain text on clients without team cards.
+- Targeted formatting and diff checks passed for all three changed Markdown files.
 
 ## Final acceptance
 

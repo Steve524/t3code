@@ -1,12 +1,11 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
 
-const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const layer = it.layer(NodeSqliteClient.layer({ filename: ":memory:" }));
 
 layer("053_ProjectionThreadTeam", (it) => {
   it.effect("adds nullable team storage without changing existing threads", () =>
@@ -34,7 +33,7 @@ layer("053_ProjectionThreadTeam", (it) => {
         )
       `;
 
-      yield* runMigrations({ toMigrationInclusive: 53 });
+      yield* runMigrations({ toMigrationInclusive: 54 });
 
       const rows = yield* sql<{ readonly threadId: string; readonly team: string | null }>`
         SELECT thread_id AS "threadId", team_json AS team FROM projection_threads

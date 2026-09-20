@@ -217,8 +217,8 @@ This checklist tracks the implementation of the team workflows feature described
 - [x] Spawn two workers against a toy repository.
 - [x] Confirm that both workers run concurrently in separate worktrees.
 - [x] Confirm that completion updates reach the orchestrator.
-- [ ] Get user approval before browser or computer-use verification.
-- [ ] Confirm remote access with `vp run dev --share`.
+- [x] Get user approval before browser or computer-use verification.
+- [x] Confirm remote access with `vp run dev --share`.
 - [x] Record the manual-run results and any changes to earlier assumptions.
 - [x] Commit phase 7 fix (`dfe7e97e1`).
 
@@ -229,7 +229,7 @@ This checklist tracks the implementation of the team workflows feature described
 - Both workers were observed running concurrently in distinct worktrees. They committed their requested single-file changes as `03c9b26` and `c4ead6c`; both worktrees were clean afterward.
 - The orchestrator became idle immediately after spawning. Each worker completion produced a contextual `team-report` update and resumed the orchestrator, which reported both results without polling.
 - The first run exposed a prompt deadlock: an orchestrator could wait inside its active turn for reports that are intentionally delivered only when it is idle. Runtime instructions now require ending the turn after spawning workers, and the clean rerun confirmed the fix.
-- `vp run dev --share` started the isolated local server, but tailnet sharing failed because the host could not talk to Tailscale. Local RPC and web endpoints remained available.
+- After Tailscale and tailnet HTTPS certificates were enabled, `vp run dev --share` published the isolated web app at its HTTPS tailnet origin. A controlled browser loaded that origin, paired with a separate standard-scope token, rendered an active thread, and showed the saved orchestrator and worker role badges. The startup pairing token was not consumed.
 - Focused verification passed: `RuntimeInstructions.test.ts` (9 tests), targeted lint, formatting, and the manual RPC workflow.
 
 ## Phase 8: Integration and QA loop

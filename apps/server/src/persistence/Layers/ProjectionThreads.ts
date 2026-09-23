@@ -15,14 +15,14 @@ import {
 import {
   ModelSelection,
   ThreadLinkedPullRequest,
-  ThreadTeamInfo,
+  ThreadTeamInfo, // FORK: Decode Team Workflow metadata.
   ThreadTitleState,
 } from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
-    team: Schema.NullOr(Schema.fromJsonString(ThreadTeamInfo)),
+    team: Schema.NullOr(Schema.fromJsonString(ThreadTeamInfo)), // FORK: Decode Team Workflow JSON.
     titleState: Schema.NullOr(Schema.fromJsonString(ThreadTitleState)),
     linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
     branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
@@ -46,7 +46,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode,
           branch,
           worktree_path,
-          team_json,
+          team_json, /* FORK: Team Workflow projection column. */
           linked_pull_request_json,
           branch_pull_request_json,
           latest_turn_id,
@@ -79,7 +79,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.interactionMode},
           ${row.branch},
           ${row.worktreePath},
-          ${row.team == null ? null : JSON.stringify(row.team)},
+          ${row.team == null ? null : JSON.stringify(row.team)}, /* FORK: Team Workflow metadata. */
           ${row.linkedPullRequest === undefined || row.linkedPullRequest === null ? null : JSON.stringify(row.linkedPullRequest)},
           ${row.branchPullRequest === undefined || row.branchPullRequest === null ? null : JSON.stringify(row.branchPullRequest)},
           ${row.latestTurnId},
@@ -112,7 +112,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode = excluded.interaction_mode,
           branch = excluded.branch,
           worktree_path = excluded.worktree_path,
-          team_json = excluded.team_json,
+          team_json = excluded.team_json, /* FORK: Team Workflow metadata. */
           linked_pull_request_json = excluded.linked_pull_request_json,
           branch_pull_request_json = excluded.branch_pull_request_json,
           latest_turn_id = excluded.latest_turn_id,
@@ -152,7 +152,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
-          team_json AS team,
+          team_json AS team, /* FORK: Team Workflow metadata. */
           linked_pull_request_json AS "linkedPullRequest",
           branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",

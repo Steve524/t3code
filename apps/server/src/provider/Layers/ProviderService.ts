@@ -961,7 +961,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           McpProviderSession.setMcpProviderSession({
             ...credential.config,
             ...(deviceEnvironment ? { agentDeviceEnvironment: deviceEnvironment } : {}),
-            ...(team ? { team } : {}),
+            ...(team ? { team } : {}), // FORK: Share Team Workflow context with provider.
           }),
         );
       }

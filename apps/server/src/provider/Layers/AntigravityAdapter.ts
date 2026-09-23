@@ -191,7 +191,7 @@ interface TurnIntent {
 
 interface SessionContext {
   readonly threadId: ThreadId;
-  readonly team: McpProviderSession.McpProviderSessionConfig["team"];
+  readonly team: McpProviderSession.McpProviderSessionConfig["team"]; // FORK: Team Workflow context.
   readonly cwd: string;
   readonly nativeSessionId: string;
   readonly scope: Scope.Closeable;
@@ -865,7 +865,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
               };
               context = {
                 threadId: input.threadId,
-                team: mcp?.team,
+                team: mcp?.team, // FORK: Pass Team Workflow context.
                 cwd,
                 nativeSessionId: started.sessionId,
                 scope: sessionScope,
@@ -1090,7 +1090,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
                     text: buildRuntimeInstructions({
                       harness: "Antigravity",
                       model,
-                      team: context.team,
+                      team: context.team, // FORK: Add Team Workflow instructions.
                     }),
                   },
                 ],

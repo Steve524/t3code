@@ -404,7 +404,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
-          ...(command.team === undefined ? {} : { team: command.team }),
+          ...(command.team === undefined ? {} : { team: command.team }), // FORK: Carry team metadata into creation event.
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },

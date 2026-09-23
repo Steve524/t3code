@@ -34,9 +34,11 @@ import {
   ThreadId,
   ThreadPullRequestSnapshot,
   ThreadPullRequestStack,
-  ThreadTeamInfo,
+  ThreadTeamInfo, // FORK: Decode Team Workflow projection JSON.
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
+// FORK: Decode Team Workflow projection metadata in snapshots.
+import { mapThreadTeam } from "../../fork/orchestration/mapThreadTeam.ts";
 import { legacyLinkedPullRequestOf } from "@t3tools/shared/threadPullRequests";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -130,7 +132,7 @@ const ProjectionThreadPullRequestDbRowSchema = ProjectionThreadPullRequest.mapFi
 const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
-    team: Schema.NullOr(Schema.fromJsonString(ThreadTeamInfo)),
+    team: Schema.NullOr(Schema.fromJsonString(ThreadTeamInfo)), // FORK: Decode Team Workflow metadata.
     titleState: Schema.NullOr(Schema.fromJsonString(ThreadTitleState)),
     linkedPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
     branchPullRequest: Schema.NullOr(Schema.fromJsonString(ThreadLinkedPullRequest)),
@@ -378,12 +380,6 @@ function mapTitleRegeneration(row: Schema.Schema.Type<typeof ProjectionThreadDbR
     : null;
 }
 
-function mapThreadTeam(
-  row: Schema.Schema.Type<typeof ProjectionThreadDbRowSchema>,
-): Pick<OrchestrationThread, "team"> {
-  return row.team == null ? {} : { team: row.team };
-}
-
 function mapSessionRow(
   row: Schema.Schema.Type<typeof ProjectionThreadSessionDbRowSchema>,
 ): OrchestrationSession {
@@ -581,7 +577,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
-          team_json AS team,
+          team_json AS team, /* FORK: Team Workflow metadata. */
           linked_pull_request_json AS "linkedPullRequest",
           branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",
@@ -623,7 +619,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
-          team_json AS team,
+          team_json AS team, /* FORK: Team Workflow metadata. */
           linked_pull_request_json AS "linkedPullRequest",
           branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",
@@ -697,7 +693,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
-          team_json AS team,
+          team_json AS team, /* FORK: Team Workflow metadata. */
           linked_pull_request_json AS "linkedPullRequest",
           branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",
@@ -1263,7 +1259,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
-          team_json AS team,
+          team_json AS team, /* FORK: Team Workflow metadata. */
           linked_pull_request_json AS "linkedPullRequest",
           branch_pull_request_json AS "branchPullRequest",
           latest_turn_id AS "latestTurnId",
@@ -2335,7 +2331,7 @@ pending_approval_requests AS (
                 interactionMode: row.interactionMode,
                 branch: row.branch,
                 worktreePath: row.worktreePath,
-                ...mapThreadTeam(row),
+                ...mapThreadTeam(row.team), // FORK: Include Team Workflow metadata.
                 ...mapThreadPullRequests(
                   pullRequestsByThread.get(row.threadId) ?? [],
                   row.projectId,
@@ -2581,7 +2577,7 @@ pending_approval_requests AS (
                   interactionMode: row.interactionMode,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
-                  ...mapThreadTeam(row),
+                  ...mapThreadTeam(row.team), // FORK: Include Team Workflow metadata.
                   ...mapThreadPullRequests(
                     pullRequestsByThread.get(row.threadId) ?? [],
                     row.projectId,
@@ -2738,7 +2734,7 @@ pending_approval_requests AS (
                         interactionMode: row.interactionMode,
                         branch: row.branch,
                         worktreePath: row.worktreePath,
-                        ...mapThreadTeam(row),
+                        ...mapThreadTeam(row.team), // FORK: Include Team Workflow metadata.
                         branchPullRequest: row.branchPullRequest,
                         ...mapThreadPullRequests(
                           pullRequestsByThread.get(row.threadId) ?? [],
@@ -2902,7 +2898,7 @@ pending_approval_requests AS (
                   interactionMode: row.interactionMode,
                   branch: row.branch,
                   worktreePath: row.worktreePath,
-                  ...mapThreadTeam(row),
+                  ...mapThreadTeam(row.team), // FORK: Include Team Workflow metadata.
                   branchPullRequest: row.branchPullRequest,
                   ...mapThreadPullRequests(
                     pullRequestsByThread.get(row.threadId) ?? [],
@@ -3256,7 +3252,7 @@ pending_approval_requests AS (
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
-        ...mapThreadTeam(threadRow.value),
+        ...mapThreadTeam(threadRow.value.team), // FORK: Include Team Workflow metadata.
         ...mapThreadPullRequests(
           pullRequestRows.map(mapPullRequestRow),
           threadRow.value.projectId,
@@ -3558,7 +3554,7 @@ pending_approval_requests AS (
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
-        ...mapThreadTeam(threadRow.value),
+        ...mapThreadTeam(threadRow.value.team), // FORK: Include Team Workflow metadata.
         ...mapThreadPullRequests(
           pullRequestRows.map(mapPullRequestRow),
           threadRow.value.projectId,

@@ -255,7 +255,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(StorageCleanup.layer),
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(ThreadSettlementReactor.layer),
-  Layer.provideMerge(TeamReportReactor.layer),
+  Layer.provideMerge(TeamReportReactor.layer), // FORK: Run Team Workflow reporting.
   Layer.provideMerge(PullRequestSyncReactor.layer),
   Layer.provideMerge(ThreadPullRequestReactor.layer),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
@@ -593,7 +593,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
 ).pipe(
-  Layer.provide(ThreadBootstrapLive),
+  Layer.provide(ThreadBootstrapLive), // FORK: Bootstrap Team Workflow workers.
   // FORK: Team Workflow branch integration runs outside the upstream Git service.
   Layer.provide(TeamBranchIntegration.layer),
   // Both transports consume the same service instance, so caches single-flight across clients

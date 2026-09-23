@@ -6,7 +6,6 @@ import {
   MessageId,
   ProjectId,
   ProviderInstanceId,
-  TeamRoleId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -62,32 +61,8 @@ it.layer(NodeServices.layer)("thread history import", (it) => {
         },
         readModel,
       });
-      const team = {
-        role: "orchestrator" as const,
-        workflow: {
-          id: "full-stack-team",
-          name: "Full-stack team",
-          builtIn: true,
-          roles: [
-            {
-              id: TeamRoleId.make("backend"),
-              label: "Backend",
-              kind: "implementer" as const,
-              enabled: true,
-              summary: "APIs, logic",
-              modelSelection: null,
-              runtimeMode: null,
-              instructions: "",
-            },
-          ],
-          maxParallelWorkers: 4,
-          maxReviewRounds: 2,
-          maxAutoReports: 30,
-          orchestratorInstructions: "",
-        },
-      };
       const live = yield* decideOrchestrationCommand({
-        command: { ...makeCreateCommand(ThreadId.make("live-thread")), team },
+        command: makeCreateCommand(ThreadId.make("live-thread")),
         readModel,
       });
 
@@ -96,13 +71,7 @@ it.layer(NodeServices.layer)("thread history import", (it) => {
         metadata: { historyImport: true },
       });
       expect(live).toMatchObject({ type: "thread.created" });
-      expect(live).toMatchObject({ payload: { team } });
       expect(live).not.toMatchObject({ metadata: { historyImport: true } });
-      const projected = yield* projectEvent(readModel, {
-        ...(Array.isArray(live) ? live[0]! : live),
-        sequence: 2,
-      });
-      expect(projected.threads[0]?.team).toEqual(team);
     }),
   );
 

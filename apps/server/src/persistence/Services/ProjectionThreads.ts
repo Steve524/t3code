@@ -14,7 +14,7 @@ import {
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
-  ThreadTeamInfo,
+  ThreadTeamInfo, // FORK: Team Workflow projection metadata.
   ThreadLinkedPullRequest,
   ThreadTitleState,
   ThreadId,
@@ -37,7 +37,7 @@ export const ProjectionThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
-  team: Schema.optional(Schema.NullOr(ThreadTeamInfo)),
+  team: Schema.optional(Schema.NullOr(ThreadTeamInfo)), // FORK: Persist Team Workflow metadata.
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurnId: Schema.NullOr(TurnId),

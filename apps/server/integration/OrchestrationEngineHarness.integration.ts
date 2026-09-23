@@ -66,6 +66,7 @@ import {
 } from "../src/orchestration/Services/OrchestrationEngine.ts";
 import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "../src/orchestration/ThreadSettlementReactor.ts";
+// FORK: Stub Team Workflow reporting in the shared integration harness.
 import * as TeamReportReactor from "../src/fork/orchestration/TeamReportReactor.ts";
 import * as PullRequestSyncReactor from "../src/orchestration/PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "../src/orchestration/ThreadPullRequestReactor.ts";
@@ -409,6 +410,7 @@ export const makeOrchestrationIntegrationHarness = (
           drain: Effect.void,
         }),
       ),
+      // FORK-BEGIN: Supply the Team Workflow report reactor test dependency.
       Layer.provideMerge(
         Layer.succeed(TeamReportReactor.TeamReportReactor, {
           start: () => Effect.void,
@@ -416,6 +418,7 @@ export const makeOrchestrationIntegrationHarness = (
           drainThrough: () => Effect.void,
         }),
       ),
+      // FORK-END
       Layer.provideMerge(
         Layer.succeed(PullRequestSyncReactor.PullRequestSyncReactor, {
           start: () => Effect.void,

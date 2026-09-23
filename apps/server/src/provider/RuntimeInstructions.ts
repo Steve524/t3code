@@ -14,13 +14,14 @@ export function buildRuntimeInstructions(runtime: {
   readonly harness: string;
   readonly model?: string | undefined;
   readonly reasoningEffort?: string | undefined;
-  readonly team?: RuntimeInstructionTeam | undefined;
+  readonly team?: RuntimeInstructionTeam | undefined; // FORK: Team Workflow context.
 }): string {
   const harness = toSingleLine(runtime.harness);
   const model = toSingleLine(runtime.model ?? "");
   const effort = toSingleLine(runtime.reasoningEffort ?? "");
   const modelInfo = model && model !== "auto" && model !== "default" ? `, as ${model}` : "";
   const effortInfo = effort ? ` with ${effort} reasoning effort` : "";
+  // FORK: Keep upstream prompt intact, then append Team Workflow instructions.
   const base = `<runtime_info>In case you're asked: you are running in T3 Code through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}`;
   return runtime.team ? `${base}\n\n${buildTeamInstructions(runtime.team)}` : base;
 }

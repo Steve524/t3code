@@ -23,7 +23,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const checkpointReactor = yield* CheckpointReactor;
   const threadDeletionReactor = yield* ThreadDeletionReactor;
   const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
-  const teamReportReactor = yield* TeamReportReactor.TeamReportReactor;
+  const teamReportReactor = yield* TeamReportReactor.TeamReportReactor; // FORK: Resolve Team Workflow reporting.
   const pullRequestSyncReactor = yield* PullRequestSyncReactor.PullRequestSyncReactor;
   const threadPullRequestReactor = yield* ThreadPullRequestReactor.ThreadPullRequestReactor;
   const agentAwarenessRelay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
@@ -36,7 +36,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* threadDeletionReactor.start();
     yield* threadPullRequestReactor.start();
     yield* threadSettlementReactor.start();
-    yield* teamReportReactor.start();
+    yield* teamReportReactor.start(); // FORK: Start Team Workflow reporting.
     yield* pullRequestSyncReactor.start();
     yield* agentAwarenessRelay.start();
     yield* storageCleanup.start();

@@ -10,6 +10,7 @@ import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "../ThreadSettlementReactor.ts";
+// FORK: Stub the Team Workflow reactor in this upstream reactor-start harness.
 import * as TeamReportReactor from "../../fork/orchestration/TeamReportReactor.ts";
 import * as PullRequestSyncReactor from "../PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "../ThreadPullRequestReactor.ts";
@@ -96,6 +97,7 @@ describe("OrchestrationReactor", () => {
             drain: Effect.void,
           }),
         ),
+        // FORK-BEGIN: Stub Team Workflow reporting for the reactor order assertion.
         Layer.provideMerge(
           Layer.succeed(TeamReportReactor.TeamReportReactor, {
             start: () => {
@@ -106,6 +108,7 @@ describe("OrchestrationReactor", () => {
             drainThrough: () => Effect.void,
           }),
         ),
+        // FORK-END
         Layer.provideMerge(
           Layer.succeed(PullRequestSyncReactor.PullRequestSyncReactor, {
             start: () => {
@@ -139,7 +142,7 @@ describe("OrchestrationReactor", () => {
       "thread-deletion-reactor",
       "thread-pull-request-reactor",
       "thread-settlement-reactor",
-      "team-report-reactor",
+      "team-report-reactor", // FORK: Verify Team Workflow reactor starts.
       "pull-request-sync-reactor",
       "agent-awareness-relay",
       "storage-cleanup",

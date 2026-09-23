@@ -783,7 +783,7 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  team: Schema.optional(ThreadTeamInfo),
+  team: Schema.optional(ThreadTeamInfo), // FORK: Optional Team Workflow metadata.
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   // Optional so payloads from pre-link servers still decode.
   pullRequests: Schema.Array(ThreadPullRequestLink).pipe(
@@ -871,7 +871,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  team: Schema.optional(ThreadTeamInfo),
+  team: Schema.optional(ThreadTeamInfo), // FORK: Optional Team Workflow shell metadata.
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.Array(ThreadPullRequestLink).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -1108,7 +1108,7 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  team: Schema.optional(ThreadTeamInfo),
+  team: Schema.optional(ThreadTeamInfo), // FORK: Create a team thread.
   createdAt: IsoDateTime,
   historyImport: Schema.optional(Schema.Literal(true)),
 });
@@ -1269,7 +1269,7 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  team: Schema.optional(ThreadTeamInfo),
+  team: Schema.optional(ThreadTeamInfo), // FORK: Bootstrap a team thread.
   createdAt: IsoDateTime,
 });
 
@@ -1742,7 +1742,7 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  team: Schema.optional(ThreadTeamInfo),
+  team: Schema.optional(ThreadTeamInfo), // FORK: Persist team creation event.
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

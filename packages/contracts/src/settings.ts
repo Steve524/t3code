@@ -1068,7 +1068,7 @@ export const ServerSettings = Schema.Struct({
   continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
-  teamWorkflows: Schema.Array(TeamWorkflow).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  teamWorkflows: Schema.Array(TeamWorkflow).pipe(Schema.withDecodingDefault(Effect.succeed([]))), // FORK: Team Workflow presets.
   /**
    * Whether agents may drive the in-app preview browser. Turning this off
    * withholds the MCP credential, so the `t3-code` server (and with it every
@@ -1426,7 +1426,7 @@ export const ServerSettingsPatch = Schema.Struct({
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
-  teamWorkflows: Schema.optionalKey(Schema.Array(TeamWorkflow)),
+  teamWorkflows: Schema.optionalKey(Schema.Array(TeamWorkflow)), // FORK: Edit Team Workflow presets.
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   projectAgentBrowserAccessOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(Schema.Boolean)),

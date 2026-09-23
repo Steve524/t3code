@@ -430,7 +430,7 @@ export function projectEvent(
             interactionMode: payload.interactionMode,
             branch: payload.branch,
             worktreePath: payload.worktreePath,
-            ...(payload.team === undefined ? {} : { team: payload.team }),
+            ...(payload.team === undefined ? {} : { team: payload.team }), // FORK: Project Team Workflow metadata.
             pullRequests: [],
             branchPullRequest: null,
             latestTurn: null,

@@ -25,7 +25,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionStartInput,
-  type ThreadTeamInfo,
+  type ThreadTeamInfo, // FORK: Team Workflow provider capability test.
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -34,6 +34,7 @@ import {
   serializeAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
 import { createModelSelection } from "@t3tools/shared/model";
+// FORK: Reuse provider session harness for Team Workflow capability proof.
 import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
 import { it, assert, describe, vi } from "@effect/vitest";
 import { afterAll } from "vite-plus/test";
@@ -4947,10 +4948,12 @@ describe("agent browser access", () => {
     access: boolean | { readonly browser: boolean; readonly device: boolean },
     threadId: ThreadId,
     projectOverride?: boolean | { readonly browser?: boolean; readonly device?: boolean },
+    // FORK-BEGIN: Allow Team Workflow identities in the existing provider harness.
     options?: {
       readonly withoutOrchestration?: boolean;
       readonly team?: ThreadTeamInfo;
     },
+    // FORK-END
   ) =>
     Effect.gen(function* () {
       const enableAgentBrowserAccess = typeof access === "boolean" ? access : access.browser;
@@ -4989,6 +4992,7 @@ describe("agent browser access", () => {
         getThreadRuntimeContext: () => Effect.die("unused"),
         getThreadShellById: (requestedThreadId) =>
           Effect.gen(function* () {
+            // FORK-BEGIN: Resolve the worker's orchestrator in the provider harness.
             const isWorkerOrchestrator =
               options?.team?.role === "worker" &&
               requestedThreadId === options.team.orchestratorThreadId;
@@ -5007,6 +5011,7 @@ describe("agent browser access", () => {
                   : options?.team === undefined
                     ? {}
                     : { team: options.team }),
+                // FORK-END
                 latestTurn: null,
                 createdAt: "2026-01-01T00:00:00.000Z",
                 updatedAt: "2026-01-01T00:00:00.000Z",
@@ -5092,6 +5097,7 @@ describe("agent browser access", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  // FORK-BEGIN: Team Workflow provider capability test uses this private harness.
   it.effect("grants team tools only to orchestrator threads", () =>
     Effect.gen(function* () {
       const orchestratorId = asThreadId("thread-team-orchestrator");
@@ -5115,6 +5121,7 @@ describe("agent browser access", () => {
       assert.deepEqual(worker, [{ threadId: workerId, capabilities: ["pull-requests"] }]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
+  // FORK-END
 
   it.effect("issues a credential with preview when agent browser access is on", () =>
     Effect.gen(function* () {

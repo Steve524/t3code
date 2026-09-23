@@ -1,4 +1,5 @@
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+// FORK: Pass Team Workflow context to provider sessions.
 import type { RuntimeInstructionTeam } from "../provider/RuntimeInstructions.ts";
 
 export interface McpProviderSessionConfig {
@@ -10,7 +11,7 @@ export interface McpProviderSessionConfig {
   readonly authorizationHeader: string;
   /** Capabilities the credential grants ("preview", "device"). */
   readonly capabilities: ReadonlySet<string>;
-  /** Resolved once at session start so every provider receives the same team prompt. */
+  /** FORK: Resolved once at session start so every provider receives the same Team Workflow prompt. */
   readonly team?: RuntimeInstructionTeam;
   /**
    * Set when the session may drive devices. Adapters spread this into the

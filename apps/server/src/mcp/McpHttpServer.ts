@@ -611,9 +611,11 @@ export const PullRequestsToolkitRegistrationLive = McpServer.toolkit(PullRequest
   Layer.provide(PullRequestsToolkitHandlersLive),
 );
 
+// FORK-BEGIN: Register Team Workflow MCP tools.
 export const TeamToolkitRegistrationLive = McpServer.toolkit(TeamToolkit).pipe(
   Layer.provide(TeamToolkitHandlersLive),
 );
+// FORK-END
 
 const DeviceStandardToolkitRegistrationLive = McpServer.toolkit(DeviceStandardToolkit).pipe(
   Layer.provide(DeviceStandardToolkitHandlersLive),
@@ -638,6 +640,6 @@ const McpTransportLive = McpServer.layerHttp({
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
-  TeamToolkitRegistrationLive,
+  TeamToolkitRegistrationLive, // FORK: Expose Team Workflow tools.
   DeviceToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

@@ -43,6 +43,7 @@ import {
   buildCodexDeveloperInstructions,
   type T3CodeToolAvailability,
 } from "../CodexDeveloperInstructions.ts";
+// FORK: Carry Team Workflow context through Codex session setup.
 import type { RuntimeInstructionTeam } from "../RuntimeInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
@@ -182,7 +183,7 @@ export interface CodexSessionRuntimeOptions {
   readonly appServerArgs?: ReadonlyArray<string>;
   /** Capabilities the session's `t3-code` MCP credential grants; drives the prompt blocks. */
   readonly mcpCapabilities?: ReadonlySet<string>;
-  readonly team?: RuntimeInstructionTeam | undefined;
+  readonly team?: RuntimeInstructionTeam | undefined; // FORK: Team Workflow context.
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
@@ -587,7 +588,7 @@ function buildCodexCollaborationMode(input: {
   readonly model?: string;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
   readonly browserToolsAvailable?: boolean | T3CodeToolAvailability;
-  readonly team?: RuntimeInstructionTeam | undefined;
+  readonly team?: RuntimeInstructionTeam | undefined; // FORK: Team Workflow context.
 }): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
   if (input.interactionMode === undefined) {
     return undefined;
@@ -601,7 +602,7 @@ function buildCodexCollaborationMode(input: {
       reasoning_effort: reasoningEffort,
       developer_instructions: buildCodexDeveloperInstructions(
         input.interactionMode,
-        { model, reasoningEffort, team: input.team },
+        { model, reasoningEffort, team: input.team }, // FORK: Add Team Workflow instructions.
         input.browserToolsAvailable ?? true,
       ),
     },
@@ -626,7 +627,7 @@ export function buildTurnStartParams(input: {
   readonly interactionMode?: ProviderInteractionMode;
   /** Defaults to true so callers that predate the agent-access gate are unchanged. */
   readonly browserToolsAvailable?: boolean | T3CodeToolAvailability;
-  readonly team?: RuntimeInstructionTeam | undefined;
+  readonly team?: RuntimeInstructionTeam | undefined; // FORK: Team Workflow context.
 }): Effect.Effect<
   CodexTurnStartParamsWithCollaborationMode,
   CodexErrors.CodexAppServerProtocolParseError
@@ -2533,7 +2534,7 @@ export const makeCodexSessionRuntime = (
               options.appServerArgs,
               options.mcpCapabilities,
             ),
-            team: options.team,
+            team: options.team, // FORK: Pass Team Workflow context.
           });
           const rawResponse = yield* client.raw.request("turn/start", params);
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(

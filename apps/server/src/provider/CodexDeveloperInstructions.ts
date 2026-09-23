@@ -1,5 +1,7 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
-import { buildRuntimeInstructions, type RuntimeInstructionTeam } from "./RuntimeInstructions.ts";
+import { buildRuntimeInstructions } from "./RuntimeInstructions.ts";
+// FORK: Carry Team Workflow context into Codex instructions.
+import type { RuntimeInstructionTeam } from "./RuntimeInstructions.ts";
 
 const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
@@ -195,7 +197,7 @@ ${browserToolInstructions(browserToolsAvailable)}
 export interface CodexRuntimeInfo {
   readonly model: string;
   readonly reasoningEffort: string;
-  readonly team?: RuntimeInstructionTeam | undefined;
+  readonly team?: RuntimeInstructionTeam | undefined; // FORK: Team Workflow context.
 }
 
 export function buildCodexDeveloperInstructions(

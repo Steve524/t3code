@@ -273,7 +273,7 @@ export function applyServerSettingsPatch(
     providerHealthRefreshInterval,
     backgroundActivityProfile,
     backgroundActivity,
-    teamWorkflows: teamWorkflowsPatch,
+    teamWorkflows: teamWorkflowsPatch, // FORK: Extract Team Workflow patch.
     worktreeCleanup: worktreeCleanupPatch,
     // Merged per entry below; its `null` removals must not reach deepMerge.
     usageLimitSources: usageLimitSourcesPatch,
@@ -361,7 +361,7 @@ export function applyServerSettingsPatch(
     ...(patch.providerInstances !== undefined
       ? { providerInstances: patch.providerInstances }
       : {}),
-    ...(teamWorkflowsPatch !== undefined ? { teamWorkflows: teamWorkflowsPatch } : {}),
+    ...(teamWorkflowsPatch !== undefined ? { teamWorkflows: teamWorkflowsPatch } : {}), // FORK: Apply Team Workflow patch.
     ...(projectSettingsOverridesPatch !== undefined
       ? {
           projectSettingsOverrides: Object.fromEntries(

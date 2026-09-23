@@ -233,7 +233,7 @@ export const make = Effect.gen(function* () {
       environmentThemes: true,
       usageLimitSources: true,
       usagePriceOverrides: true,
-      teamWorkflows: true,
+      teamWorkflows: true, // FORK: Advertise Team Workflow presets.
       threadPinning: true,
       threadPinReorder: true,
       threadActiveReorder: true,

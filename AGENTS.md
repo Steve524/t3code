@@ -1,3 +1,5 @@
+> **FORK NOTICE:** This is Steve524/t3code, a fork of pingdotgg/t3code. Read `FORK.md` before doing any work; its rules override this file where they conflict. @FORK.md
+
 # T3 Code
 
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity) and serves web, desktop, and mobile clients.

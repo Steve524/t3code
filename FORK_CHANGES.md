@@ -62,3 +62,7 @@ Fork-only implementation lives under adjacent `fork/` directories. This is the c
 | `packages/shared/src/serverSettings.ts`                             | Applies Team Workflow settings patches in the existing shared patch function.                                                                                            |
 
 The four upstream test-file exceptions above retain their private test harnesses; all standalone Team Workflow tests live under `fork/`. No upstream file was renamed, moved, or deleted.
+
+## Known Windows test failure
+
+`apps/server/src/mcp/McpHttpServer.test.ts:341` fails in "saves the snapshot PNG on request and reports its path". The assertion searches JSON response text for the raw Windows screenshot path, but JSON escapes its backslashes. The test file matches upstream at the fork point. This restructure did not change the assertion. When revisiting it, parse the JSON and compare `screenshotPath`. No fix was made here.

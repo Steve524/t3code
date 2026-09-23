@@ -16,6 +16,7 @@ import { OrchestrationEngineService } from "../orchestration/Services/Orchestrat
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ThreadBootstrap from "../fork/orchestration/Services/ThreadBootstrap.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import * as TeamBranchIntegration from "../fork/git/TeamBranchIntegration.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
 import * as ServerConfig from "../config.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
@@ -76,6 +77,7 @@ const TeamTestLayer = McpHttpServer.TeamToolkitRegistrationLive.pipe(
       Layer.mock(ThreadBootstrap.ThreadBootstrap)({}),
       Layer.mock(ProviderInstanceRegistry)({}),
       Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+      Layer.mock(TeamBranchIntegration.TeamBranchIntegration)({}),
       NodeServices.layer,
     ),
   ),

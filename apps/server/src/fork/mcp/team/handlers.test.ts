@@ -23,6 +23,7 @@ import * as Stream from "effect/Stream";
 import type { Tool } from "effect/unstable/ai";
 
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
+import * as TeamBranchIntegration from "../../git/TeamBranchIntegration.ts";
 import * as ThreadBootstrap from "../../orchestration/Services/ThreadBootstrap.ts";
 import {
   OrchestrationEngineService,
@@ -168,7 +169,7 @@ const testCrypto = Crypto.make({
 interface HarnessOptions {
   readonly threads?: ReadonlyArray<OrchestrationThreadShell>;
   readonly providerAvailable?: boolean;
-  readonly integrateResult?: GitWorkflowService.GitIntegrateBranchesResult;
+  readonly integrateResult?: TeamBranchIntegration.GitIntegrateBranchesResult;
 }
 
 const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: HarnessOptions = {}) {
@@ -176,7 +177,7 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
   const bootstrapCommands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
   const engineCommands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
   const integrationInputs = yield* Ref.make<
-    ReadonlyArray<GitWorkflowService.GitIntegrateBranchesInput>
+    ReadonlyArray<TeamBranchIntegration.GitIntegrateBranchesInput>
   >([]);
   const recordBootstrap: ThreadBootstrap.ThreadBootstrapShape["dispatch"] = (command) =>
     Ref.update(bootstrapCommands, (commands) => [...commands, command]).pipe(
@@ -247,6 +248,8 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
           nextCursor: null,
           totalCount: 1,
         }),
+    }),
+    Layer.mock(TeamBranchIntegration.TeamBranchIntegration)({
       integrateBranches: (input) =>
         Ref.update(integrationInputs, (inputs) => [...inputs, input]).pipe(
           Effect.as(

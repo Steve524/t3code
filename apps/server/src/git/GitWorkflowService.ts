@@ -110,33 +110,8 @@ export class GitWorkflowService extends Context.Service<
       readonly oldBranch: string;
       readonly newBranch: string;
     }) => Effect.Effect<{ readonly branch: string }, GitManagerServiceError>;
-    readonly integrateBranches: (
-      input: GitIntegrateBranchesInput,
-    ) => Effect.Effect<GitIntegrateBranchesResult, GitCommandError>;
   }
 >()("t3/git/GitWorkflowService") {}
-
-export interface GitIntegrateBranchesInput {
-  readonly cwd: string;
-  readonly baseBranch: string;
-  readonly integrationBranch: string;
-  readonly branches: ReadonlyArray<string>;
-}
-
-export type GitIntegrateBranchesResult =
-  | {
-      readonly status: "merged";
-      readonly branch: string;
-      readonly worktreePath: string;
-      readonly headSha: string;
-    }
-  | {
-      readonly status: "conflict";
-      readonly branch: string;
-      readonly worktreePath: string;
-      readonly conflictingBranch: string;
-      readonly conflictingFiles: ReadonlyArray<string>;
-    };
 
 function nonRepositoryLocalStatus(): VcsStatusLocalResult {
   return {
@@ -294,98 +269,6 @@ export const make = Effect.gen(function* () {
     (input: Input) =>
       ensureGit(operation, input.cwd).pipe(Effect.andThen(run(input)));
 
-  const integrateBranches = Effect.fn("GitWorkflowService.integrateBranches")(function* (
-    input: GitIntegrateBranchesInput,
-  ) {
-    const refs = yield* git.listRefs({
-      cwd: input.cwd,
-      query: input.integrationBranch,
-      refKind: "local",
-      refresh: true,
-    });
-    const existing = refs.refs.find((ref) => !ref.isRemote && ref.name === input.integrationBranch);
-    const worktreePath =
-      existing?.worktreePath ??
-      (yield* git.createWorktree({
-        cwd: input.cwd,
-        refName: existing ? input.integrationBranch : input.baseBranch,
-        ...(existing ? {} : { newRefName: input.integrationBranch }),
-        path: null,
-      })).worktree.path;
-    const initialStatus = yield* git.statusDetailsLocal(worktreePath);
-    if (initialStatus.hasWorkingTreeChanges) {
-      return yield* new GitCommandError({
-        operation: "GitWorkflowService.integrateBranches",
-        command: "git status",
-        cwd: worktreePath,
-        detail: "The integration worktree has uncommitted changes.",
-      });
-    }
-
-    for (const branch of input.branches) {
-      const merge = yield* git.execute({
-        operation: "GitWorkflowService.integrateBranches",
-        cwd: worktreePath,
-        args: ["merge", "--no-ff", "--no-edit", branch],
-        allowNonZeroExit: true,
-      });
-      if (merge.exitCode === 0) continue;
-
-      const conflicts = yield* git.execute({
-        operation: "GitWorkflowService.integrateBranches.conflicts",
-        cwd: worktreePath,
-        args: ["diff", "--name-only", "--diff-filter=U", "-z"],
-        allowNonZeroExit: true,
-      });
-      const conflictingFiles = conflicts.stdout.split("\0").filter((path) => path.length > 0);
-      const abort = yield* git.execute({
-        operation: "GitWorkflowService.integrateBranches.abort",
-        cwd: worktreePath,
-        args: ["merge", "--abort"],
-        allowNonZeroExit: true,
-      });
-
-      if (conflictingFiles.length === 0) {
-        return yield* new GitCommandError({
-          operation: "GitWorkflowService.integrateBranches",
-          command: "git merge",
-          cwd: worktreePath,
-          exitCode: merge.exitCode,
-          detail: merge.stderr.trim() || `Could not merge branch ${branch}.`,
-        });
-      }
-      const finalStatus = yield* git.statusDetailsLocal(worktreePath);
-      if (abort.exitCode !== 0 || finalStatus.hasWorkingTreeChanges) {
-        return yield* new GitCommandError({
-          operation: "GitWorkflowService.integrateBranches.abort",
-          command: "git merge --abort",
-          cwd: worktreePath,
-          exitCode: abort.exitCode,
-          detail: abort.stderr.trim() || "The conflicted merge could not be cleaned up.",
-        });
-      }
-      return {
-        status: "conflict" as const,
-        branch: input.integrationBranch,
-        worktreePath,
-        conflictingBranch: branch,
-        conflictingFiles,
-      };
-    }
-
-    const head = yield* git.execute({
-      operation: "GitWorkflowService.integrateBranches.head",
-      cwd: worktreePath,
-      args: ["rev-parse", "HEAD"],
-    });
-    return {
-      status: "merged" as const,
-      branch: input.integrationBranch,
-      worktreePath,
-      headSha: head.stdout.trim(),
-    };
-  });
-
   return GitWorkflowService.of({
     isRepository: (cwd) =>
       registry.detect({ cwd }).pipe(
@@ -496,10 +379,6 @@ export const make = Effect.gen(function* () {
     renameBranch: (input) =>
       ensureGit("GitWorkflowService.renameBranch", input.cwd).pipe(
         Effect.andThen(git.renameBranch(input)),
-      ),
-    integrateBranches: (input) =>
-      ensureGitCommand("GitWorkflowService.integrateBranches", input.cwd).pipe(
-        Effect.andThen(integrateBranches(input)),
       ),
   });
 });

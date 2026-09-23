@@ -85,6 +85,7 @@ import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderComma
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 // FORK: Team Workflow workers use a server-owned bootstrap service.
 import { ThreadBootstrapLive } from "./fork/orchestration/Layers/ThreadBootstrap.ts";
+import * as TeamBranchIntegration from "./fork/git/TeamBranchIntegration.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
 import * as TeamReportReactor from "./fork/orchestration/TeamReportReactor.ts";
@@ -593,6 +594,8 @@ export const makeRoutesLayer = Layer.mergeAll(
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
 ).pipe(
   Layer.provide(ThreadBootstrapLive),
+  // FORK: Team Workflow branch integration runs outside the upstream Git service.
+  Layer.provide(TeamBranchIntegration.layer),
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),

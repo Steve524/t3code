@@ -15,6 +15,7 @@ import * as Tool from "effect/unstable/ai/Tool";
 import * as Toolkit from "effect/unstable/ai/Toolkit";
 
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
+import * as TeamBranchIntegration from "../../git/TeamBranchIntegration.ts";
 import * as ThreadBootstrap from "../../orchestration/Services/ThreadBootstrap.ts";
 import * as OrchestrationEngine from "../../../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -24,6 +25,7 @@ import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
   GitWorkflowService.GitWorkflowService,
+  TeamBranchIntegration.TeamBranchIntegration,
   OrchestrationEngine.OrchestrationEngineService,
   ProjectionSnapshotQuery.ProjectionSnapshotQuery,
   ProviderInstanceRegistry.ProviderInstanceRegistry,

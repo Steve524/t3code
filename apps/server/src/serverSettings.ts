@@ -56,7 +56,8 @@ import {
   deriveLegacyProjectOverrides,
   isModelSelectionProviderEnabled,
 } from "@t3tools/shared/serverSettings";
-import { BUILT_IN_TEAM_WORKFLOW, resolveTeamWorkflows } from "@t3tools/shared/team";
+// FORK: Team Workflow defaults and normalization live in the fork.
+import { DEFAULT_TEAM_WORKFLOWS, resolveTeamWorkflowSettings } from "./fork/serverSettings.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 
 export { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
@@ -122,10 +123,8 @@ const normalizeServerSettings = (
   encodeServerSettings(settings).pipe(
     Effect.flatMap(decodeServerSettings),
     Effect.map(foldProviderInstanceEnabledFlags),
-    Effect.map((settings) => ({
-      ...settings,
-      teamWorkflows: [...resolveTeamWorkflows(settings.teamWorkflows)],
-    })),
+    // FORK: Resolve the built-in Team Workflow preset.
+    Effect.map(resolveTeamWorkflowSettings),
     Effect.map((next) => ({ ...next, ...deriveLegacyProjectOverrides(next) })),
     Effect.mapError(
       (cause) =>
@@ -368,7 +367,8 @@ const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
 // Preserve both enabled states because provider history cannot recover a new opt-in.
 const PERSISTED_SERVER_SETTINGS_DEFAULTS = {
   ...DEFAULT_SERVER_SETTINGS,
-  teamWorkflows: [BUILT_IN_TEAM_WORKFLOW],
+  // FORK: Persist the built-in Team Workflow preset by default.
+  teamWorkflows: DEFAULT_TEAM_WORKFLOWS,
   providers: {
     ...DEFAULT_SERVER_SETTINGS.providers,
     cursor: { ...DEFAULT_SERVER_SETTINGS.providers.cursor, enabled: undefined },
@@ -641,7 +641,8 @@ const make = Effect.gen(function* () {
 
     const loaded = foldProviderInstanceEnabledFlags(
       restoreUsedProviders(
-        { ...settings, teamWorkflows: [...resolveTeamWorkflows(settings.teamWorkflows)] },
+        // FORK: Apply the same preset on settings load.
+        resolveTeamWorkflowSettings(settings),
         persisted,
         providerHistory,
       ),

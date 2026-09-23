@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
+import * as TeamBranchIntegration from "../../git/TeamBranchIntegration.ts";
 import * as ThreadBootstrap from "../../orchestration/Services/ThreadBootstrap.ts";
 import * as OrchestrationEngine from "../../../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -71,6 +72,7 @@ const make = Effect.gen(function* () {
   const providers = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const bootstrap = yield* ThreadBootstrap.ThreadBootstrap;
   const git = yield* GitWorkflowService.GitWorkflowService;
+  const integration = yield* TeamBranchIntegration.TeamBranchIntegration;
 
   const randomId = <A>(makeId: (value: string) => A) =>
     crypto.randomUUIDv4.pipe(Effect.orDie, Effect.map(makeId));
@@ -352,7 +354,7 @@ const make = Effect.gen(function* () {
           }
         }
 
-        const result = yield* git
+        const result = yield* integration
           .integrateBranches({
             cwd: project.value.workspaceRoot,
             baseBranch,

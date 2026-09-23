@@ -16,5 +16,5 @@ export interface ThreadBootstrapShape {
 }
 
 export class ThreadBootstrap extends Context.Service<ThreadBootstrap, ThreadBootstrapShape>()(
-  "t3/orchestration/Services/ThreadBootstrap",
+  "t3/fork/orchestration/Services/ThreadBootstrap",
 ) {}

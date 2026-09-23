@@ -27,11 +27,11 @@ import { describe, expect } from "vite-plus/test";
 import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
-} from "./Services/OrchestrationEngine.ts";
+} from "../../orchestration/Services/OrchestrationEngine.ts";
 import {
   ProjectionSnapshotQuery,
   type ProjectionSnapshotQueryShape,
-} from "./Services/ProjectionSnapshotQuery.ts";
+} from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { layer, TeamReportReactor } from "./TeamReportReactor.ts";
 
 const NOW = "2026-09-16T00:00:00.000Z";

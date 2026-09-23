@@ -14,7 +14,7 @@ import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/uns
 
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as ThreadBootstrap from "../orchestration/Services/ThreadBootstrap.ts";
+import * as ThreadBootstrap from "../fork/orchestration/Services/ThreadBootstrap.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
 import * as ServerConfig from "../config.ts";

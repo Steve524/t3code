@@ -8,7 +8,7 @@ import { act, type ComponentProps, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import type { ScopedSettingsPatch } from "./scopedSettings";
+import type { ScopedSettingsPatch } from "../../../components/settings/scopedSettings";
 
 const state = vi.hoisted(() => ({
   settings: undefined as unknown as UnifiedSettings,

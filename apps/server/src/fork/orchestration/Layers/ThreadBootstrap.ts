@@ -16,14 +16,14 @@ import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
-import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
-import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
-import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
-import * as TerminalManager from "../../terminal/Manager.ts";
-import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
-import * as OrchestrationEngine from "../Services/OrchestrationEngine.ts";
+import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
+import * as ProjectSetupScriptRunner from "../../../project/ProjectSetupScriptRunner.ts";
+import * as WorktreeSetupTracker from "../../../project/WorktreeSetupTracker.ts";
+import * as TerminalManager from "../../../terminal/Manager.ts";
+import * as VcsStatusBroadcaster from "../../../vcs/VcsStatusBroadcaster.ts";
+import * as OrchestrationEngine from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ThreadBootstrap, type ThreadBootstrapShape } from "../Services/ThreadBootstrap.ts";
-import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
+import { ThreadDeletionReactor } from "../../../orchestration/Services/ThreadDeletionReactor.ts";
 
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);

@@ -39,7 +39,8 @@ import {
   type ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
-import { TeamWorkflow } from "./team.ts";
+// FORK: Team Workflow settings use the fork contract.
+import { TeamWorkflow } from "./fork/team.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 

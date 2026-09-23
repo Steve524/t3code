@@ -127,7 +127,7 @@ import {
   startNewThreadFromContext,
   startOrchestratorThreadFromContext,
 } from "../lib/chatThreadActions";
-import { firstTeamWorkflow } from "../teamWorkflows";
+import { firstTeamWorkflow } from "../fork/teamWorkflows";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";

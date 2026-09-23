@@ -21,9 +21,9 @@ import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import { forkParked } from "../serverActivation.ts";
-import * as OrchestrationEngine from "./Services/OrchestrationEngine.ts";
-import * as ProjectionSnapshotQuery from "./Services/ProjectionSnapshotQuery.ts";
+import { forkParked } from "../../serverActivation.ts";
+import * as OrchestrationEngine from "../../orchestration/Services/OrchestrationEngine.ts";
+import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 
 const TEAM_REPORT_KIND = "team-report";
 const ASSISTANT_MESSAGE_LIMIT = 1_500;
@@ -63,7 +63,7 @@ export class TeamReportReactor extends Context.Service<
     readonly drain: Effect.Effect<void>;
     readonly drainThrough: (sequence: number) => Effect.Effect<void>;
   }
->()("t3/orchestration/TeamReportReactor") {}
+>()("t3/fork/orchestration/TeamReportReactor") {}
 
 const isBusy = (thread: Pick<OrchestrationThreadShell, "session" | "latestTurn">) =>
   thread.session?.status === "starting" ||

@@ -112,8 +112,8 @@
       "import": "./src/serverSettings.ts"
     },
     "./team": {
-      "types": "./src/team.ts",
-      "import": "./src/team.ts"
+      "types": "./src/fork/team.ts",
+      "import": "./src/fork/team.ts"
     },
     "./backgroundActivitySettings": {
       "types": "./src/backgroundActivitySettings.ts",

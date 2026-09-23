@@ -7,11 +7,11 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
-import * as ThreadBootstrap from "../../../orchestration/Services/ThreadBootstrap.ts";
+import * as ThreadBootstrap from "../../orchestration/Services/ThreadBootstrap.ts";
 import * as OrchestrationEngine from "../../../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProviderInstanceRegistry from "../../../provider/Services/ProviderInstanceRegistry.ts";
-import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import {
   TeamBaseBranchUnavailableError,
   TeamIntegrationBranchOwnershipError,

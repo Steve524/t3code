@@ -31,8 +31,9 @@ import {
 } from "./toolkits/preview/tools.ts";
 import { PullRequestsToolkitHandlersLive } from "./toolkits/pullRequests/handlers.ts";
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
-import { TeamToolkitHandlersLive } from "./toolkits/team/handlers.ts";
-import { TeamToolkit } from "./toolkits/team/tools.ts";
+// FORK: Register Team Workflow tools.
+import { TeamToolkitHandlersLive } from "../fork/mcp/team/handlers.ts";
+import { TeamToolkit } from "../fork/mcp/team/tools.ts";
 import {
   DeviceScreenshotToolkitHandlersLive,
   DeviceStandardToolkitHandlersLive,

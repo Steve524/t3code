@@ -9,34 +9,51 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
 import { ChevronDownIcon, InfoIcon, RotateCcwIcon } from "lucide-react";
 
-import { getCustomModelOptionsByInstance } from "../../modelSelection";
+import { getCustomModelOptionsByInstance } from "../../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
   resolveDefaultProviderModelSelection,
   sortProviderInstanceEntries,
-} from "../../providerInstances";
-import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
-import { ProviderModelPicker } from "../chat/ProviderModelPicker";
-import { runtimeModeConfig, runtimeModeOptions } from "../chat/runtimeModeConfig";
-import { TraitsPicker } from "../chat/TraitsPicker";
-import { Button } from "../ui/button";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
-import { NumberField, NumberFieldGroup, NumberFieldInput } from "../ui/number-field";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { Switch } from "../ui/switch";
-import { Textarea } from "../ui/textarea";
-import { searchableSetting } from "./settingsSearch";
+} from "../../../providerInstances";
+import { EMPTY_SERVER_PROVIDERS } from "../../../state/server";
+import { ProviderModelPicker } from "../../../components/chat/ProviderModelPicker";
+import { runtimeModeConfig, runtimeModeOptions } from "../../../components/chat/runtimeModeConfig";
+import { TraitsPicker } from "../../../components/chat/TraitsPicker";
+import { Button } from "../../../components/ui/button";
+import {
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+} from "../../../components/ui/collapsible";
+import {
+  NumberField,
+  NumberFieldGroup,
+  NumberFieldInput,
+} from "../../../components/ui/number-field";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../../../components/ui/select";
+import { Switch } from "../../../components/ui/switch";
+import { Textarea } from "../../../components/ui/textarea";
+import { searchableSetting } from "../../../components/settings/settingsSearch";
 import {
   SETTINGS_PICKER_TRIGGER_CLASSNAME,
   SettingResetButton,
   SettingsPageContainer,
   SettingsRow,
   SettingsSection,
-} from "./settingsLayout";
-import { SettingsScopeNotice } from "./SettingsScopeNotice";
-import { useSettingsScope } from "./SettingsScopeContext";
-import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+} from "../../../components/settings/settingsLayout";
+import { SettingsScopeNotice } from "../../../components/settings/SettingsScopeNotice";
+import { useSettingsScope } from "../../../components/settings/SettingsScopeContext";
+import {
+  useScopedSettings,
+  useUpdateScopedSettings,
+} from "../../../components/settings/useScopedSettings";
 
 const WORKFLOW_ID = BUILT_IN_TEAM_WORKFLOW.id;
 const INHERIT_RUNTIME_MODE = "same-as-orchestrator";

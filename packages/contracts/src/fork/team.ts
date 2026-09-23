@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
-import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { ModelSelection, RuntimeMode } from "./orchestration.ts";
+import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
+import { ModelSelection, RuntimeMode } from "../orchestration.ts";
 
 export const TeamRoleId = TrimmedNonEmptyString.pipe(Schema.brand("TeamRoleId"));
 export type TeamRoleId = typeof TeamRoleId.Type;

@@ -23,7 +23,7 @@ import * as Stream from "effect/Stream";
 import type { Tool } from "effect/unstable/ai";
 
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
-import * as ThreadBootstrap from "../../../orchestration/Services/ThreadBootstrap.ts";
+import * as ThreadBootstrap from "../../orchestration/Services/ThreadBootstrap.ts";
 import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
@@ -31,7 +31,7 @@ import {
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import type { ProviderInstance } from "../../../provider/ProviderDriver.ts";
 import { ProviderInstanceRegistry } from "../../../provider/Services/ProviderInstanceRegistry.ts";
-import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import { TeamToolkitHandlersLive } from "./handlers.ts";
 import { TeamToolkit } from "./tools.ts";
 

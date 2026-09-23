@@ -80,7 +80,8 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 import { truncate } from "@t3tools/shared/String";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
-import { resolveComposerTeamWorkflow } from "../teamWorkflows";
+// FORK: Resolve the selected Team Workflow for this thread.
+import { resolveComposerTeamWorkflow } from "../fork/teamWorkflows";
 import {
   getTerminalLabel,
   nextTerminalId,
@@ -219,7 +220,7 @@ import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
-import { TeamPanel } from "./TeamPanel";
+import { TeamPanel } from "../fork/components/TeamPanel";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
 import { useDeviceState } from "~/state/device";

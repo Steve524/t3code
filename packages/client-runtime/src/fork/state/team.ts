@@ -5,7 +5,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 
-import type { EnvironmentThreadShell } from "./models.ts";
+import type { EnvironmentThreadShell } from "../../state/models.ts";
 
 export type TeamWorkerStatus =
   | "idle"

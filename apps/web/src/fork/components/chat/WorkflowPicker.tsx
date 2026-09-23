@@ -1,16 +1,16 @@
 import type { TeamWorkflow } from "@t3tools/contracts";
 import { WorkflowIcon } from "lucide-react";
 
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../../../components/ui/tooltip";
+import { Select, SelectItem, SelectPopup, SelectValue } from "../../../components/ui/select";
 import {
   ComposerControl,
   ComposerControlIcon,
   ComposerSelectControl,
   type ComposerControlSize,
-} from "./ComposerControl";
-import { composerFloatingLayerProps } from "./composerEventScope";
-import { useComposerMenuState } from "./useComposerMenuState";
+} from "../../../components/chat/ComposerControl";
+import { composerFloatingLayerProps } from "../../../components/chat/composerEventScope";
+import { useComposerMenuState } from "../../../components/chat/useComposerMenuState";
 
 const NO_WORKFLOW = "none";
 

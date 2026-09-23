@@ -31,7 +31,8 @@ import {
   PullRequestReviewDecision,
   PullRequestState,
 } from "./pullRequest.ts";
-import { ThreadTeamInfo } from "./team.ts";
+// FORK: Team Workflow thread metadata is defined in the fork contract.
+import { ThreadTeamInfo } from "./fork/team.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",

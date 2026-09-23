@@ -27,7 +27,7 @@ import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "~/state/server";
-import { firstTeamWorkflow } from "../teamWorkflows";
+import { firstTeamWorkflow } from "../fork/teamWorkflows";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);

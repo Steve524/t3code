@@ -83,10 +83,11 @@ import { RuntimeReceiptBusLive } from "./orchestration/Layers/RuntimeReceiptBus.
 import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRuntimeIngestion.ts";
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
-import { ThreadBootstrapLive } from "./orchestration/Layers/ThreadBootstrap.ts";
+// FORK: Team Workflow workers use a server-owned bootstrap service.
+import { ThreadBootstrapLive } from "./fork/orchestration/Layers/ThreadBootstrap.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
-import * as TeamReportReactor from "./orchestration/TeamReportReactor.ts";
+import * as TeamReportReactor from "./fork/orchestration/TeamReportReactor.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "./orchestration/ThreadPullRequestReactor.ts";

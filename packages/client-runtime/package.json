@@ -236,8 +236,8 @@
       "default": "./src/state/threadSearch.ts"
     },
     "./state/team": {
-      "types": "./src/state/team.ts",
-      "default": "./src/state/team.ts"
+      "types": "./src/fork/state/team.ts",
+      "default": "./src/fork/state/team.ts"
     },
     "./state/vcs": {
       "types": "./src/state/vcs.ts",

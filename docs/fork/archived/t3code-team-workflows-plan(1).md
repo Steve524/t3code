@@ -40,20 +40,20 @@ Use **team** in code: `TeamWorkflow`, `TeamRole`, `ThreadTeamInfo`, MCP capabili
 
 ## 3. Existing t3code pieces this plan reuses
 
-| Need | Existing piece | Location |
-|---|---|---|
-| Give the orchestrator tools across all providers | In-server MCP HTTP server with per-thread capabilities. Every adapter (Claude, Codex, Cursor, Grok, OpenCode, Antigravity) already wires it in. | `apps/server/src/mcp/McpHttpServer.ts`, `McpInvocationContext.ts`, `toolkits/` |
-| Decide which tools a thread gets | `agentAccessCapabilities(threadId)` builds the capability set per session | `apps/server/src/provider/Layers/ProviderService.ts` (around line 906) |
-| Toolkit template that reads projections and dispatches commands | Pull-requests toolkit | `apps/server/src/mcp/toolkits/pullRequests/` |
-| Create a thread, prepare a worktree, run the setup script, and start a turn in one call | `thread.turn.start` with `bootstrap.createThread` and `bootstrap.prepareWorktree` | Contract in `packages/contracts/src/orchestration.ts`. Handler is `dispatchBootstrapTurnStart` in `apps/server/src/ws.ts` (around line 1047). |
-| Per-role provider, model, and effort | `ModelSelection { instanceId, model, options }` | `packages/contracts/src/orchestration.ts` |
-| Inject role instructions into every provider | `buildRuntimeInstructions()`, which all six adapters call | `apps/server/src/provider/RuntimeInstructions.ts` |
-| Background worker that reacts to thread state | Drainable-worker reactors | `apps/server/src/orchestration/ThreadSettlementReactor.ts` |
-| Know when a worker's turn ended | `thread.latestTurn.state` (`running`, `completed`, `interrupted`, `error`) | `OrchestrationLatestTurn` in contracts |
-| Model and effort pickers outside the composer | `ProviderModelPicker`, and `TraitsPicker` with `onModelOptionsChange` | Already used in `apps/web/src/components/settings/ProjectDefaultsSettings.tsx` |
-| Fleet-style list UI | Agents panel, including its layout rules (fixed row heights, static dots, no repainting timers) | `apps/web/src/components/AgentsPanel.tsx` |
-| Environment-owned settings | `ServerSettings` schema and settings scope system | `packages/contracts/src/settings.ts`, `apps/web/src/routes/settings.*.tsx` |
-| Settings nav entry | `SETTINGS_SECTION_LABELS` and `SETTINGS_SECTION_ICONS` | `apps/web/src/components/settings/SettingsSidebarNav.tsx` |
+| Need                                                                                    | Existing piece                                                                                                                                  | Location                                                                                                                                      |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Give the orchestrator tools across all providers                                        | In-server MCP HTTP server with per-thread capabilities. Every adapter (Claude, Codex, Cursor, Grok, OpenCode, Antigravity) already wires it in. | `apps/server/src/mcp/McpHttpServer.ts`, `McpInvocationContext.ts`, `toolkits/`                                                                |
+| Decide which tools a thread gets                                                        | `agentAccessCapabilities(threadId)` builds the capability set per session                                                                       | `apps/server/src/provider/Layers/ProviderService.ts` (around line 906)                                                                        |
+| Toolkit template that reads projections and dispatches commands                         | Pull-requests toolkit                                                                                                                           | `apps/server/src/mcp/toolkits/pullRequests/`                                                                                                  |
+| Create a thread, prepare a worktree, run the setup script, and start a turn in one call | `thread.turn.start` with `bootstrap.createThread` and `bootstrap.prepareWorktree`                                                               | Contract in `packages/contracts/src/orchestration.ts`. Handler is `dispatchBootstrapTurnStart` in `apps/server/src/ws.ts` (around line 1047). |
+| Per-role provider, model, and effort                                                    | `ModelSelection { instanceId, model, options }`                                                                                                 | `packages/contracts/src/orchestration.ts`                                                                                                     |
+| Inject role instructions into every provider                                            | `buildRuntimeInstructions()`, which all six adapters call                                                                                       | `apps/server/src/provider/RuntimeInstructions.ts`                                                                                             |
+| Background worker that reacts to thread state                                           | Drainable-worker reactors                                                                                                                       | `apps/server/src/orchestration/ThreadSettlementReactor.ts`                                                                                    |
+| Know when a worker's turn ended                                                         | `thread.latestTurn.state` (`running`, `completed`, `interrupted`, `error`)                                                                      | `OrchestrationLatestTurn` in contracts                                                                                                        |
+| Model and effort pickers outside the composer                                           | `ProviderModelPicker`, and `TraitsPicker` with `onModelOptionsChange`                                                                           | Already used in `apps/web/src/components/settings/ProjectDefaultsSettings.tsx`                                                                |
+| Fleet-style list UI                                                                     | Agents panel, including its layout rules (fixed row heights, static dots, no repainting timers)                                                 | `apps/web/src/components/AgentsPanel.tsx`                                                                                                     |
+| Environment-owned settings                                                              | `ServerSettings` schema and settings scope system                                                                                               | `packages/contracts/src/settings.ts`, `apps/web/src/routes/settings.*.tsx`                                                                    |
+| Settings nav entry                                                                      | `SETTINGS_SECTION_LABELS` and `SETTINGS_SECTION_ICONS`                                                                                          | `apps/web/src/components/settings/SettingsSidebarNav.tsx`                                                                                     |
 
 ## 4. Data model (`packages/contracts`)
 
@@ -68,24 +68,24 @@ export const TeamRoleId = TrimmedNonEmptyString.pipe(Schema.brand("TeamRoleId"))
 export const TeamRoleKind = Schema.Literals(["implementer", "reviewer"]);
 
 export const TeamRole = Schema.Struct({
-  id: TeamRoleId,                          // "frontend", "backend", "database", "devops", "qa"
-  label: TrimmedNonEmptyString,            // "Frontend"
+  id: TeamRoleId, // "frontend", "backend", "database", "devops", "qa"
+  label: TrimmedNonEmptyString, // "Frontend"
   kind: TeamRoleKind,
   enabled: Schema.Boolean,
-  summary: Schema.String,                  // "UI, components". Shown to the orchestrator.
+  summary: Schema.String, // "UI, components". Shown to the orchestrator.
   modelSelection: Schema.NullOr(ModelSelection), // null means "same as host"
-  runtimeMode: Schema.NullOr(RuntimeMode),       // null means "same as orchestrator thread"
-  instructions: Schema.String,             // role prompt; empty string uses the built-in text
+  runtimeMode: Schema.NullOr(RuntimeMode), // null means "same as orchestrator thread"
+  instructions: Schema.String, // role prompt; empty string uses the built-in text
 });
 
 export const TeamWorkflow = Schema.Struct({
   id: TrimmedNonEmptyString,
-  name: TrimmedNonEmptyString,             // "Full-stack team"
+  name: TrimmedNonEmptyString, // "Full-stack team"
   builtIn: Schema.Boolean,
   roles: Schema.Array(TeamRole),
-  maxParallelWorkers: PositiveInt,         // default 4
-  maxReviewRounds: PositiveInt,            // default 2
-  maxAutoReports: PositiveInt,             // default 30, per user message
+  maxParallelWorkers: PositiveInt, // default 4
+  maxReviewRounds: PositiveInt, // default 2
+  maxAutoReports: PositiveInt, // default 30, per user message
   orchestratorInstructions: Schema.String, // appended to the built-in orchestrator prompt
 });
 ```
@@ -106,7 +106,7 @@ Add the matching optional key to the settings patch schema. The same file alread
 export const ThreadTeamInfo = Schema.Union([
   Schema.Struct({
     role: Schema.Literal("orchestrator"),
-    workflow: TeamWorkflow,               // snapshot taken at creation
+    workflow: TeamWorkflow, // snapshot taken at creation
   }),
   Schema.Struct({
     role: Schema.Literal("worker"),
@@ -148,14 +148,14 @@ Add `teamWorkflows: true` to the environment descriptor. Clients hide the orches
 
 Copy the structure of `toolkits/pullRequests/` (`tools.ts`, `handlers.ts`, `handlers.test.ts`). Every handler starts with `requireMcpCapability("team")` and reads the orchestrator thread from the invocation scope.
 
-| Tool | Input | Behavior |
-|---|---|---|
-| `team_roster` | none | Returns the snapshot's enabled roles (id, label, kind, summary, resolved model and effort), limits, and every worker of this orchestrator with its state, branch, and last update time. |
-| `team_spawn_worker` | `roleId`, `title` (40 chars max), `task`, optional `baseBranch`, optional `reviewRound` | Validates that the role is enabled and that fewer than `maxParallelWorkers` workers are running. Resolves the model: the role's `modelSelection`, or the orchestrator thread's if null. Resolves the permission mode the same way. Dispatches `thread.turn.start` through `ThreadBootstrap` with `createThread` (including `team`), `prepareWorktree` (`baseBranch` defaults to the orchestrator thread's branch or the project default; the branch name is `team/<orchestrator short id>/<roleId>-<slug>`), and `runSetupScript: true`. Returns `workerThreadId` and `branch` right away without waiting for the turn. |
-| `team_get_worker` | `workerThreadId` | Returns state, branch, worktree path, the last assistant message (truncated to about 4,000 chars), turn diff stats, pending approvals or questions, and linked PRs. |
-| `team_message_worker` | `workerThreadId`, `message` | Starts a new turn on the worker. If the worker's turn is running, returns a `WorkerBusyError` telling the orchestrator to wait for the next update. Do not steer running turns in v1. |
-| `team_stop_worker` | `workerThreadId` | Dispatches `thread.session.stop` for that worker. |
-| `team_integrate` | `branches` (ordered), optional `targetBranch` | See 5.6. |
+| Tool                  | Input                                                                                   | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `team_roster`         | none                                                                                    | Returns the snapshot's enabled roles (id, label, kind, summary, resolved model and effort), limits, and every worker of this orchestrator with its state, branch, and last update time.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `team_spawn_worker`   | `roleId`, `title` (40 chars max), `task`, optional `baseBranch`, optional `reviewRound` | Validates that the role is enabled and that fewer than `maxParallelWorkers` workers are running. Resolves the model: the role's `modelSelection`, or the orchestrator thread's if null. Resolves the permission mode the same way. Dispatches `thread.turn.start` through `ThreadBootstrap` with `createThread` (including `team`), `prepareWorktree` (`baseBranch` defaults to the orchestrator thread's branch or the project default; the branch name is `team/<orchestrator short id>/<roleId>-<slug>`), and `runSetupScript: true`. Returns `workerThreadId` and `branch` right away without waiting for the turn. |
+| `team_get_worker`     | `workerThreadId`                                                                        | Returns state, branch, worktree path, the last assistant message (truncated to about 4,000 chars), turn diff stats, pending approvals or questions, and linked PRs.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `team_message_worker` | `workerThreadId`, `message`                                                             | Starts a new turn on the worker. If the worker's turn is running, returns a `WorkerBusyError` telling the orchestrator to wait for the next update. Do not steer running turns in v1.                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `team_stop_worker`    | `workerThreadId`                                                                        | Dispatches `thread.session.stop` for that worker.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `team_integrate`      | `branches` (ordered), optional `targetBranch`                                           | See 5.6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 Rules for all tools:
 
@@ -257,13 +257,13 @@ v1 changes nothing on mobile. Worker and orchestrator threads already appear the
 
 ### 7.1 Roles
 
-| id | label | kind | summary | default model | default permission mode |
-|---|---|---|---|---|---|
-| `frontend` | Frontend | implementer | UI, components | Same as host | Same as orchestrator |
-| `backend` | Backend | implementer | APIs, logic | Same as host | Same as orchestrator |
-| `database` | Database | implementer | Schema, migrations | Same as host | Same as orchestrator |
-| `devops` | DevOps | implementer | CI/CD, infra | Same as host | Same as orchestrator |
-| `qa` | QA and review | reviewer | Tests, code review | Same as host (settings suggest another provider) | Same as orchestrator |
+| id         | label         | kind        | summary            | default model                                    | default permission mode |
+| ---------- | ------------- | ----------- | ------------------ | ------------------------------------------------ | ----------------------- |
+| `frontend` | Frontend      | implementer | UI, components     | Same as host                                     | Same as orchestrator    |
+| `backend`  | Backend       | implementer | APIs, logic        | Same as host                                     | Same as orchestrator    |
+| `database` | Database      | implementer | Schema, migrations | Same as host                                     | Same as orchestrator    |
+| `devops`   | DevOps        | implementer | CI/CD, infra       | Same as host                                     | Same as orchestrator    |
+| `qa`       | QA and review | reviewer    | Tests, code review | Same as host (settings suggest another provider) | Same as orchestrator    |
 
 Limits are max parallel 4, max review rounds 2, and max automatic updates 30.
 
@@ -333,17 +333,21 @@ Each phase ends in a working state and gets its own commit.
 **Phase 0: spike (no product code).** Answer the questions in section 10 and write the answers up before continuing.
 
 **Phase 1: contracts and settings.**
+
 - Add `team.ts`, `ServerSettings.teamWorkflows`, the patch key, the built-in preset in `packages/shared`, `ThreadTeamInfo` on the commands, events, and read models, and the capability flag.
 - Check: contract tests decode an old `thread.created` payload with no `team` field, and a new one with each role variant. Settings tests show that an empty `teamWorkflows` resolves to the built-in preset.
 
 **Phase 2: extract `ThreadBootstrap`.**
+
 - Check: the existing bootstrap and worktree tests pass unchanged. `ws.ts` no longer defines `dispatchBootstrapTurnStart`.
 
 **Phase 3: projections.**
+
 - Add the `team` column, and make the projector and snapshot queries return it.
 - Check: projector tests show the team info on the shell and detail after `thread.created`, and after replay.
 
 **Phase 4: capability and toolkit.**
+
 - Check (handler tests with mocked engine and projections):
   - `team_spawn_worker` dispatches a bootstrap command with the resolved model, the resolved permission mode, a worktree on the expected branch, and worker team info.
   - Spawning past `maxParallelWorkers` fails.
@@ -353,9 +357,11 @@ Each phase ends in a working state and gets its own commit.
   - A worker thread's session does not get the `team` capability.
 
 **Phase 5: instructions.**
+
 - Check: unit tests on `buildRuntimeInstructions` for the orchestrator, worker, and plain-thread cases. The list of adapters touched is recorded.
 
 **Phase 6: report reactor.**
+
 - Check (using drains, not sleeps):
   - Two workers completing while the orchestrator is busy produce exactly one turn start after the orchestrator goes idle.
   - A pending approval produces one report and no turn start on the worker.
@@ -364,19 +370,24 @@ Each phase ends in a working state and gets its own commit.
   - Startup rebuilds unreported completions.
 
 **Phase 7: first manual run.**
+
 - Use a seeded worktree database, following the "Test data" section of `AGENTS.md`. Create an orchestrator thread by calling the RPC directly and let it spawn two workers on a toy repo.
 - Check: both workers run at once in separate worktrees, the updates arrive, and remote access via `vp run dev --share` still works. Ask the user before doing any browser or computer-use verification.
 
 **Phase 8: `team_integrate` and the QA loop.**
+
 - Check with git fixture tests: a clean merge returns the SHA. A conflict aborts and returns the files, and leaves the integration worktree clean. The base branch is never modified.
 
 **Phase 9: Settings → Workflows page.**
+
 - Check: editing a role's model and effort persists to server settings and survives a reload. "Same as host" stores `null`. "Restore built-in preset" works. The page shows up in settings search.
 
 **Phase 10: composer chip, sidebar button, palette, keybinding.**
+
 - Check: every entry point creates an orchestrator thread with the snapshot. The chip is read-only after the first send. The controls are hidden when the environment lacks the capability. The compact composer layout works.
 
 **Phase 11: Team panel, badges, report cards.**
+
 - Check: rows keep a fixed height while state changes, and stop and message work from the panel. With five workers and streaming output, the panel adds no continuous GPU repaint (check in devtools performance).
 
 **Phase 12: user docs.** Add a short "Team workflows" section to `docs/user/` covering how to start, where settings live, and that the user merges. Add a short internal note only for the report-reactor design, since it spans components.

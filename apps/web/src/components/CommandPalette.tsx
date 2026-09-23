@@ -134,7 +134,7 @@ import {
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
-import { firstTeamWorkflow } from "../teamWorkflows";
+import { firstTeamWorkflow } from "../fork/teamWorkflows";
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,

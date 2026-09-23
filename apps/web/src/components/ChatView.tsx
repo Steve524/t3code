@@ -46,7 +46,6 @@ import {
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   wasBootstrapThreadDeleted,
   wasBootstrapThreadNotCreated,
@@ -220,7 +219,8 @@ import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs } from "./RightPanelTabs";
 import { AgentsPanel } from "./AgentsPanel";
-import { TeamPanel } from "../fork/components/TeamPanel";
+// FORK: Team Workflow panel and worker actions live in the fork.
+import { ConnectedTeamPanel } from "../fork/components/ConnectedTeamPanel";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
 import { useDeviceState } from "~/state/device";
@@ -1514,7 +1514,6 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
-  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, { reportFailure: false });
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -1991,7 +1990,6 @@ export default function ChatView(props: ChatViewProps) {
         : null,
     [activeThreadEnvironmentId, activeThreadId],
   );
-  const activeWorkerTeam = activeThread?.team?.role === "worker" ? activeThread.team : null;
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
   const [timelineAnchor, setTimelineAnchor] = useState<{
@@ -2593,6 +2591,7 @@ export default function ChatView(props: ChatViewProps) {
     ? (activeEnvironment?.serverConfig ?? null)
     : (primaryEnvironment?.serverConfig ?? null);
   const providerStatuses = serverConfig?.providers ?? EMPTY_PROVIDERS;
+  // FORK-BEGIN: Resolve Team Workflow selection for this thread or draft.
   const composerTeam = resolveComposerTeamWorkflow({
     config: environmentById.get(environmentId)?.serverConfig,
     draftWorkflowId: draftThread?.teamWorkflowId ?? null,
@@ -2600,6 +2599,7 @@ export default function ChatView(props: ChatViewProps) {
     threadTeam: activeServerThread?.team,
   });
   const teamWorkflow = composerTeam.workflow;
+  // FORK-END
   const selectedProviderByThreadId = composerActiveProvider ?? null;
   const threadProvider =
     activeThread?.modelSelection.instanceId ??
@@ -4528,6 +4528,7 @@ export default function ChatView(props: ChatViewProps) {
     if (!interactionModeEnabled) return;
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode, interactionModeEnabled]);
+  // FORK-BEGIN: Team Workflow composer and panel actions.
   const handleTeamWorkflowChange = useCallback(
     (workflowId: string | null) => {
       if (!isLocalDraftThread || !draftId) return;
@@ -4540,6 +4541,7 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef || !composerTeam.readOnly) return;
     useRightPanelStore.getState().open(activeThreadRef, "team");
   }, [activeThreadRef, composerTeam.readOnly]);
+  // FORK-END
   const openProviderSetup = useCallback(
     (instanceId: ProviderInstanceId) => {
       void navigate({
@@ -4586,64 +4588,12 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
+  // FORK-BEGIN: Open the Team Workflow right-panel surface.
   const addTeamSurface = useCallback(() => {
     if (!activeThreadRef || activeThread?.team?.role !== "orchestrator") return;
     useRightPanelStore.getState().open(activeThreadRef, "team");
   }, [activeThread, activeThreadRef]);
-  const openTeamWorker = useCallback(
-    (worker: EnvironmentThreadShell) => {
-      void navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(scopeThreadRef(worker.environmentId, worker.id)),
-      });
-    },
-    [navigate],
-  );
-  const stopTeamWorker = useCallback(
-    async (worker: EnvironmentThreadShell) => {
-      const result = await stopThreadSession({
-        environmentId: worker.environmentId,
-        input: { threadId: worker.id },
-      });
-      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-      const error = squashAtomCommandFailure(result);
-      toastManager.add({
-        type: "error",
-        title: "Could not stop worker",
-        description: error instanceof Error ? error.message : "An unexpected error occurred.",
-      });
-    },
-    [stopThreadSession],
-  );
-  const messageTeamWorker = useCallback(
-    async (worker: EnvironmentThreadShell, text: string) => {
-      const result = await startThreadTurn({
-        environmentId: worker.environmentId,
-        input: {
-          threadId: worker.id,
-          message: {
-            messageId: newMessageId(),
-            role: "user",
-            text,
-            attachments: [],
-          },
-          runtimeMode: worker.runtimeMode,
-          interactionMode: worker.interactionMode,
-        },
-      });
-      if (result._tag !== "Failure") return true;
-      if (!isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        toastManager.add({
-          type: "error",
-          title: "Could not message worker",
-          description: error instanceof Error ? error.message : "An unexpected error occurred.",
-        });
-      }
-      return false;
-    },
-    [startThreadTurn],
-  );
+  // FORK-END
   const supportsThreadPullRequests =
     serverConfig?.environment.capabilities.threadPullRequests === true;
   const visiblePullRequests = visibleThreadPullRequests(
@@ -8434,6 +8384,7 @@ export default function ChatView(props: ChatViewProps) {
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
                       createdAt: activeThread.createdAt,
+                      // FORK: Include Team Workflow metadata when creating the orchestrator.
                       ...(teamWorkflow
                         ? { team: { role: "orchestrator" as const, workflow: teamWorkflow } }
                         : {}),
@@ -9766,13 +9717,9 @@ export default function ChatView(props: ChatViewProps) {
       />
     ) : renderedRightPanelSurface?.kind === "pull-requests" && activeThreadRef ? (
       <ThreadPullRequestsPanel threadRef={activeThreadRef} />
-    ) : renderedRightPanelSurface?.kind === "team" && activeThreadRef ? (
-      <TeamPanel
-        orchestratorRef={activeThreadRef}
-        onOpenWorker={openTeamWorker}
-        onStopWorker={stopTeamWorker}
-        onMessageWorker={messageTeamWorker}
-      />
+    ) : /* FORK: Render the Team Workflow panel. */ renderedRightPanelSurface?.kind === "team" &&
+      activeThreadRef ? (
+      <ConnectedTeamPanel orchestratorRef={activeThreadRef} />
     ) : renderedRightPanelSurface?.kind === "agents" ? (
       <AgentsPanel
         model={agentPanelModel}
@@ -9894,6 +9841,7 @@ export default function ChatView(props: ChatViewProps) {
             />
           ) : null}
           {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
+          {/* FORK: Pass Team Workflow metadata into the thread header. */}
           <ChatHeader
             {...(!supportsPullRequests || activeProjectRepository === null
               ? {}
@@ -9903,21 +9851,6 @@ export default function ChatView(props: ChatViewProps) {
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
             activeThreadTitle={activeThread.title}
             team={activeThread.team}
-            onBackToOrchestrator={
-              activeWorkerTeam
-                ? () => {
-                    void navigate({
-                      to: "/$environmentId/$threadId",
-                      params: buildThreadRouteParams(
-                        scopeThreadRef(
-                          activeThread.environmentId,
-                          activeWorkerTeam.orchestratorThreadId,
-                        ),
-                      ),
-                    });
-                  }
-                : undefined
-            }
             isServerThread={isServerThread}
             activeProject={activeProject}
             openInCwd={gitCwd}
@@ -10143,6 +10076,7 @@ export default function ChatView(props: ChatViewProps) {
                     <ComposerSurface.Shell contextStrip={showComposerContextStrip}>
                       <ComposerSurface.Host>
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
+                          {/* FORK: Pass Team Workflow state and actions to the composer. */}
                           <ChatComposer
                             multipleModelSelections={multipleModelSelections}
                             supportsMultipleModels={
@@ -10425,6 +10359,7 @@ export default function ChatView(props: ChatViewProps) {
       </div>
 
       {rightPanelPresent && !shouldUseRightPanelSheet && activeThreadRef ? (
+        /* FORK: Offer the Team Workflow right-panel surface. */
         <RightPanelTabs
           mode="inline"
           widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
@@ -10479,6 +10414,7 @@ export default function ChatView(props: ChatViewProps) {
           underFloatingPreview={previewMiniPlayerVisible}
           onClose={closePreviewPanel}
         >
+          {/* FORK: Offer the Team Workflow right-panel surface. */}
           <RightPanelTabs
             mode="sheet"
             // Same effective inset as the closed-state titlebar controls

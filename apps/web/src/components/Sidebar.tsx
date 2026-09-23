@@ -122,12 +122,12 @@ import {
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
-import {
-  resolveThreadActionProjectRef,
-  startNewThreadFromContext,
-  startOrchestratorThreadFromContext,
-} from "../lib/chatThreadActions";
+import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
+// FORK: Team Workflow sidebar action.
+import { startOrchestratorThreadFromContext } from "../fork/startOrchestratorThreadFromContext";
 import { firstTeamWorkflow } from "../fork/teamWorkflows";
+// FORK: Render Team Workflow worker labels beside thread titles.
+import { TeamWorkerRoleBadge } from "../fork/components/TeamWorkerRoleBadge";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -1506,12 +1506,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       {thread.title}
     </span>
   );
-  const workerRoleBadge =
-    thread.team?.role === "worker" ? (
-      <span className="max-w-24 shrink-0 truncate rounded-sm border border-sidebar-border/70 px-1 font-mono text-[.625rem] text-sidebar-muted-foreground">
-        {thread.team.roleLabel}
-      </span>
-    ) : null;
+  const workerRoleBadge = <TeamWorkerRoleBadge team={thread.team} />; // FORK: Label worker threads.
 
   // Stacks show their layer count; multiple unrelated links show their total count.
   // Plain clicks open T3; individual PR links also support opening the host in a new tab.
@@ -1634,6 +1629,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             {draftIndicator}
             {title}
             {workerRoleBadge}
+            {/* FORK: Label worker threads. */}
             {pinIndicator}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
@@ -1932,6 +1928,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             <div className="mt-1 flex min-w-0">
               {title}
               {workerRoleBadge}
+              {/* FORK: Label worker threads. */}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
@@ -4425,6 +4422,7 @@ export default function Sidebar() {
     },
     [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
   );
+  // FORK-BEGIN: Resolve and launch the selected Team Workflow from the sidebar.
   const orchestratorProjectRef = resolveThreadActionProjectRef({
     activeDraftThread: newThreadContext.activeDraftThread,
     activeThread: newThreadContext.activeThread ?? undefined,
@@ -4442,6 +4440,7 @@ export default function Sidebar() {
       orchestratorWorkflow.id,
     );
   }, [isMobile, newThreadContext, orchestratorProjectRef, orchestratorWorkflow, setOpenMobile]);
+  // FORK-END
 
   // The button mirrors chat.new: in multi-project setups both route through
   // the command palette's "New thread in..." picker, and in single-project

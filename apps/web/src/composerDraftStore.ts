@@ -319,7 +319,7 @@ const PersistedDraftThreadState = Schema.Struct({
   createdAt: Schema.String,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
-  teamWorkflowId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  teamWorkflowId: Schema.optionalKey(Schema.NullOr(Schema.String)), // FORK: Persist draft Team Workflow selection.
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
   envMode: DraftThreadEnvModeSchema,
@@ -447,7 +447,7 @@ export interface DraftSessionState {
   createdAt: string;
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
-  teamWorkflowId: string | null;
+  teamWorkflowId: string | null; // FORK: Draft Team Workflow selection.
   branch: string | null;
   worktreePath: string | null;
   envMode: DraftThreadEnvMode;
@@ -524,7 +524,7 @@ interface ComposerDraftStoreState {
       startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
-      teamWorkflowId?: string | null;
+      teamWorkflowId?: string | null; // FORK: Update draft Team Workflow.
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
     },
@@ -542,7 +542,7 @@ interface ComposerDraftStoreState {
       startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
-      teamWorkflowId?: string | null;
+      teamWorkflowId?: string | null; // FORK: Create draft Team Workflow.
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
     },
@@ -559,7 +559,7 @@ interface ComposerDraftStoreState {
       startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
-      teamWorkflowId?: string | null;
+      teamWorkflowId?: string | null; // FORK: Restore draft Team Workflow.
       environmentSelection?: "auto" | "manual";
       loadBalancedEnvironmentId?: EnvironmentId | null;
     },
@@ -1511,7 +1511,7 @@ function createDraftThreadState(
     startFromOrigin?: boolean;
     runtimeMode?: RuntimeMode;
     interactionMode?: ProviderInteractionMode;
-    teamWorkflowId?: string | null;
+    teamWorkflowId?: string | null; // FORK: Seed draft Team Workflow.
     environmentSelection?: "auto" | "manual";
     loadBalancedEnvironmentId?: EnvironmentId | null;
   },
@@ -1561,7 +1561,7 @@ function createDraftThreadState(
     runtimeMode: options?.runtimeMode ?? existingThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
     interactionMode:
       options?.interactionMode ?? existingThread?.interactionMode ?? DEFAULT_INTERACTION_MODE,
-    teamWorkflowId: options?.teamWorkflowId ?? existingThread?.teamWorkflowId ?? null,
+    teamWorkflowId: options?.teamWorkflowId ?? existingThread?.teamWorkflowId ?? null, // FORK: Retain Team Workflow on draft reuse.
     branch: nextBranch,
     worktreePath: nextWorktreePath,
     envMode:
@@ -1597,7 +1597,7 @@ function draftThreadsEqual(left: DraftThreadState | undefined, right: DraftThrea
     left.createdAt === right.createdAt &&
     left.runtimeMode === right.runtimeMode &&
     left.interactionMode === right.interactionMode &&
-    left.teamWorkflowId === right.teamWorkflowId &&
+    left.teamWorkflowId === right.teamWorkflowId && // FORK: Compare draft Team Workflow.
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath &&
     left.envMode === right.envMode &&
@@ -1746,6 +1746,7 @@ function normalizePersistedDraftThreads(
           candidateDraftThread.interactionMode === "default"
             ? candidateDraftThread.interactionMode
             : DEFAULT_INTERACTION_MODE,
+        // FORK: Restore persisted Team Workflow selection.
         teamWorkflowId:
           typeof candidateDraftThread.teamWorkflowId === "string"
             ? candidateDraftThread.teamWorkflowId
@@ -1812,7 +1813,7 @@ function normalizePersistedDraftThreads(
           createdAt: new Date().toISOString(),
           runtimeMode: DEFAULT_RUNTIME_MODE,
           interactionMode: DEFAULT_INTERACTION_MODE,
-          teamWorkflowId: null,
+          teamWorkflowId: null, // FORK: Default migrated drafts to no team.
           branch: null,
           worktreePath: null,
           envMode: "local",
@@ -2496,7 +2497,7 @@ function toHydratedDraftThreadState(
     createdAt: persistedDraftThread.createdAt,
     runtimeMode: persistedDraftThread.runtimeMode,
     interactionMode: persistedDraftThread.interactionMode,
-    teamWorkflowId: persistedDraftThread.teamWorkflowId ?? null,
+    teamWorkflowId: persistedDraftThread.teamWorkflowId ?? null, // FORK: Hydrate Team Workflow selection.
     branch: persistedDraftThread.branch,
     worktreePath: persistedDraftThread.worktreePath,
     envMode: persistedDraftThread.envMode,
@@ -2799,6 +2800,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                   : options.createdAt || existing.createdAt,
               runtimeMode: options.runtimeMode ?? existing.runtimeMode,
               interactionMode: options.interactionMode ?? existing.interactionMode,
+              // FORK: Keep or update Team Workflow selection.
               teamWorkflowId:
                 options.teamWorkflowId === undefined
                   ? existing.teamWorkflowId
@@ -2819,7 +2821,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nextDraftThread.createdAt === existing.createdAt &&
               nextDraftThread.runtimeMode === existing.runtimeMode &&
               nextDraftThread.interactionMode === existing.interactionMode &&
-              nextDraftThread.teamWorkflowId === existing.teamWorkflowId &&
+              nextDraftThread.teamWorkflowId === existing.teamWorkflowId && // FORK: Detect Team Workflow changes.
               nextDraftThread.branch === existing.branch &&
               nextDraftThread.worktreePath === existing.worktreePath &&
               nextDraftThread.envMode === existing.envMode &&

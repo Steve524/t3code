@@ -33,7 +33,7 @@ import type {
   ServerProvider,
   ThreadId,
   SnapShotSource,
-  TeamWorkflow,
+  TeamWorkflow, // FORK: Team Workflow composer state.
 } from "@t3tools/contracts";
 import {
   ProviderDriverKind,
@@ -80,10 +80,9 @@ import {
   formatAssistantCitationForComposer,
   replaceTextRange,
 } from "../../composer-logic";
-import {
-  DISCONNECTED_COMPOSER_PLACEHOLDER,
-  ORCHESTRATOR_COMPOSER_PLACEHOLDER,
-} from "../../composerPlaceholder";
+import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
+// FORK: Team Workflow drafts use their own composer prompt.
+import { ORCHESTRATOR_COMPOSER_PLACEHOLDER } from "../../fork/composerPlaceholder";
 import { listContinuationForEnter, listIndentForTab } from "../../composer-list-continuation";
 import {
   deriveComposerSendState,
@@ -254,6 +253,7 @@ import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+// FORK: Render Team Workflow choices from the fork.
 import { WorkflowPicker } from "../../fork/components/chat/WorkflowPicker";
 import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
@@ -1047,7 +1047,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   runtimeMode: RuntimeMode;
   size?: "sm" | "xs";
   hidden?: boolean;
-  workflowControl?: ReactNode;
+  workflowControl?: ReactNode; // FORK: Team Workflow picker slot.
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
@@ -1154,12 +1154,14 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
         <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
       </Tooltip>
 
+      {/* FORK-BEGIN: Team Workflow picker slot. */}
       {props.workflowControl ? (
         <>
           <ComposerControlSeparator size={size} />
           {props.workflowControl}
         </>
       ) : null}
+      {/* FORK-END */}
 
       {interactionModeToggle}
     </>
@@ -1374,9 +1376,9 @@ export interface ChatComposerProps {
   // Mode
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
-  teamWorkflows: readonly TeamWorkflow[];
-  teamWorkflow: TeamWorkflow | null;
-  teamWorkflowReadOnly: boolean;
+  teamWorkflows: readonly TeamWorkflow[]; // FORK: Configured Team Workflow presets.
+  teamWorkflow: TeamWorkflow | null; // FORK: Selected Team Workflow.
+  teamWorkflowReadOnly: boolean; // FORK: Active thread selection is fixed.
 
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
@@ -1455,8 +1457,8 @@ export interface ChatComposerProps {
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
-  handleTeamWorkflowChange: (workflowId: string | null) => void;
-  onOpenTeamPanel: () => void;
+  handleTeamWorkflowChange: (workflowId: string | null) => void; // FORK: Select Team Workflow.
+  onOpenTeamPanel: () => void; // FORK: Open Team Workflow panel.
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -2528,6 +2530,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (!activePendingProgress ||
       (supportsQuestionAttachments &&
         activePendingProgress.activeQuestion?.allowCustomAnswer !== false));
+  // FORK: Reserve footer width when Team Workflow picker is visible.
   const composerFooterHasWideActions =
     showPlanFollowUpPrompt || activePendingProgress !== null || teamWorkflows.length > 0;
   const composerFooterActionLayoutKey = useMemo(() => {

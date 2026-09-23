@@ -4,7 +4,6 @@ import { EllipsisIcon } from "lucide-react";
 import {
   Menu,
   MenuPopup,
-  MenuItem,
   MenuRadioGroup,
   MenuRadioItem,
   MenuSeparator as MenuDivider,
@@ -13,6 +12,8 @@ import {
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
 import { useComposerMenuState } from "./useComposerMenuState";
+// FORK: Team Workflow menu content lives in the fork.
+import { TeamWorkflowMenuItems } from "../../fork/components/chat/TeamWorkflowMenuItems";
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   interactionMode: ProviderInteractionMode;
@@ -91,29 +92,14 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="auto">Auto</MenuRadioItem>
           <MenuRadioItem value="full-access">Full access</MenuRadioItem>
         </MenuRadioGroup>
-        {props.teamWorkflows.length > 0 ? (
-          <>
-            <MenuDivider />
-            <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Team</div>
-            {props.teamWorkflowReadOnly && props.teamWorkflow ? (
-              <MenuItem onClick={props.onOpenTeamPanel}>{props.teamWorkflow.name}</MenuItem>
-            ) : (
-              <MenuRadioGroup
-                value={props.teamWorkflow?.id ?? "none"}
-                onValueChange={(value) =>
-                  props.onTeamWorkflowChange?.(value === "none" ? null : value)
-                }
-              >
-                <MenuRadioItem value="none">No team</MenuRadioItem>
-                {props.teamWorkflows.map((workflow) => (
-                  <MenuRadioItem key={workflow.id} value={workflow.id}>
-                    {workflow.name}
-                  </MenuRadioItem>
-                ))}
-              </MenuRadioGroup>
-            )}
-          </>
-        ) : null}
+        {/* FORK: Render Team Workflow choices in the compact composer menu. */}
+        <TeamWorkflowMenuItems
+          teamWorkflows={props.teamWorkflows}
+          teamWorkflow={props.teamWorkflow}
+          teamWorkflowReadOnly={props.teamWorkflowReadOnly}
+          onTeamWorkflowChange={props.onTeamWorkflowChange}
+          onOpenTeamPanel={props.onOpenTeamPanel}
+        />
       </MenuPopup>
     </Menu>
   );

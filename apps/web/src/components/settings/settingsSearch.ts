@@ -3,6 +3,8 @@ import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/uti
 import { STATIC_KEYBINDING_COMMANDS, type KeybindingCommand } from "@t3tools/contracts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+// FORK: Register Team Workflow in settings search.
+import { TEAM_WORKFLOW_SEARCH_ITEM } from "../../fork/teamWorkflowSearchItem";
 import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { commandLabel } from "./KeybindingsSettings.logic";
 import {
@@ -18,6 +20,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/snap-shot"
   | "/settings/providers"
+  // FORK: Team Workflow settings route.
   | "/settings/workflows"
   | "/settings/integrations"
   | "/settings/source-control"
@@ -88,6 +91,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
   "/settings/providers": "Providers",
+  // FORK: Team Workflow section label.
   "/settings/workflows": "Workflows",
   "/settings/integrations": "Integrations",
   "/settings/source-control": "Source Control",
@@ -129,16 +133,7 @@ const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right
  * that may not be mounted point at their nearest stable section instead.
  */
 export const SETTINGS_SEARCH_ITEMS = [
-  {
-    id: "team-workflows",
-    title: "Team workflows",
-    to: "/settings/workflows",
-    scope: "environment",
-    environmentOnly: true,
-    searchTerms: [
-      "orchestrator preset roles workers provider model effort permissions review parallel automatic updates",
-    ],
-  },
+  TEAM_WORKFLOW_SEARCH_ITEM, // FORK: Search Team Workflow settings.
   {
     id: "storage-worktrees",
     title: "Worktree cleanup",
@@ -817,6 +812,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   // environment at any selection. Neither needs a particular scope to render.
   "/settings/keybindings": null,
   "/settings/providers": null,
+  // FORK: Team Workflow settings use the environment scope.
   "/settings/workflows": "environment",
   "/settings/integrations": null,
   "/settings/source-control": "environment-defaults",

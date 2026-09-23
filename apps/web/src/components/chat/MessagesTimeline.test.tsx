@@ -304,54 +304,6 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('aria-label="Next turn"');
   });
 
-  it("renders structured team updates as a compact collapsible card", () => {
-    const entry = buildUserTimelineEntry(
-      "Team update\n\n### Frontend: Build the panel\nState: completed",
-    );
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        timelineEntries={[
-          {
-            ...entry,
-            message: {
-              ...entry.message,
-              context: {
-                version: 1,
-                records: [
-                  {
-                    version: 1,
-                    contextId: "team-report" as never,
-                    label: "Team update",
-                    kind: "team-report",
-                    payload: {
-                      reports: [
-                        {
-                          workerThreadId: "worker-1",
-                          roleLabel: "Frontend",
-                          title: "Build the panel",
-                          state: "completed",
-                          branch: "team/worker-1",
-                          diffStats: { files: 2, additions: 7, deletions: 1 },
-                          lastAssistantMessage: "Done.",
-                        },
-                      ],
-                    },
-                  },
-                ],
-              },
-            },
-          },
-        ]}
-      />,
-    );
-
-    expect(markup).toContain("data-team-report-card");
-    expect(markup).toContain("<details");
-    expect(markup).toContain("Frontend");
-    expect(markup).not.toContain("rounded-2xl bg-message");
-  });
-
   // Expanding history uses this suite's existing test renderer, deprecated in
   // React 19. Migrate these interaction tests together when a DOM test setup is added.
   it.each([{}, { text: "Text-only answer", file: "Answer with a file" }])(

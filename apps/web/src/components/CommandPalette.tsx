@@ -56,7 +56,6 @@ import {
   SquarePenIcon,
   SunIcon,
   TextSearchIcon,
-  WorkflowIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -99,11 +98,9 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
-import {
-  resolveThreadActionProjectRef,
-  startNewThreadFromContext,
-  startOrchestratorThreadFromContext,
-} from "../lib/chatThreadActions";
+import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
+// FORK: Start Team Workflow drafts from the command palette.
+import { teamWorkflowCommandPaletteAction } from "../fork/teamWorkflowCommandPaletteAction";
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
@@ -134,6 +131,8 @@ import {
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
+// FORK: Find the configured Team Workflow for the command palette.
+// FORK: Find the configured Team Workflow for the command palette.
 import { firstTeamWorkflow } from "../fork/teamWorkflows";
 import {
   applyWslEnvironmentConfiguration,
@@ -735,6 +734,8 @@ function OpenCommandPaletteDialog(props: {
         ? scopeThreadRef(activeThread.environmentId, activeThread.id)
         : null;
   const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(referenceThreadRef);
+  // FORK: Reuse server configurations for Team Workflow discovery.
+  // FORK: Reuse server configurations for Team Workflow discovery.
   const serverConfigs = useServerConfigs();
   const activeThreadServerConfig = serverConfigs.get(
     activeThread?.environmentId ?? ("" as EnvironmentId),
@@ -940,6 +941,8 @@ function OpenCommandPaletteDialog(props: {
       }),
     [contextualProjectRef, projectGroups],
   );
+  // FORK: Offer orchestrator creation only where Team Workflow is available.
+  // FORK: Offer orchestrator creation only where Team Workflow is available.
   const orchestratorWorkflow = firstTeamWorkflow(
     contextualProjectRef ? serverConfigs.get(contextualProjectRef.environmentId) : null,
   );
@@ -1773,31 +1776,20 @@ function OpenCommandPaletteDialog(props: {
           });
         },
       });
-      if (contextualProjectRef && orchestratorWorkflow) {
-        actionItems.push({
-          kind: "action",
-          value: "action:new-orchestrator-thread",
-          searchTerms: ["new orchestrator thread", "team", "workflow", "delegate"],
-          title: (
-            <>
-              New orchestrator thread in <span className="font-semibold">{activeProjectTitle}</span>
-            </>
-          ),
-          icon: <WorkflowIcon className={ITEM_ICON_CLASS} />,
-          shortcutCommand: "chat.newOrchestrator",
-          run: async () => {
-            await startOrchestratorThreadFromContext(
-              {
-                activeDraftThread,
-                activeThread: activeThread ?? undefined,
-                defaultProjectRef,
-                handleNewThread,
-              },
-              orchestratorWorkflow.id,
-            );
-          },
-        });
-      }
+      // FORK: Register the Team Workflow command-palette action.
+      if (contextualProjectRef && orchestratorWorkflow)
+        actionItems.push(
+          teamWorkflowCommandPaletteAction({
+            activeProjectTitle,
+            context: {
+              activeDraftThread,
+              activeThread: activeThread ?? undefined,
+              defaultProjectRef,
+              handleNewThread,
+            },
+            workflowId: orchestratorWorkflow.id,
+          }),
+        );
     }
 
     actionItems.push({

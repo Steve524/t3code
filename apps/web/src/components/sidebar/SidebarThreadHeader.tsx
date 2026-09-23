@@ -10,7 +10,9 @@
  * of the sidebar's scope logic. `searchFieldRef` lands on the search field so
  * the picker's popup can anchor to that width rather than to its 28px trigger.
  */
-import { FolderPlusIcon, SearchIcon, SquarePenIcon, WorkflowIcon, XIcon } from "lucide-react";
+import { FolderPlusIcon, SearchIcon, SquarePenIcon, XIcon } from "lucide-react";
+// FORK: Show the Team Workflow thread action in the sidebar header.
+import { WorkflowIcon } from "lucide-react";
 import {
   type ComponentProps,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -35,7 +37,7 @@ export interface SidebarThreadHeaderProps {
   onNewProject: () => void;
   /** Receives the click so Shift+click can skip the project picker. */
   onNewThread: (event: ReactMouseEvent) => void;
-  onNewOrchestratorThread?: (() => void) | undefined;
+  onNewOrchestratorThread?: (() => void) | undefined; // FORK: Team Workflow action.
   newThreadDisabled: boolean;
   newThreadShortcutLabel: string | null | undefined;
   newThreadInProjectShortcutLabel: string | null | undefined;
@@ -57,7 +59,7 @@ export function SidebarThreadHeader({
   projectScope,
   onNewProject,
   onNewThread,
-  onNewOrchestratorThread,
+  onNewOrchestratorThread, // FORK: Team Workflow action.
   newThreadDisabled,
   newThreadShortcutLabel,
   newThreadInProjectShortcutLabel,
@@ -136,6 +138,7 @@ export function SidebarThreadHeader({
             </SidebarHeaderIconButton>
           </>
         ) : null}
+        {/* FORK-BEGIN: Team Workflow thread action. */}
         {onNewOrchestratorThread ? (
           <SidebarHeaderIconButton
             label="New orchestrator thread"
@@ -144,6 +147,7 @@ export function SidebarThreadHeader({
             <WorkflowIcon />
           </SidebarHeaderIconButton>
         ) : null}
+        {/* FORK-END */}
         <SidebarHeaderIconButton
           label="New thread"
           tooltip={

@@ -72,7 +72,7 @@ export function useNewThreadHandler() {
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
         startFromOrigin?: boolean;
-        teamWorkflowId?: string | null;
+        teamWorkflowId?: string | null; // FORK: Seed a Team Workflow draft.
         replace?: boolean;
       },
       // Which draft the thread ended up in, so a caller that has something to put in it — a
@@ -174,7 +174,7 @@ export function useNewThreadHandler() {
       const hasWorktreePathOption = options?.worktreePath !== undefined;
       const hasEnvModeOption = options?.envMode !== undefined;
       const hasStartFromOriginOption = options?.startFromOrigin !== undefined;
-      const teamWorkflowId = options?.teamWorkflowId ?? null;
+      const teamWorkflowId = options?.teamWorkflowId ?? null; // FORK: Default to no Team Workflow.
       const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       const storedDraftThreadRef = storedDraftThread
         ? scopeThreadRef(storedDraftThread.environmentId, storedDraftThread.threadId)
@@ -266,12 +266,14 @@ export function useNewThreadHandler() {
               }),
             };
           }
+          // FORK-BEGIN: Preserve Team Workflow on a reused draft.
           setDraftThreadContext(emptyStoredDraftThread.draftId, {
             ...workspaceContext,
             ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
             ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
             teamWorkflowId,
           });
+          // FORK-END
           // Model intent: an explicit human pick always stands. Seeds and
           // legacy entries alike re-resolve here — sticky first, mirroring
           // the mint-fresh path, then the project default or carried
@@ -307,7 +309,7 @@ export function useNewThreadHandler() {
               ...workspaceContext,
               ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
               ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
-              teamWorkflowId,
+              teamWorkflowId, // FORK: Seed Team Workflow on a new draft.
             },
           );
           const opened = {
@@ -342,16 +344,18 @@ export function useNewThreadHandler() {
         // invested draft mints a fresh one instead of repurposing it.
         !composerDraftHasUserContent(getComposerDraft(currentRouteTarget.draftId))
       ) {
+        // FORK-BEGIN: Update Team Workflow on the active draft.
         setDraftThreadContext(currentRouteTarget.draftId, {
           ...pickExplicitWorkspaceOptions(options),
           teamWorkflowId,
         });
+        // FORK-END
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, currentRouteTarget.draftId, {
           threadId: latestActiveDraftThread.threadId,
           createdAt: latestActiveDraftThread.createdAt,
           runtimeMode: latestActiveDraftThread.runtimeMode,
           interactionMode: latestActiveDraftThread.interactionMode,
-          teamWorkflowId,
+          teamWorkflowId, // FORK: Retain Team Workflow through route reuse.
           ...pickExplicitWorkspaceOptions(options),
         });
         return Promise.resolve({
@@ -395,7 +399,7 @@ export function useNewThreadHandler() {
             createdAt: racedDraft.createdAt,
             runtimeMode: racedDraft.runtimeMode,
             interactionMode: racedDraft.interactionMode,
-            teamWorkflowId,
+            teamWorkflowId, // FORK: Retain Team Workflow after draft race.
             ...pickExplicitWorkspaceOptions(options),
           });
           await router.navigate({
@@ -419,7 +423,7 @@ export function useNewThreadHandler() {
             }),
           runtimeMode: defaultRuntimeMode,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
-          teamWorkflowId,
+          teamWorkflowId, // FORK: Persist Team Workflow in draft context.
         });
         applyStickyState(draftId);
         const modelSelectionOverride = resolveModelSelectionOverride(draftId);

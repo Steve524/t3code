@@ -12,7 +12,9 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ArrowLeftIcon, ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
+// FORK: Team Workflow worker navigation is rendered by fork components.
+import { TeamWorkerBackLink, TeamWorkerRoleBadge } from "../../fork/components/TeamWorkerHeader";
 import {
   memo,
   useCallback,
@@ -55,7 +57,6 @@ interface ChatHeaderProps {
   draftId?: DraftId;
   activeThreadTitle: string;
   team?: ThreadTeamInfo | undefined;
-  onBackToOrchestrator?: (() => void) | undefined;
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
@@ -127,7 +128,6 @@ export const ChatHeader = memo(function ChatHeader({
   draftId,
   activeThreadTitle,
   team,
-  onBackToOrchestrator,
   isServerThread,
   activeProject,
   openInCwd,
@@ -352,20 +352,9 @@ export const ChatHeader = memo(function ChatHeader({
             <WorkspaceBreadcrumbSeparator />
           </>
         ) : null}
-        {team?.role === "worker" && onBackToOrchestrator ? (
-          <>
-            <WorkspaceBreadcrumbItem className="shrink-0">
-              <button
-                type="button"
-                onClick={onBackToOrchestrator}
-                className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <ArrowLeftIcon aria-hidden className="size-3" />
-                Back to orchestrator
-              </button>
-            </WorkspaceBreadcrumbItem>
-            <WorkspaceBreadcrumbSeparator />
-          </>
+        {/* FORK: Link Team Workflow workers back to their orchestrator. */}
+        {team?.role === "worker" ? (
+          <TeamWorkerBackLink environmentId={activeThreadEnvironmentId} team={team} />
         ) : null}
         <WorkspaceBreadcrumbItem current className="min-w-10 flex-1">
           {renamingTitle !== null ? (
@@ -418,11 +407,8 @@ export const ChatHeader = memo(function ChatHeader({
               <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
             </Tooltip>
           )}
-          {team?.role === "worker" ? (
-            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1.5 font-mono text-[.65rem] text-muted-foreground">
-              {team.roleLabel}
-            </span>
-          ) : null}
+          {/* FORK: Show the Team Workflow role in the thread header. */}
+          {team?.role === "worker" ? <TeamWorkerRoleBadge team={team} /> : null}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       <div

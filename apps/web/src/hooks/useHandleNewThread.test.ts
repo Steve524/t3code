@@ -280,6 +280,7 @@ describe.each([
     },
   );
 
+  // FORK-BEGIN: Team Workflow seeding uses this private hook test harness.
   it("seeds the requested team workflow on the opened draft", async () => {
     testState.reset(draft);
     const projectRef = {
@@ -299,4 +300,5 @@ describe.each([
       expect.objectContaining({ teamWorkflowId: "full-stack-team" }),
     );
   });
+  // FORK-END
 });

@@ -13,11 +13,9 @@ import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import {
-  resolveThreadActionProjectRef,
-  startNewThreadFromContext,
-  startOrchestratorThreadFromContext,
-} from "../lib/chatThreadActions";
+import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
+// FORK: Team Workflow global shortcut.
+import { startOrchestratorThreadFromContext } from "../fork/startOrchestratorThreadFromContext";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
@@ -35,7 +33,7 @@ function ChatRouteGlobalShortcuts() {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const serverConfigs = useAtomValue(environmentServerConfigsAtom);
+  const serverConfigs = useAtomValue(environmentServerConfigsAtom); // FORK: Resolve Team Workflow availability.
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
@@ -50,6 +48,7 @@ function ChatRouteGlobalShortcuts() {
       }).length,
     [primaryEnvironmentId, projectGroupingSettings, projects],
   );
+  // FORK-BEGIN: Resolve Team Workflow for the active project.
   const orchestratorProjectRef = resolveThreadActionProjectRef({
     activeDraftThread,
     activeThread: activeThread ?? undefined,
@@ -59,6 +58,7 @@ function ChatRouteGlobalShortcuts() {
   const orchestratorWorkflow = firstTeamWorkflow(
     orchestratorProjectRef ? serverConfigs.get(orchestratorProjectRef.environmentId) : null,
   );
+  // FORK-END
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
       ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef).terminalOpen
@@ -106,6 +106,7 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
+      // FORK-BEGIN: Team Workflow shortcut dispatch.
       if (command === "chat.newOrchestrator" && orchestratorProjectRef && orchestratorWorkflow) {
         event.preventDefault();
         event.stopPropagation();
@@ -120,6 +121,7 @@ function ChatRouteGlobalShortcuts() {
         );
         return;
       }
+      // FORK-END
 
       if (command === "chat.new") {
         event.preventDefault();
@@ -200,7 +202,7 @@ function ChatRouteGlobalShortcuts() {
     routeThreadRef,
     selectedThreadKeysSize,
     legacySidebarEnabled,
-    orchestratorProjectRef,
+    orchestratorProjectRef, // FORK: Rebind Team Workflow shortcut when project changes.
     orchestratorWorkflow,
     terminalOpen,
   ]);

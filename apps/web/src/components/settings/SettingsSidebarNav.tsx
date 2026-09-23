@@ -22,7 +22,7 @@ import {
   PaletteIcon,
   SearchIcon,
   Settings2Icon,
-  WorkflowIcon,
+  WorkflowIcon, // FORK: Team Workflow settings icon.
   XIcon,
 } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
@@ -83,7 +83,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/keybindings": KeyboardIcon,
   "/settings/snap-shot": SnapShotIcon,
   "/settings/providers": BotIcon,
-  "/settings/workflows": WorkflowIcon,
+  "/settings/workflows": WorkflowIcon, // FORK: Team Workflow settings link.
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/storage": HardDriveIcon,

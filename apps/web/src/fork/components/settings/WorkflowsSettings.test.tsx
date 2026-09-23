@@ -17,7 +17,7 @@ const state = vi.hoisted(() => ({
 
 const instanceId = ProviderInstanceId.make("codex");
 
-vi.mock("../../providerInstances", () => ({
+vi.mock("../../../providerInstances", () => ({
   applyProviderInstanceSettings: (entries: ReadonlyArray<unknown>) => entries,
   deriveProviderInstanceEntries: () => [
     {
@@ -32,20 +32,20 @@ vi.mock("../../providerInstances", () => ({
     selection: { instanceId: string; model: string; options?: ReadonlyArray<unknown> } | null,
   ) => selection ?? { instanceId: "codex", model: "gpt-host" },
 }));
-vi.mock("../../modelSelection", () => ({
+vi.mock("../../../modelSelection", () => ({
   getCustomModelOptionsByInstance: () => new Map([["codex", []]]),
 }));
-vi.mock("./useScopedSettings", () => ({
+vi.mock("../../../components/settings/useScopedSettings", () => ({
   useScopedSettings: () => state.settings,
   useUpdateScopedSettings: () => state.updateSettings,
 }));
-vi.mock("./SettingsScopeContext", () => ({
+vi.mock("../../../components/settings/SettingsScopeContext", () => ({
   useSettingsScope: () => ({
     scope: { kind: "environment", environmentIds: ["test"] },
     environment: { serverConfig: { providers: [{}] } },
   }),
 }));
-vi.mock("../chat/ProviderModelPicker", () => ({
+vi.mock("../../../components/chat/ProviderModelPicker", () => ({
   ProviderModelPicker: (props: {
     triggerAriaLabel: string;
     model: string;
@@ -58,7 +58,7 @@ vi.mock("../chat/ProviderModelPicker", () => ({
     />
   ),
 }));
-vi.mock("../chat/TraitsPicker", () => ({
+vi.mock("../../../components/chat/TraitsPicker", () => ({
   TraitsPicker: (props: {
     onModelOptionsChange: (options: ReadonlyArray<{ id: string; value: string }>) => void;
   }) => (
@@ -68,10 +68,10 @@ vi.mock("../chat/TraitsPicker", () => ({
     />
   ),
 }));
-vi.mock("./settingsSearch", () => ({
+vi.mock("../../../components/settings/settingsSearch", () => ({
   searchableSetting: (id: string) => ({ id, title: id }),
 }));
-vi.mock("./settingsLayout", () => ({
+vi.mock("../../../components/settings/settingsLayout", () => ({
   SETTINGS_PICKER_TRIGGER_CLASSNAME: "",
   SettingsPageContainer: ({ children }: { children: ReactNode }) => children,
   SettingsSection: ({
@@ -105,27 +105,27 @@ vi.mock("./settingsLayout", () => ({
     <button onClick={onClick}>{`Reset ${label}`}</button>
   ),
 }));
-vi.mock("./SettingsScopeNotice", () => ({
+vi.mock("../../../components/settings/SettingsScopeNotice", () => ({
   SettingsScopeNotice: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../ui/button", () => ({
+vi.mock("../../../components/ui/button", () => ({
   Button: ({ children, onClick, disabled }: ComponentProps<"button">) => (
     <button onClick={onClick} disabled={disabled}>
       {children}
     </button>
   ),
 }));
-vi.mock("../ui/collapsible", () => ({
+vi.mock("../../../components/ui/collapsible", () => ({
   Collapsible: ({ children }: { children: ReactNode }) => children,
   CollapsibleTrigger: ({ children }: { children: ReactNode }) => <button>{children}</button>,
   CollapsiblePanel: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../ui/number-field", () => ({
+vi.mock("../../../components/ui/number-field", () => ({
   NumberField: ({ children }: { children: ReactNode }) => children,
   NumberFieldGroup: ({ children }: { children: ReactNode }) => children,
   NumberFieldInput: () => <input />,
 }));
-vi.mock("../ui/select", () => ({
+vi.mock("../../../components/ui/select", () => ({
   Select: ({
     children,
     onValueChange,
@@ -146,10 +146,10 @@ vi.mock("../ui/select", () => ({
   SelectTrigger: ({ children }: { children: ReactNode }) => <button>{children}</button>,
   SelectValue: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../ui/switch", () => ({
+vi.mock("../../../components/ui/switch", () => ({
   Switch: () => <input type="checkbox" />,
 }));
-vi.mock("../ui/textarea", () => ({ Textarea: "textarea" }));
+vi.mock("../../../components/ui/textarea", () => ({ Textarea: "textarea" }));
 
 import { shouldSuggestIndependentQa, WorkflowsSettingsPanel } from "./WorkflowsSettings";
 

@@ -5,7 +5,7 @@ threads back to their orchestrator without provider-specific polling or steering
 worker states, approval requests, and user-input requests from committed events. Once the
 orchestrator is idle, it reads the projections, batches the pending signals into a contextual team
 update, and starts the next orchestrator turn. Never inject a report into a running turn: the
-[orchestrator instructions](../../apps/server/src/provider/RuntimeInstructions.ts) require the host
+[orchestrator instructions](../../apps/server/src/fork/provider/TeamRuntimeInstructions.ts) require the host
 to end its turn after spawning workers so updates can resume it.
 
 The reactor rebuilds unreported worker completions from projections after a restart. It also limits

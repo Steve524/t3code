@@ -61,9 +61,6 @@ vi.mock("@t3tools/shared/projectSettings", () => ({
     sources: { defaultThreadEnvMode: "environment" },
   }),
 }));
-vi.mock("@t3tools/shared/threadEnvMode", () => ({
-  resolveDefaultThreadEnvMode: ({ globalDefault }: { globalDefault: string }) => globalDefault,
-}));
 vi.mock("@tanstack/react-router", () => ({
   useParams: () => null,
   useRouter: () => testState.router,
@@ -84,7 +81,7 @@ vi.mock("../lib/chatThreadActions", () => ({
   resolveNewThreadModelSelectionOverride: () => null,
 }));
 vi.mock("../lib/t3ProjectFileDefaults", () => ({
-  readT3ProjectFileDefaultThreadEnvMode: () => Promise.resolve(null),
+  readT3ProjectFile: () => Promise.resolve(null),
 }));
 vi.mock("../lib/utils", () => ({
   newDraftId: () => "draft-team",

@@ -123,7 +123,6 @@ function RoleModelControls({
         lockedProvider={null}
         instanceEntries={entries}
         modelOptionsByInstance={modelOptions}
-        triggerVariant="outline"
         triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
         {...(role.modelSelection === null ? { triggerLabel: "Same as host" } : {})}
         triggerAriaLabel={`${role.label} model`}
@@ -143,7 +142,6 @@ function RoleModelControls({
             modelOptions={selection.options ?? []}
             allowPromptInjectedEffort={false}
             planModeEnabled={settings.planModeEnabled}
-            triggerVariant="outline"
             triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
             onModelOptionsChange={(options) =>
               onChange(createModelSelection(selection.instanceId, selection.model, options))

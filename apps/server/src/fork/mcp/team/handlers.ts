@@ -204,8 +204,10 @@ const make = Effect.gen(function* () {
           input.baseBranch ??
           orchestrator.branch ??
           (yield* defaultBranch(project.value.workspaceRoot, "spawn"));
-        const branch = `team/${orchestratorSlug(orchestrator.id)}/${role.id}-${sanitizeBranchFragment(input.title)}`;
         const workerThreadId = yield* randomId(ThreadId.make);
+        // ponytail: Short refs leave room for deep Windows checkout paths; deeper homes need Git long-path support.
+        const roleSlug = sanitizeBranchFragment(role.id).replaceAll("/", "-").slice(0, 8);
+        const branch = `team/${orchestratorSlug(orchestrator.id)}/${roleSlug}-${workerThreadId.slice(0, 8)}`;
         const messageId = yield* randomId(MessageId.make);
         const commandId = yield* randomId((id) => CommandId.make(`server:team-spawn:${id}`));
         const createdAt = yield* nowIso;

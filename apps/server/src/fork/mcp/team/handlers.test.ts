@@ -291,7 +291,7 @@ describe("team toolkit handlers", () => {
         title: "Build UI",
         task: "Implement the settings form.",
       });
-      expect(result.branch).toBe("team/thread-t/frontend-build-ui");
+      expect(result.branch).toBe("team/thread-t/frontend-07070707");
       const command = (yield* Ref.get(harness.bootstrapCommands))[0];
       expect(command).toMatchObject({
         type: "thread.turn.start",
@@ -319,7 +319,7 @@ describe("team toolkit handlers", () => {
           prepareWorktree: {
             projectCwd: "/workspace/project",
             baseBranch: "main",
-            branch: "team/thread-t/frontend-build-ui",
+            branch: "team/thread-t/frontend-07070707",
           },
           runSetupScript: true,
         },
@@ -334,6 +334,19 @@ describe("team toolkit handlers", () => {
         modelSelection: { instanceId: HOST_INSTANCE_ID, model: "gpt-host" },
         runtimeMode: "full-access",
       });
+    }),
+  );
+
+  it.effect("keeps worker branch names short for Windows worktree checkouts", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const result = yield* harness.call("team_spawn_worker", {
+        roleId: TeamRoleId.make("frontend"),
+        title: "Locate TeamPanel.tsx read-only",
+        task: "Find the Team panel source file.",
+      });
+      expect(result.branch.length).toBeLessThanOrEqual(40);
+      expect(result.branch).toMatch(/^team\/thread-t\/frontend-[0-9a-f]{8}$/);
     }),
   );
 

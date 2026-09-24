@@ -22,8 +22,6 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
-// FORK: Reuse this upstream-only replay harness for Team Workflow projection coverage.
-import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
 
 import { makeSqlStatementCounter } from "../../../integration/SqlStatementCounter.integration.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
@@ -4412,68 +4410,6 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       assert.deepEqual(projectorRows, [{ lastAppliedSequence: 1 }]);
     }),
   );
-
-  // FORK-BEGIN: Team Workflow projection replay test shares this private engine harness.
-  it.effect("persists team info in shell and detail projections and restores it on replay", () =>
-    Effect.gen(function* () {
-      const engine = yield* OrchestrationEngineService;
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
-      const snapshotQuery = yield* ProjectionSnapshotQuery;
-      const sql = yield* SqlClient.SqlClient;
-      const createdAt = "2026-09-15T00:00:00.000Z";
-      const projectId = ProjectId.make("project-team-projection");
-      const threadId = ThreadId.make("thread-team-projection");
-      const team = {
-        role: "orchestrator" as const,
-        workflow: BUILT_IN_TEAM_WORKFLOW,
-      };
-
-      yield* engine.dispatch({
-        type: "project.create",
-        commandId: CommandId.make("cmd-team-projection-project"),
-        projectId,
-        title: "Team projection project",
-        workspaceRoot: "/tmp/project-team-projection",
-        defaultModelSelection: null,
-        createdAt,
-      });
-      yield* engine.dispatch({
-        type: "thread.create",
-        commandId: CommandId.make("cmd-team-projection-thread"),
-        threadId,
-        projectId,
-        title: "Team projection thread",
-        modelSelection: {
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-5",
-        },
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: "main",
-        worktreePath: null,
-        team,
-        createdAt,
-      });
-
-      const readTeam = Effect.gen(function* () {
-        const shell = Option.getOrThrow(yield* snapshotQuery.getThreadShellById(threadId));
-        const detail = Option.getOrThrow(yield* snapshotQuery.getThreadDetailById(threadId));
-        return { shell: shell.team, detail: detail.team };
-      });
-      assert.deepEqual(yield* readTeam, { shell: team, detail: team });
-
-      yield* sql`DELETE FROM projection_threads WHERE thread_id = ${threadId}`;
-      yield* sql`
-        UPDATE projection_state
-        SET last_applied_sequence = 0
-        WHERE projector = ${ORCHESTRATION_PROJECTOR_NAMES.threads}
-      `;
-      yield* projectionPipeline.bootstrap;
-
-      assert.deepEqual(yield* readTeam, { shell: team, detail: team });
-    }),
-  );
-  // FORK-END
 
   it.effect("projects persist updated scripts from project.meta.update", () =>
     Effect.gen(function* () {

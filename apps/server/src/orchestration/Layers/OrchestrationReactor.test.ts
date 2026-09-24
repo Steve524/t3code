@@ -10,8 +10,8 @@ import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "../ThreadSettlementReactor.ts";
-// FORK: Stub the Team Workflow reactor in this upstream reactor-start harness.
-import * as TeamReportReactor from "../../fork/orchestration/TeamReportReactor.ts";
+// FORK: Provide the Team Workflow reactor expected by the upstream start-order test.
+import { teamReportReactorStartTestLayer } from "../../fork/orchestration/TeamReportReactor.testSupport.ts";
 import * as PullRequestSyncReactor from "../PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "../ThreadPullRequestReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
@@ -97,18 +97,7 @@ describe("OrchestrationReactor", () => {
             drain: Effect.void,
           }),
         ),
-        // FORK-BEGIN: Stub Team Workflow reporting for the reactor order assertion.
-        Layer.provideMerge(
-          Layer.succeed(TeamReportReactor.TeamReportReactor, {
-            start: () => {
-              started.push("team-report-reactor");
-              return Effect.void;
-            },
-            drain: Effect.void,
-            drainThrough: () => Effect.void,
-          }),
-        ),
-        // FORK-END
+        Layer.provideMerge(teamReportReactorStartTestLayer(started)), // FORK: Record fork reactor start.
         Layer.provideMerge(
           Layer.succeed(PullRequestSyncReactor.PullRequestSyncReactor, {
             start: () => {

@@ -9,9 +9,8 @@ Fork-only implementation lives under adjacent `fork/` directories. This is the c
 | `apps/server/src/mcp/McpHttpServer.ts`                              | Registers fork-owned Team Workflow MCP tools in the existing MCP server layer.                                                                                           |
 | `apps/server/src/mcp/McpInvocationContext.ts`                       | Adds the `team` capability to the existing credential capability union.                                                                                                  |
 | `apps/server/src/mcp/McpProviderSession.ts`                         | Carries optional Team Workflow prompt context across the existing provider-session boundary.                                                                             |
-| `apps/server/src/orchestration/Layers/OrchestrationReactor.test.ts` | Stubs and asserts the added reactor in the private upstream reactor-start harness; moving only this case would duplicate that harness.                                   |
+| `apps/server/src/orchestration/Layers/OrchestrationReactor.test.ts` | Wires a fork-owned reactor stub into the existing start-order test and includes the reactor in its expected order. This is necessary for the upstream test to run.       |
 | `apps/server/src/orchestration/Layers/OrchestrationReactor.ts`      | Starts the fork-owned Team Workflow report reactor alongside upstream reactors.                                                                                          |
-| `apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts`   | Tests Team Workflow projection and replay through a private engine/SQL harness; isolating this case would duplicate a large upstream fixture.                            |
 | `apps/server/src/orchestration/Layers/ProjectionPipeline.ts`        | Carries optional Team Workflow metadata into the existing thread projection.                                                                                             |
 | `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`   | Reads the `team_json` column in existing shell/detail SQL queries and delegates optional-field mapping to fork code. These SQL row shapes cannot be extended externally. |
 | `apps/server/src/orchestration/decider.ts`                          | Copies optional Team Workflow metadata from thread-create command to creation event.                                                                                     |
@@ -27,7 +26,6 @@ Fork-only implementation lives under adjacent `fork/` directories. This is the c
 | `apps/server/src/provider/Layers/CursorAdapter.ts`                  | Carries Team Workflow context into Cursor's existing prompt path.                                                                                                        |
 | `apps/server/src/provider/Layers/GrokAdapter.ts`                    | Carries Team Workflow context into Grok's existing prompt path.                                                                                                          |
 | `apps/server/src/provider/Layers/OpenCodeAdapter.ts`                | Carries Team Workflow context into OpenCode's existing prompt path.                                                                                                      |
-| `apps/server/src/provider/Layers/ProviderService.test.ts`           | Tests orchestrator-only tool credentials through the private upstream provider-session fixture; isolating this case would duplicate that fixture.                        |
 | `apps/server/src/provider/Layers/ProviderService.ts`                | Calls fork-owned capability and prompt resolvers when issuing provider sessions.                                                                                         |
 | `apps/server/src/provider/RuntimeInstructions.ts`                   | Appends fork-owned Team Workflow instructions to the existing common runtime prompt.                                                                                     |
 | `apps/server/src/server.ts`                                         | Wires the fork worker bootstrap, branch integration, and report reactor into server layers.                                                                              |
@@ -45,7 +43,6 @@ Fork-only implementation lives under adjacent `fork/` directories. This is the c
 | `apps/web/src/components/settings/settingsSearch.ts`                | Registers the fork-owned Team Workflow settings search item and route metadata.                                                                                          |
 | `apps/web/src/components/sidebar/SidebarThreadHeader.tsx`           | Exposes the orchestrator-thread action in the existing sidebar header.                                                                                                   |
 | `apps/web/src/composerDraftStore.ts`                                | Extends persisted draft state with optional Team Workflow selection; existing draft hydration and equality must carry it.                                                |
-| `apps/web/src/hooks/useHandleNewThread.test.ts`                     | Tests Team Workflow draft seeding through a private hook fixture; moving just this case would duplicate its router and store mocks.                                      |
 | `apps/web/src/hooks/useHandleNewThread.ts`                          | Passes Team Workflow selection through each existing draft creation/reuse path.                                                                                          |
 | `apps/web/src/lib/chatThreadActions.ts`                             | Extends the existing new-thread handler option type for Team Workflow drafts.                                                                                            |
 | `apps/web/src/rightPanelStore.ts`                                   | Adds the Team Workflow surface to the persisted panel union and bumps its storage version.                                                                               |
@@ -61,7 +58,7 @@ Fork-only implementation lives under adjacent `fork/` directories. This is the c
 | `packages/shared/package.json`                                      | Exports the fork-owned built-in Team Workflow preset subpath; JSON cannot carry a `FORK:` comment.                                                                       |
 | `packages/shared/src/serverSettings.ts`                             | Applies Team Workflow settings patches in the existing shared patch function.                                                                                            |
 
-The four upstream test-file exceptions above retain their private test harnesses; all standalone Team Workflow tests live under `fork/`. No upstream file was renamed, moved, or deleted.
+All standalone Team Workflow tests live under `fork/`. The upstream reactor start-order test retains only the wiring required to test the extended reactor list. No upstream file was renamed, moved, or deleted.
 
 ## Known Windows test failure
 

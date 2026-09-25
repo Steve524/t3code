@@ -7,6 +7,8 @@ import {
 } from "@t3tools/contracts";
 import { deriveLocalBranchNameFromRemoteRef, sanitizeBranchFragment } from "@t3tools/shared/git";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
+import { handlePlanTool } from "./planHandlers.ts";
+import { PlanRunError } from "./planRun.ts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -63,6 +65,7 @@ const workerSummary = (thread: OrchestrationThreadShell) => {
   const team = thread.team;
   if (team?.role !== "worker") return null;
   return {
+    latestTurnId: thread.latestTurn?.turnId ?? null,
     workerThreadId: thread.id,
     roleId: team.roleId,
     roleLabel: team.roleLabel,
@@ -170,6 +173,7 @@ const make = Effect.gen(function* () {
   });
 
   return TeamToolkit.of({
+    team_plan_run: handlePlanTool,
     team_roster: () =>
       Effect.gen(function* () {
         const orchestrator = yield* requireOrchestrator("roster");
@@ -200,6 +204,10 @@ const make = Effect.gen(function* () {
     team_spawn_worker: (input) =>
       Effect.gen(function* () {
         const orchestrator = yield* requireOrchestrator("spawn");
+        if (orchestrator.team.workflow.protocolId === "t3-plan-loop")
+          return yield* new PlanRunError({
+            detail: "Use team_plan_run dispatch so work is reserved against the saved budgets.",
+          });
         const workflow = orchestrator.team.workflow;
         const role = workflow.roles.find((candidate) => candidate.id === input.roleId);
         if (!role) return yield* new TeamRoleNotFoundError({ roleId: input.roleId });
@@ -422,7 +430,11 @@ const make = Effect.gen(function* () {
 
     team_message_worker: ({ workerThreadId, message }) =>
       Effect.gen(function* () {
-        const { worker } = yield* requireOwnedWorker("message", workerThreadId);
+        const { worker, orchestrator } = yield* requireOwnedWorker("message", workerThreadId);
+        if (orchestrator.team.workflow.protocolId === "t3-plan-loop")
+          return yield* new PlanRunError({
+            detail: "Use team_plan_run dispatch for guarded follow-up work.",
+          });
         if (isRunning(worker)) return yield* new WorkerBusyError({ workerThreadId });
         const createdAt = yield* nowIso;
         yield* bootstrap
@@ -462,6 +474,10 @@ const make = Effect.gen(function* () {
     team_integrate: (input) =>
       Effect.gen(function* () {
         const orchestrator = yield* requireOrchestrator("integrate");
+        if (orchestrator.team.workflow.protocolId === "t3-plan-loop")
+          return yield* new PlanRunError({
+            detail: "Planning does not authorize branch integration.",
+          });
         const project = yield* snapshots
           .getProjectShellById(orchestrator.projectId)
           .pipe(mapFailure("integrate"));

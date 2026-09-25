@@ -14,11 +14,13 @@ import { ProjectionSnapshotQuery } from "../../../orchestration/Services/Project
 import { ProviderInstanceRegistry } from "../../../provider/Services/ProviderInstanceRegistry.ts";
 import { TeamBranchIntegration } from "../../git/TeamBranchIntegration.ts";
 import { ThreadBootstrap } from "../../orchestration/Services/ThreadBootstrap.ts";
+import { ProjectionTurnRepository } from "../../../persistence/Services/ProjectionTurns.ts";
 
 const TestLayer = McpHttpServer.TeamToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provide(
     Layer.mergeAll(
+      Layer.mock(ProjectionTurnRepository)({}),
       Layer.mock(ProjectionSnapshotQuery)({ getThreadShellById: () => Effect.succeedNone }),
       Layer.mock(OrchestrationEngineService)({}),
       Layer.mock(ThreadBootstrap)({}),
@@ -60,6 +62,7 @@ it.effect("registers Team Workflow tools and requires the team capability", () =
     expect(server.tools.map(({ tool }) => tool.name)).toEqual(
       expect.arrayContaining([
         "team_roster",
+        "team_plan_run",
         "team_spawn_worker",
         "team_get_worker",
         "team_get_worker_result",

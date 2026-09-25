@@ -22,6 +22,8 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { forkParked } from "../../serverActivation.ts";
+import { recoverCancelledPlan } from "../mcp/team/planHandlers.ts";
+import { makePlanRunStore } from "../mcp/team/planRun.ts";
 import * as OrchestrationEngine from "../../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 
@@ -115,6 +117,12 @@ export const make = Effect.gen(function* () {
   const engine = yield* OrchestrationEngine.OrchestrationEngineService;
   const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const crypto = yield* Crypto.Crypto;
+  const planStore = yield* makePlanRunStore;
+  const recoverPlan = (threadId: ThreadId) =>
+    recoverCancelledPlan(threadId).pipe(
+      Effect.provideService(OrchestrationEngine.OrchestrationEngineService, engine),
+      Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, snapshots),
+    );
   const owners = new Map<ThreadId, OwnerState>();
 
   const ownerState = (ownerThreadId: ThreadId) => {
@@ -206,6 +214,13 @@ export const make = Effect.gen(function* () {
       return;
     }
     const owner = { ...found.value, team: found.value.team };
+    if (
+      owner.team.workflow.protocolId === "t3-plan-loop" &&
+      (yield* planStore.read(owner.id))?.phase === "cancelled"
+    ) {
+      state.pending.clear();
+      return;
+    }
     if (state.suppressed) {
       state.pending.clear();
       state.suppressed = true;
@@ -315,6 +330,9 @@ export const make = Effect.gen(function* () {
       event.type === "thread.session-stop-requested"
     ) {
       clearOwner(event.payload.threadId);
+      const owner = yield* readShell(event.payload.threadId);
+      if (owner?.team?.role === "orchestrator" && owner.team.workflow.protocolId === "t3-plan-loop")
+        yield* recoverPlan(owner.id);
       return;
     }
     if (event.type === "thread.turn-start-requested") {
@@ -393,6 +411,8 @@ export const make = Effect.gen(function* () {
         .map((thread) => [thread.id, thread] as const),
     );
     for (const owner of orchestrators.values()) {
+      if (owner.team?.role === "orchestrator" && owner.team.workflow.protocolId === "t3-plan-loop")
+        yield* recoverPlan(owner.id);
       const state = ownerState(owner.id);
       state.autoReports = countAutoReports(owner);
       state.busy = isBusy(owner);

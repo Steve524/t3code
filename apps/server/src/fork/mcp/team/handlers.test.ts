@@ -12,7 +12,7 @@ import {
   type OrchestrationThreadShell,
   type TeamWorkflow,
 } from "@t3tools/contracts";
-import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
+import { BUILT_IN_TEAM_WORKFLOW, RESEARCH_PLAN_TEAM_WORKFLOW } from "@t3tools/shared/team";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
@@ -37,6 +37,7 @@ import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as ServerConfig from "../../../config.ts";
 import { TeamToolkitHandlersLive } from "./handlers.ts";
 import { TeamToolkit } from "./tools.ts";
+import { ProjectionTurnRepository } from "../../../persistence/Services/ProjectionTurns.ts";
 
 const PROJECT_ID = ProjectId.make("project-team");
 const ORCHESTRATOR_ID = ThreadId.make("thread-team-orchestrator");
@@ -191,6 +192,8 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
       Effect.as({ sequence: 1 }),
     );
   const dependencies = Layer.mergeAll(
+    Layer.mock(ProjectionTurnRepository)({}),
+    NodeServices.layer,
     Layer.mock(ProjectionSnapshotQuery)({
       getThreadShellById: (threadId) =>
         Effect.succeed(Option.fromNullishOr(threads.find((thread) => thread.id === threadId))),
@@ -298,6 +301,29 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
 });
 
 describe("team toolkit handlers", () => {
+  it.effect("rejects generic planning spawn, follow-up and integration bypasses", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        threads: [orchestrator(RESEARCH_PLAN_TEAM_WORKFLOW), worker()],
+      });
+      const spawn = yield* harness
+        .call("team_spawn_worker", {
+          roleId: TeamRoleId.make("reviewer"),
+          title: "Review",
+          task: "Review without a round",
+        })
+        .pipe(Effect.flip);
+      const followUp = yield* harness
+        .call("team_message_worker", { workerThreadId: WORKER_ID, message: "Review again" })
+        .pipe(Effect.flip);
+      const integrate = yield* harness
+        .call("team_integrate", { branches: ["main"] })
+        .pipe(Effect.flip);
+      for (const error of [spawn, followUp, integrate]) expect(error._tag).toBe("PlanRunError");
+      expect(yield* Ref.get(harness.bootstrapCommands)).toEqual([]);
+      expect(yield* Ref.get(harness.integrationInputs)).toEqual([]);
+    }),
+  );
   it.effect("spawns a worker with the resolved role settings and worktree bootstrap", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();

@@ -16,6 +16,7 @@ import {
 import * as Schema from "effect/Schema";
 import * as Tool from "effect/unstable/ai/Tool";
 import * as Toolkit from "effect/unstable/ai/Toolkit";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
 import * as TeamBranchIntegration from "../../git/TeamBranchIntegration.ts";
@@ -25,6 +26,9 @@ import * as ProjectionSnapshotQuery from "../../../orchestration/Services/Projec
 import * as ProviderInstanceRegistry from "../../../provider/Services/ProviderInstanceRegistry.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as ServerConfig from "../../../config.ts";
+import { ProjectionTurnRepository } from "../../../persistence/Services/ProjectionTurns.ts";
+import { PlanRun, PlanRunError } from "./planRun.ts";
+import { PlanRunToolInput } from "./planHandlers.ts";
 
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
@@ -222,6 +226,7 @@ export class TeamOperationFailedError extends Schema.TaggedError<TeamOperationFa
 }
 
 export const TeamToolError = Schema.Union([
+  PlanRunError,
   McpCapabilityUnavailableError,
   TeamThreadNotFoundError,
   TeamOrchestratorRequiredError,
@@ -246,6 +251,7 @@ export const TeamToolError = Schema.Union([
 const TeamWorkerState = Schema.String;
 
 const TeamWorkerSummary = Schema.Struct({
+  latestTurnId: Schema.NullOr(TurnId),
   workerThreadId: ThreadId,
   roleId: TeamRoleId,
   roleLabel: TrimmedNonEmptyString,
@@ -509,6 +515,18 @@ const IntegrateTool = Tool.make("team_integrate", {
   .annotate(Tool.OpenWorld, false);
 
 export const TeamToolkit = Toolkit.make(
+  Tool.make("team_plan_run", {
+    description:
+      "Start, inspect, cancel or resume a durable planning run. Dispatch reserves budgets before launching. Reuse a requestId only for an identical retry. Record-plan and record-review consume exact completed reserved results. End your turn after dispatch; wait for completion reports. Baseline is committed HEAD; uncommitted changes are excluded.",
+    parameters: PlanRunToolInput,
+    success: PlanRun,
+    failure: PlanRunError,
+    dependencies: [
+      ...dependencies,
+      ProjectionTurnRepository,
+      ChildProcessSpawner.ChildProcessSpawner,
+    ],
+  }),
   RosterTool,
   SpawnWorkerTool,
   GetWorkerTool,

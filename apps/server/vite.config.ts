@@ -4,6 +4,7 @@ import { defineConfig, mergeConfig } from "vite-plus";
 import baseConfig from "../../vite.config.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import packageJson from "./package.json" with { type: "json" };
+import { planLoopMarkdownPlugin } from "./src/fork/skills/markdownVitePlugin.ts"; // FORK: Load planning skill Markdown in tests.
 
 // The bundle used to inline only workspace packages, leaving every third-party
 // runtime dep external. External deps must exist on the real filesystem (the WSL
@@ -65,6 +66,7 @@ const packExecutableTargets = packExecutableTarget
 export default mergeConfig(
   baseConfig,
   defineConfig({
+    plugins: [planLoopMarkdownPlugin], // FORK: Use the package source in tests.
     run: {
       tasks: {
         build: {
@@ -75,6 +77,16 @@ export default mergeConfig(
       },
     },
     pack: {
+      inputOptions: { moduleTypes: { ".md": "text" } }, // FORK: Embed the installable planning skill from its Markdown source.
+      // FORK-BEGIN: Ship the same installable skill source beside the server bundle.
+      copy: ({ outDir }) => [
+        { from: "src/fork/skills/t3-plan-loop/*.md", to: `${outDir}/skills/t3-plan-loop` },
+        {
+          from: "src/fork/skills/t3-plan-loop/references/*.md",
+          to: `${outDir}/skills/t3-plan-loop/references`,
+        },
+      ],
+      // FORK-END
       // The executable embeds one entry; the history worker becomes a hidden
       // subcommand there instead of a sibling script.
       entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claude-history-worker.ts"],

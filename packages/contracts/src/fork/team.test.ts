@@ -5,7 +5,7 @@ import { ExecutionEnvironmentDescriptor } from "../environment.ts";
 import { KeybindingRule } from "../keybindings.ts";
 import { ThreadCreatedPayload, ThreadTurnStartCommand } from "../orchestration.ts";
 import { ServerSettings, ServerSettingsPatch } from "../settings.ts";
-import { TeamRoleId } from "./team.ts";
+import { TeamRoleId, TeamWorkflow } from "./team.ts";
 
 const workflow = {
   id: "full-stack-team",
@@ -28,6 +28,8 @@ const workflow = {
   maxAutoReports: 30,
   orchestratorInstructions: "",
 } as const;
+
+const decodeTeamWorkflow = Schema.decodeUnknownSync(TeamWorkflow);
 
 const threadCreatedInput = {
   threadId: "thread-team",
@@ -74,6 +76,29 @@ describe("Team Workflow contracts", () => {
         teamWorkflows: [workflow],
       }).teamWorkflows,
     ).toEqual([workflow]);
+  });
+
+  it("keeps old workflow snapshots unchanged and decodes planning options", () => {
+    expect(decodeTeamWorkflow(workflow)).toEqual(workflow);
+
+    const planning = decodeTeamWorkflow({
+      ...workflow,
+      id: "research-and-plan",
+      protocolId: "t3-plan-loop",
+      skillVersion: "1.0.0",
+      researchDepth: "deep",
+      deepResearchWorkers: 3,
+      roles: ["planner", "reviewer", "researcher"].map((kind) => ({
+        ...workflow.roles[0],
+        id: kind,
+        label: kind,
+        kind,
+      })),
+    });
+    expect(planning.roles.map(({ kind }) => kind)).toEqual(["planner", "reviewer", "researcher"]);
+    expect(planning.researchDepth).toBe("deep");
+    expect(planning.deepResearchWorkers).toBe(3);
+    expect(() => decodeTeamWorkflow({ ...planning, deepResearchWorkers: 6 })).toThrow();
   });
 
   it("decodes historical and Team Workflow thread events", () => {

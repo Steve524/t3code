@@ -1,5 +1,11 @@
 import type { TeamRoleId, TeamWorkflow } from "@t3tools/contracts";
 
+import {
+  PLAN_LOOP_PROTOCOL,
+  planLoopCoordinatorInstructions,
+  planLoopWorkerInstructions,
+} from "./PlanLoopSkill.ts";
+
 const TEAM_ORCHESTRATOR_INSTRUCTIONS = `<team_orchestrator>
 You coordinate a team of worker agents in T3 Code for this project. You plan and delegate. You do not implement.
 
@@ -51,10 +57,14 @@ export type RuntimeInstructionTeam =
       readonly roleInstructions: string;
       readonly orchestratorTitle: string;
       readonly branch: string;
+      readonly workflow?: TeamWorkflow | undefined;
     };
 
 export function buildTeamInstructions(team: RuntimeInstructionTeam): string {
   if (team.role === "orchestrator") {
+    if (team.workflow.protocolId === PLAN_LOOP_PROTOCOL) {
+      return planLoopCoordinatorInstructions(team.workflow);
+    }
     const roles = team.workflow.roles
       .filter((role) => role.enabled)
       .map((role) => `- ${role.label} (${role.id}, ${role.kind}): ${role.summary}`)
@@ -62,6 +72,10 @@ export function buildTeamInstructions(team: RuntimeInstructionTeam): string {
     const roster = `<team_roster>\nWorkflow: ${team.workflow.name}\nAvailable roles:\n${roles}\nLimits: ${team.workflow.maxParallelWorkers} parallel workers, ${team.workflow.maxReviewRounds} review rounds, ${team.workflow.maxAutoReports} automatic updates.\n</team_roster>`;
     const custom = team.workflow.orchestratorInstructions.trim();
     return `${TEAM_ORCHESTRATOR_INSTRUCTIONS}\n\n${roster}${custom ? `\n\n<team_orchestrator_instructions>\n${custom}\n</team_orchestrator_instructions>` : ""}`;
+  }
+
+  if (team.workflow?.protocolId === PLAN_LOOP_PROTOCOL) {
+    return planLoopWorkerInstructions(team);
   }
 
   const worker = TEAM_WORKER_INSTRUCTIONS.replace("{roleLabel}", team.roleLabel)

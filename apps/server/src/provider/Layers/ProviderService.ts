@@ -89,6 +89,7 @@ import * as ProjectionSnapshotQuery from "../../orchestration/Services/Projectio
 // FORK: Resolve Team Workflow access and prompts from the fork provider module.
 import {
   canUseTeamTools,
+  normalizePlanLoopPrompt, // FORK: Normalize the planning command before provider dispatch.
   resolveRuntimeInstructionTeam,
 } from "../../fork/provider/TeamProviderSession.ts";
 const isModelSelection = Schema.is(ModelSelection);
@@ -1679,6 +1680,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       );
     }
 
+    // FORK-BEGIN: Dispatch the bundled planning skill without provider-specific slash syntax.
+    inputTextWithAttachmentContext = yield* normalizePlanLoopPrompt(
+      projectionQuery,
+      parsed.threadId,
+      inputTextWithAttachmentContext,
+    );
+    // FORK-END
     const input = {
       ...parsed,
       ...(inputTextWithAttachmentContext !== undefined

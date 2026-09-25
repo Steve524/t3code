@@ -62,8 +62,61 @@ export const BUILT_IN_TEAM_WORKFLOW: TeamWorkflow = {
   orchestratorInstructions: "",
 };
 
+export const RESEARCH_PLAN_TEAM_WORKFLOW: TeamWorkflow = {
+  id: "research-and-plan",
+  name: "Research and plan",
+  builtIn: true,
+  protocolId: "t3-plan-loop",
+  skillVersion: "1.0.0",
+  roles: [
+    {
+      id: TeamRoleId.make("planner"),
+      label: "Planner",
+      kind: "planner",
+      enabled: true,
+      summary: "Requirements and plan drafts",
+      modelSelection: null,
+      runtimeMode: null,
+      instructions: "",
+    },
+    {
+      id: TeamRoleId.make("reviewer"),
+      label: "Reviewer",
+      kind: "reviewer",
+      enabled: true,
+      summary: "Independent plan review",
+      modelSelection: null,
+      runtimeMode: null,
+      instructions: "",
+    },
+    {
+      id: TeamRoleId.make("researcher"),
+      label: "Researcher",
+      kind: "researcher",
+      enabled: true,
+      summary: "Evidence and research brief",
+      modelSelection: null,
+      runtimeMode: null,
+      instructions: "",
+    },
+  ],
+  maxParallelWorkers: 3,
+  maxReviewRounds: 5,
+  maxAutoReports: 30,
+  deepResearchWorkers: 3,
+  orchestratorInstructions: "",
+};
+
+export const BUILT_IN_TEAM_WORKFLOWS = [
+  BUILT_IN_TEAM_WORKFLOW,
+  RESEARCH_PLAN_TEAM_WORKFLOW,
+] as const;
+
 export function resolveTeamWorkflows(
   workflows: ReadonlyArray<TeamWorkflow>,
 ): ReadonlyArray<TeamWorkflow> {
-  return workflows.length === 0 ? [BUILT_IN_TEAM_WORKFLOW] : workflows;
+  return [
+    ...workflows,
+    ...BUILT_IN_TEAM_WORKFLOWS.filter((preset) => !workflows.some(({ id }) => id === preset.id)),
+  ];
 }

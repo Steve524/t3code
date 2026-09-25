@@ -82,6 +82,7 @@ import {
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
 // FORK: Team Workflow drafts use their own composer prompt.
 import { ORCHESTRATOR_COMPOSER_PLACEHOLDER } from "../../fork/composerPlaceholder";
+import { planLoopSlashCommandItems } from "../../fork/planLoopSlashCommand"; // FORK: Show the planning command in compatible workflow threads.
 import { listContinuationForEnter, listIndentForTab } from "../../composer-list-continuation";
 import {
   deriveComposerSendState,
@@ -2361,6 +2362,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }),
   );
 
+  const planLoopProtocolId = teamWorkflow?.protocolId; // FORK: Track the planning command's selected protocol.
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -2432,7 +2434,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         (item) => item.command.name !== "compact" || compactSlashCommandAvailable,
       );
       const slashCommandItems = slashCommandItemsForPromptPosition(
-        [...builtInSlashCommandItems, ...visibleProviderSlashCommandItems, ...skillItems],
+        // FORK: The bundled planning command works without a separately installed provider skill.
+        [
+          ...builtInSlashCommandItems,
+          ...visibleProviderSlashCommandItems,
+          ...planLoopSlashCommandItems(planLoopProtocolId, selectedProvider),
+          ...skillItems,
+        ],
         composerTrigger.rangeStart === 0,
       );
       return searchSlashCommandItems(slashCommandItems, query);
@@ -2516,6 +2524,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderSlashCommands,
     selectedProviderStatus,
     settings.showSkillsInSlashMenu,
+    planLoopProtocolId, // FORK: Refresh the planning command when the protocol changes.
     workspaceEntries.entries,
   ]);
 

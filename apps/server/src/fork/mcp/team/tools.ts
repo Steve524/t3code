@@ -6,6 +6,7 @@ import {
   PositiveInt,
   RuntimeMode,
   TeamRoleId,
+  TeamRoleKind,
   ThreadId,
   ThreadPullRequestLink,
   TrimmedNonEmptyString,
@@ -215,7 +216,7 @@ const TeamRosterResult = Schema.Struct({
     Schema.Struct({
       id: TeamRoleId,
       label: TrimmedNonEmptyString,
-      kind: Schema.Literals(["implementer", "reviewer"]),
+      kind: TeamRoleKind,
       summary: Schema.String,
       modelSelection: ModelSelection,
       runtimeMode: RuntimeMode,

@@ -6,7 +6,7 @@ import { ModelSelection, RuntimeMode } from "../orchestration.ts";
 export const TeamRoleId = TrimmedNonEmptyString.pipe(Schema.brand("TeamRoleId"));
 export type TeamRoleId = typeof TeamRoleId.Type;
 
-export const TeamRoleKind = Schema.Literals(["implementer", "reviewer"]);
+export const TeamRoleKind = Schema.Literals(["implementer", "reviewer", "planner", "researcher"]);
 export type TeamRoleKind = typeof TeamRoleKind.Type;
 
 export const TeamRole = Schema.Struct({
@@ -25,10 +25,16 @@ export const TeamWorkflow = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
   builtIn: Schema.Boolean,
+  protocolId: Schema.optionalKey(TrimmedNonEmptyString),
+  skillVersion: Schema.optionalKey(TrimmedNonEmptyString),
   roles: Schema.Array(TeamRole),
   maxParallelWorkers: PositiveInt,
   maxReviewRounds: PositiveInt,
   maxAutoReports: PositiveInt,
+  researchDepth: Schema.optionalKey(Schema.Literals(["none", "web", "deep"])),
+  deepResearchWorkers: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 3, maximum: 5 })),
+  ),
   orchestratorInstructions: Schema.String,
 });
 export type TeamWorkflow = typeof TeamWorkflow.Type;

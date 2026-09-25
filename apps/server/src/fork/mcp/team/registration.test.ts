@@ -8,6 +8,7 @@ import { McpSchema, McpServer } from "effect/unstable/ai";
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
 import * as McpHttpServer from "../../../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
+import * as ServerConfig from "../../../config.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderInstanceRegistry } from "../../../provider/Services/ProviderInstanceRegistry.ts";
@@ -24,6 +25,9 @@ const TestLayer = McpHttpServer.TeamToolkitRegistrationLive.pipe(
       Layer.mock(ProviderInstanceRegistry)({}),
       Layer.mock(GitWorkflowService.GitWorkflowService)({}),
       Layer.mock(TeamBranchIntegration)({}),
+      ServerConfig.layerTest("/workspace/project", { prefix: "team-registration-test-" }).pipe(
+        Layer.provide(NodeServices.layer),
+      ),
       NodeServices.layer,
     ),
   ),
@@ -58,6 +62,9 @@ it.effect("registers Team Workflow tools and requires the team capability", () =
         "team_roster",
         "team_spawn_worker",
         "team_get_worker",
+        "team_get_worker_result",
+        "team_export_worker_result",
+        "team_list_artifacts",
         "team_message_worker",
         "team_stop_worker",
         "team_integrate",

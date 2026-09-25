@@ -13,6 +13,7 @@ import {
   type TeamWorkflow,
 } from "@t3tools/contracts";
 import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -33,6 +34,7 @@ import { ProjectionSnapshotQuery } from "../../../orchestration/Services/Project
 import type { ProviderInstance } from "../../../provider/ProviderDriver.ts";
 import { ProviderInstanceRegistry } from "../../../provider/Services/ProviderInstanceRegistry.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
+import * as ServerConfig from "../../../config.ts";
 import { TeamToolkitHandlersLive } from "./handlers.ts";
 import { TeamToolkit } from "./tools.ts";
 
@@ -119,14 +121,14 @@ const worker = (
     ...overrides,
   });
 
-function detail(thread: OrchestrationThreadShell): OrchestrationThread {
+function detail(thread: OrchestrationThreadShell, workerResultText = "Done."): OrchestrationThread {
   return {
     ...thread,
     messages: [
       {
         id: MessageId.make("assistant-worker"),
         role: "assistant",
-        text: "Done.",
+        text: workerResultText,
         turnId: TurnId.make("turn-worker"),
         streaming: false,
         createdAt: "2026-09-15T10:01:00.000Z",
@@ -168,6 +170,7 @@ const testCrypto = Crypto.make({
 
 interface HarnessOptions {
   readonly threads?: ReadonlyArray<OrchestrationThreadShell>;
+  readonly workerResultText?: string;
   readonly providerAvailable?: boolean;
   readonly integrateResult?: TeamBranchIntegration.GitIntegrateBranchesResult;
 }
@@ -213,9 +216,18 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
           updatedAt: "2026-09-15T10:00:00.000Z",
         }),
       getThreadDetailById: (threadId) =>
-        Effect.succeed(
-          Option.fromNullishOr(threads.find((thread) => thread.id === threadId)).pipe(
-            Option.map(detail),
+        Ref.get(engineCommands).pipe(
+          Effect.map((commands) =>
+            Option.fromNullishOr(threads.find((thread) => thread.id === threadId)).pipe(
+              Option.map((thread) => ({
+                ...detail(thread, options.workerResultText),
+                activities: commands.flatMap((command) =>
+                  command.type === "thread.activity.append" && command.threadId === threadId
+                    ? [command.activity]
+                    : [],
+                ),
+              })),
+            ),
           ),
         ),
     }),
@@ -263,6 +275,9 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
         ),
     }),
     Layer.succeed(Crypto.Crypto, testCrypto),
+    ServerConfig.layerTest("/workspace/project", { prefix: "team-handler-test-" }).pipe(
+      Layer.provide(NodeServices.layer),
+    ),
   );
   const toolkit = yield* TeamToolkit.pipe(
     Effect.provide(TeamToolkitHandlersLive.pipe(Layer.provide(dependencies))),
@@ -535,6 +550,109 @@ describe("team toolkit handlers", () => {
       expect(yield* Ref.get(harness.engineCommands)).toMatchObject([
         { type: "thread.session.stop", threadId: WORKER_ID },
       ]);
+    }),
+  );
+
+  it.effect("pages a completed worker turn without truncating long Unicode output", () =>
+    Effect.gen(function* () {
+      const fullText = `${"a".repeat(8_000)}😀${"b".repeat(9_000)}`;
+      const harness = yield* makeHarness({
+        threads: [orchestrator(), worker()],
+        workerResultText: fullText,
+      });
+      let cursor = 0;
+      let recovered = "";
+      do {
+        const page = yield* harness.call("team_get_worker_result", {
+          workerThreadId: WORKER_ID,
+          turnId: TurnId.make("turn-worker"),
+          cursor,
+        });
+        expect(page.messageId).toBe(MessageId.make("assistant-worker"));
+        expect(page.totalBytes).toBe(Buffer.byteLength(fullText));
+        expect(page.truncated).toBe(false);
+        expect(page.turnCompleted).toBe(true);
+        recovered += page.text;
+        if (page.nextCursor === null) {
+          expect(page.complete).toBe(true);
+          break;
+        }
+        cursor = page.nextCursor;
+      } while (true);
+      expect(recovered).toBe(fullText);
+
+      const pastEnd = yield* harness
+        .call("team_get_worker_result", {
+          workerThreadId: WORKER_ID,
+          turnId: TurnId.make("turn-worker"),
+          cursor: 100_000,
+        })
+        .pipe(Effect.flip);
+      expect(pastEnd).toMatchObject({ _tag: "TeamResultCursorError" });
+    }),
+  );
+
+  it.effect("does not expose a running turn as a completed result", () =>
+    Effect.gen(function* () {
+      const running = worker({
+        latestTurn: {
+          turnId: TurnId.make("turn-worker"),
+          state: "running",
+          requestedAt: "2026-09-15T10:00:00.000Z",
+          startedAt: "2026-09-15T10:00:00.000Z",
+          completedAt: null,
+          assistantMessageId: MessageId.make("assistant-worker"),
+        },
+      });
+      const harness = yield* makeHarness({ threads: [orchestrator(), running] });
+      const error = yield* harness
+        .call("team_get_worker_result", {
+          workerThreadId: WORKER_ID,
+          turnId: TurnId.make("turn-worker"),
+        })
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "TeamWorkerResultUnavailableError" });
+    }),
+  );
+
+  it.effect("exports only a completed owned turn and records its artifact", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ threads: [orchestrator(), worker()] });
+      const missingChoice = yield* harness
+        .call("team_export_worker_result", {
+          workerThreadId: WORKER_ID,
+          turnId: TurnId.make("turn-worker"),
+          kind: "research",
+        })
+        .pipe(Effect.flip);
+      expect(missingChoice).toMatchObject({ _tag: "TeamNotesDestinationRequiredError" });
+
+      const artifact = yield* harness.call("team_export_worker_result", {
+        workerThreadId: WORKER_ID,
+        turnId: TurnId.make("turn-worker"),
+        kind: "research",
+        destination: { kind: "temporary" },
+      });
+      expect(artifact).toMatchObject({
+        kind: "research",
+        sourceWorkerThreadId: WORKER_ID,
+        sourceTurnId: "turn-worker",
+        sourceMessageId: "assistant-worker",
+        temporary: true,
+        attachment: { _tag: "attachment", mimeType: "text/markdown" },
+      });
+      expect(yield* harness.call("team_list_artifacts", {})).toEqual({ artifacts: [artifact] });
+
+      const foreign = yield* makeHarness({
+        threads: [orchestrator(), worker({}, ThreadId.make("another-owner"))],
+      });
+      const error = yield* foreign
+        .call("team_get_worker_result", {
+          workerThreadId: WORKER_ID,
+          turnId: TurnId.make("turn-worker"),
+        })
+        .pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "TeamWorkerOwnershipError" });
     }),
   );
 

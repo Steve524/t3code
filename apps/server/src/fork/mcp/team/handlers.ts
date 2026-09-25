@@ -1,10 +1,17 @@
-import { CommandId, MessageId, ThreadId, type OrchestrationThreadShell } from "@t3tools/contracts";
+import {
+  CommandId,
+  EventId,
+  MessageId,
+  ThreadId,
+  type OrchestrationThreadShell,
+} from "@t3tools/contracts";
 import { deriveLocalBranchNameFromRemoteRef, sanitizeBranchFragment } from "@t3tools/shared/git";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
 import * as TeamBranchIntegration from "../../git/TeamBranchIntegration.ts";
@@ -13,22 +20,29 @@ import * as OrchestrationEngine from "../../../orchestration/Services/Orchestrat
 import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProviderInstanceRegistry from "../../../provider/Services/ProviderInstanceRegistry.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
+import * as ServerConfig from "../../../config.ts";
+import { writeTeamArtifact } from "./artifacts.ts";
+import { completedTurnResult, pageResult } from "./results.ts";
 import {
+  TeamArtifact,
   TeamBaseBranchUnavailableError,
   TeamIntegrationBranchOwnershipError,
   TeamIntegrationTargetError,
   TeamOperationFailedError,
+  TeamNotesDestinationRequiredError,
   TeamOrchestratorRequiredError,
   TeamProjectNotFoundError,
   TeamProviderUnavailableError,
   TeamReviewRoundLimitError,
   TeamRoleDisabledError,
   TeamRoleNotFoundError,
+  TeamResultCursorError,
   TeamThreadNotFoundError,
   TeamToolkit,
   TeamWorkerLimitError,
   TeamWorkerNotFoundError,
   TeamWorkerOwnershipError,
+  TeamWorkerResultUnavailableError,
   WorkerBusyError,
 } from "./tools.ts";
 
@@ -73,6 +87,7 @@ const make = Effect.gen(function* () {
   const bootstrap = yield* ThreadBootstrap.ThreadBootstrap;
   const git = yield* GitWorkflowService.GitWorkflowService;
   const integration = yield* TeamBranchIntegration.TeamBranchIntegration;
+  const config = yield* ServerConfig.ServerConfig;
 
   const randomId = <A>(makeId: (value: string) => A) =>
     crypto.randomUUIDv4.pipe(Effect.orDie, Effect.map(makeId));
@@ -134,6 +149,24 @@ const make = Effect.gen(function* () {
       return deriveLocalBranchNameFromRemoteRef(fallback.name);
     }
     return yield* new TeamBaseBranchUnavailableError({});
+  });
+
+  const requireCompletedResult = Effect.fn("TeamToolkit.requireCompletedResult")(function* (
+    workerThreadId: ThreadId,
+    turnId: Parameters<typeof completedTurnResult>[1],
+    operation: Operation,
+  ) {
+    const { orchestrator, worker } = yield* requireOwnedWorker(operation, workerThreadId);
+    // ponytail: This rereads the worker's full message history per page; add a targeted message query if long-lived teams make retrieval slow.
+    const detail = yield* snapshots
+      .getThreadDetailById(worker.id, { activityKinds: [] })
+      .pipe(mapFailure(operation));
+    if (Option.isNone(detail)) return yield* new TeamWorkerNotFoundError({ workerThreadId });
+    const message = completedTurnResult(detail.value, turnId);
+    if (message === null) {
+      return yield* new TeamWorkerResultUnavailableError({ workerThreadId, turnId });
+    }
+    return { orchestrator, message };
   });
 
   return TeamToolkit.of({
@@ -291,6 +324,99 @@ const make = Effect.gen(function* () {
           hasPendingApprovals: worker.hasPendingApprovals,
           hasPendingUserInput: worker.hasPendingUserInput,
           pullRequests: visibleThreadPullRequests(detail.value.pullRequests),
+        };
+      }),
+
+    team_get_worker_result: ({ workerThreadId, turnId, cursor = 0 }) =>
+      Effect.gen(function* () {
+        const { message } = yield* requireCompletedResult(workerThreadId, turnId, "result");
+        const page = pageResult(message.text, cursor);
+        if (page === null) return yield* new TeamResultCursorError({ cursor });
+        return {
+          workerThreadId,
+          turnId,
+          messageId: message.id,
+          turnCompleted: true as const,
+          ...page,
+        };
+      }),
+
+    team_export_worker_result: ({ workerThreadId, turnId, kind, destination }) =>
+      Effect.gen(function* () {
+        if (kind === "research" && destination === undefined) {
+          return yield* new TeamNotesDestinationRequiredError({});
+        }
+        const scope = yield* McpInvocationContext.requireMcpCapability("team");
+        const { orchestrator, message } = yield* requireCompletedResult(
+          workerThreadId,
+          turnId,
+          "export",
+        );
+        const project = yield* snapshots
+          .getProjectShellById(orchestrator.projectId)
+          .pipe(mapFailure("export"));
+        if (Option.isNone(project)) return yield* new TeamProjectNotFoundError({});
+        const createdAt = yield* nowIso;
+        const saved = yield* Effect.tryPromise(() =>
+          writeTeamArtifact({
+            environmentId: scope.environmentId,
+            threadId: orchestrator.id,
+            projectRoot: project.value.workspaceRoot,
+            title: orchestrator.title,
+            kind,
+            destination: destination ?? { kind: "temporary" },
+            content: message.text,
+            attachmentsDir: config.attachmentsDir,
+            date: createdAt,
+          }),
+        ).pipe(mapFailure("export"));
+        const artifact = {
+          ...saved,
+          kind,
+          sourceWorkerThreadId: workerThreadId,
+          sourceTurnId: turnId,
+          sourceMessageId: message.id,
+          createdAt,
+        };
+        yield* engine
+          .dispatch({
+            type: "thread.activity.append",
+            commandId: yield* randomId((id) => CommandId.make(`server:team-artifact:${id}`)),
+            threadId: orchestrator.id,
+            activity: {
+              id: yield* randomId(EventId.make),
+              tone: "info",
+              kind: "team.artifact.exported",
+              summary: `Saved ${kind} artifact`,
+              payload: artifact,
+              turnId: null,
+              createdAt,
+            },
+            createdAt,
+          })
+          .pipe(mapFailure("export"));
+        return artifact;
+      }),
+
+    team_list_artifacts: () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* requireOrchestrator("artifacts");
+        const detail = yield* snapshots
+          .getThreadDetailById(orchestrator.id, { activityKinds: ["team.artifact.exported"] })
+          .pipe(mapFailure("artifacts"));
+        if (Option.isNone(detail)) {
+          return yield* new TeamThreadNotFoundError({ threadId: orchestrator.id });
+        }
+        const decode = Schema.decodeUnknownOption(TeamArtifact);
+        return {
+          artifacts: detail.value.activities.flatMap((activity) =>
+            activity.kind === "team.artifact.exported"
+              ? Option.match(decode(activity.payload), {
+                  onNone: () => [],
+                  onSome: (artifact) => [artifact],
+                })
+              : [],
+          ),
         };
       }),
 

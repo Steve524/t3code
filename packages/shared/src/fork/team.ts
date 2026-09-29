@@ -1,4 +1,4 @@
-import { TeamRoleId, type TeamWorkflow } from "@t3tools/contracts";
+import { TeamRoleId, type TeamRoleKind, type TeamWorkflow } from "@t3tools/contracts";
 
 export const BUILT_IN_TEAM_WORKFLOW: TeamWorkflow = {
   id: "full-stack-team",
@@ -76,8 +76,8 @@ export const BUILT_IN_RESEARCH_PLAN_WORKFLOW: TeamWorkflow = {
       enabled: true,
       summary: "Web and deep research briefs",
       modelSelection: null,
-      // ponytail: approval-required is the interim read-only guard; Phase 2 maps each provider to an enforced mode.
-      runtimeMode: "approval-required",
+      // Read-only roles ignore their own runtime mode; see teamReadOnlyLaunch.
+      runtimeMode: null,
       instructions: "",
     },
     {
@@ -87,7 +87,7 @@ export const BUILT_IN_RESEARCH_PLAN_WORKFLOW: TeamWorkflow = {
       enabled: true,
       summary: "Adversarial plan review",
       modelSelection: null,
-      runtimeMode: "approval-required",
+      runtimeMode: null,
       instructions: "",
     },
   ],
@@ -101,6 +101,21 @@ export const BUILT_IN_TEAM_WORKFLOWS: ReadonlyArray<TeamWorkflow> = [
   BUILT_IN_TEAM_WORKFLOW,
   BUILT_IN_RESEARCH_PLAN_WORKFLOW,
 ];
+
+/** Researchers and plan reviewers never write, so they never commit or get a branch to integrate. */
+export const isReadOnlyTeamRoleKind = (kind: TeamRoleKind) =>
+  kind === "researcher" || kind === "plan-reviewer";
+
+/**
+ * How a read-only worker runs on a provider driver. Non-null: in the planner's checkout with these
+ * modes, where every write becomes an approval request that the server declines. Null: the provider
+ * can't stop writes that way, so the worker gets an isolated worktree. Evidence per provider:
+ * docs/fork/research-plan-team-testing.md (Phase 2 matrix).
+ */
+export const teamReadOnlyLaunch = (driverKind: string) =>
+  driverKind === "claudeAgent"
+    ? ({ runtimeMode: "approval-required", interactionMode: "default" } as const)
+    : null;
 
 /** Saved workflows replace the defaults, but a built-in missing from the list is still offered. */
 export function resolveTeamWorkflows(

@@ -9,6 +9,7 @@ import {
   type TeamWorkerStatus,
 } from "@t3tools/client-runtime/state/team";
 import { formatSubagentModelLabel } from "@t3tools/client-runtime/state/subagentRuntime";
+import { isReadOnlyTeamRoleKind } from "@t3tools/shared/team";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { ExternalLink, MessageSquare, Square, Users } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -59,6 +60,8 @@ function WorkerDiffStats({ worker }: { worker: EnvironmentThreadShell }) {
 
 export function TeamWorkerRow(props: {
   worker: EnvironmentThreadShell;
+  /** Researchers and plan reviewers change nothing; their checkpoints show the planner's edits. */
+  readOnly: boolean;
   onOpen: () => void;
   onStop: () => void;
   onMessage: () => void;
@@ -143,7 +146,11 @@ export function TeamWorkerRow(props: {
       </span>
       <span className="col-start-2 flex min-w-0 items-center gap-2 font-mono text-[.7rem] text-muted-foreground/80">
         <span>{visual.label}</span>
-        {status === "working" ? <span>—</span> : <WorkerDiffStats worker={worker} />}
+        {props.readOnly ? null : status === "working" ? (
+          <span>—</span>
+        ) : (
+          <WorkerDiffStats worker={worker} />
+        )}
       </span>
     </div>
   );
@@ -159,6 +166,18 @@ export function TeamPanel(props: {
   const workers = useMemo(
     () => selectTeamWorkers(threads, props.orchestratorRef),
     [props.orchestratorRef, threads],
+  );
+  const orchestratorTeam = threads.find(
+    (thread) =>
+      thread.environmentId === props.orchestratorRef.environmentId &&
+      thread.id === props.orchestratorRef.threadId,
+  )?.team;
+  const readOnlyRoleIds = new Set(
+    orchestratorTeam?.role === "orchestrator"
+      ? orchestratorTeam.workflow.roles
+          .filter((role) => isReadOnlyTeamRoleKind(role.kind))
+          .map((role) => role.id)
+      : [],
   );
   const status = deriveTeamStatus(workers);
   const [messageWorker, setMessageWorker] = useState<EnvironmentThreadShell | null>(null);
@@ -209,6 +228,7 @@ export function TeamPanel(props: {
               <TeamWorkerRow
                 key={worker.id}
                 worker={worker}
+                readOnly={worker.team?.role === "worker" && readOnlyRoleIds.has(worker.team.roleId)}
                 onOpen={() => props.onOpenWorker(worker)}
                 onStop={() => void props.onStopWorker(worker)}
                 onMessage={() => setMessageWorker(worker)}

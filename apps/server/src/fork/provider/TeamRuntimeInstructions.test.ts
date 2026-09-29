@@ -144,6 +144,9 @@ describe("Team Workflow runtime instructions", () => {
     expect(instructions).toContain(
       "Rounds 2 and later: team_message_worker to the same reviewer thread",
     );
+    // An isolated reviewer only sees the plan if the server can read it from planPath.
+    expect(instructions).toContain("reviewRound 1, and planPath set to the plan file");
+    expect(instructions).toContain("same reviewer thread with planPath");
     expect(instructions).toContain("- Plan reviewer (plan-reviewer, plan-reviewer)");
     expect(instructions).toContain("2 parallel workers, 5 review rounds");
   });
@@ -159,7 +162,11 @@ describe("Team Workflow runtime instructions", () => {
         orchestratorTitle: "Plan the feature",
         branch: "the assigned branch",
       });
-      expect(instructions).toContain("you are read-only");
+      expect(instructions).toContain("You are read-only");
+      if (role.kind === "plan-reviewer") {
+        // An isolated reviewer refused inlined plan text before this line existed (Phase 2 live check).
+        expect(instructions).toContain("if the message includes the plan's text");
+      }
       expect(instructions).not.toContain("the assigned branch");
       expect(instructions).not.toContain("Commit your work");
       expect(instructions).not.toContain("<team_worker>");

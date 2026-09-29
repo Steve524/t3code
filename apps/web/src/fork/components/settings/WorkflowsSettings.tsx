@@ -6,13 +6,18 @@ import type {
   TeamWorkflow,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
+import {
+  BUILT_IN_TEAM_WORKFLOW,
+  isReadOnlyTeamRoleKind,
+  teamReadOnlyLaunch,
+} from "@t3tools/shared/team";
 import { ChevronDownIcon, InfoIcon, RotateCcwIcon } from "lucide-react";
 
 import { getCustomModelOptionsByInstance } from "../../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  type ProviderInstanceEntry,
   resolveDefaultProviderModelSelection,
   sortProviderInstanceEntries,
 } from "../../../providerInstances";
@@ -87,6 +92,16 @@ export function shouldSuggestIndependentQa(
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   if (ranked.length > 1 && ranked[0]![1] === ranked[1]![1]) return false;
   return providerKey(qa.modelSelection) === ranked[0]![0];
+}
+
+/** Read-only roles show how their provider keeps them read-only instead of a permissions picker. */
+export function readOnlyPermissionLabel(
+  provider: Pick<ProviderInstanceEntry, "driverKind" | "displayName"> | undefined,
+): string {
+  if (provider === undefined) return "Read-only: enforced on Claude, isolated worktree elsewhere";
+  return teamReadOnlyLaunch(provider.driverKind) !== null
+    ? "Read-only (enforced)"
+    : `Read-only not enforced on ${provider.displayName} (isolated worktree)`;
 }
 
 function RoleModelControls({
@@ -207,29 +222,41 @@ function RoleRow({
         </div>
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-muted-foreground">Permissions</p>
-          <Select
-            value={role.runtimeMode ?? INHERIT_RUNTIME_MODE}
-            onValueChange={(value) => {
-              if (value === INHERIT_RUNTIME_MODE) updateRole({ runtimeMode: null });
-              else if (value && isRuntimeMode(value)) updateRole({ runtimeMode: value });
-            }}
-          >
-            <SelectTrigger size="sm" aria-label={`${role.label} permissions`}>
-              <SelectValue>
-                {role.runtimeMode === null
-                  ? "Same as orchestrator"
-                  : runtimeModeConfig[role.runtimeMode].label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="start">
-              <SelectItem value={INHERIT_RUNTIME_MODE}>Same as orchestrator</SelectItem>
-              {runtimeModeOptions.map((mode) => (
-                <SelectItem key={mode} value={mode}>
-                  {runtimeModeConfig[mode].label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
+          {isReadOnlyTeamRoleKind(role.kind) ? (
+            <p className="text-sm">
+              {readOnlyPermissionLabel(
+                role.modelSelection === null
+                  ? undefined
+                  : entries.find(
+                      ({ instanceId }) => instanceId === role.modelSelection?.instanceId,
+                    ),
+              )}
+            </p>
+          ) : (
+            <Select
+              value={role.runtimeMode ?? INHERIT_RUNTIME_MODE}
+              onValueChange={(value) => {
+                if (value === INHERIT_RUNTIME_MODE) updateRole({ runtimeMode: null });
+                else if (value && isRuntimeMode(value)) updateRole({ runtimeMode: value });
+              }}
+            >
+              <SelectTrigger size="sm" aria-label={`${role.label} permissions`}>
+                <SelectValue>
+                  {role.runtimeMode === null
+                    ? "Same as orchestrator"
+                    : runtimeModeConfig[role.runtimeMode].label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="start">
+                <SelectItem value={INHERIT_RUNTIME_MODE}>Same as orchestrator</SelectItem>
+                {runtimeModeOptions.map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {runtimeModeConfig[mode].label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          )}
         </div>
       </div>
       {showQaHint ? (

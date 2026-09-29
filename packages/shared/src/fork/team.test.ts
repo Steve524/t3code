@@ -5,6 +5,7 @@ import {
   BUILT_IN_TEAM_WORKFLOW,
   BUILT_IN_TEAM_WORKFLOWS,
   resolveTeamWorkflows,
+  teamReadOnlyLaunch,
 } from "./team.ts";
 
 describe("resolveTeamWorkflows", () => {
@@ -33,8 +34,24 @@ describe("resolveTeamWorkflows", () => {
     expect(
       BUILT_IN_RESEARCH_PLAN_WORKFLOW.roles.map(({ kind, runtimeMode }) => [kind, runtimeMode]),
     ).toEqual([
-      ["researcher", "approval-required"],
-      ["plan-reviewer", "approval-required"],
+      ["researcher", null],
+      ["plan-reviewer", null],
     ]);
+  });
+});
+
+describe("teamReadOnlyLaunch", () => {
+  it("keeps Claude read-only workers in the planner checkout, out of plan mode", () => {
+    // Plan mode let a Bash write through on Claude (Phase 2 matrix), so it must not be used.
+    expect(teamReadOnlyLaunch("claudeAgent")).toEqual({
+      runtimeMode: "approval-required",
+      interactionMode: "default",
+    });
+  });
+
+  it("isolates every provider the matrix could not hold to read-only", () => {
+    for (const driver of ["codex", "antigravity", "opencode", "cursor", "grok", "unknown"]) {
+      expect(teamReadOnlyLaunch(driver)).toBeNull();
+    }
   });
 });

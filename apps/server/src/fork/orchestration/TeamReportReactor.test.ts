@@ -1,4 +1,5 @@
 import {
+  CheckpointRef,
   CommandId,
   CorrelationId,
   EventId,
@@ -24,6 +25,7 @@ import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import { describe, expect } from "vite-plus/test";
 
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
@@ -236,6 +238,7 @@ const makeHarness = (initialThreads: ReadonlyArray<TestThread>) =>
     const events = yield* PubSub.unbounded<OrchestrationEvent>();
     const threads = new Map(initialThreads.map((thread) => [thread.id, thread]));
     const commands: OrchestrationCommand[] = [];
+    const removedWorktrees: Array<{ cwd: string; path: string; force?: boolean }> = [];
     let sequence = 0;
     const snapshot = (): OrchestrationReadModel => ({
       snapshotSequence: sequence,
@@ -251,7 +254,14 @@ const makeHarness = (initialThreads: ReadonlyArray<TestThread>) =>
         ),
       getThreadDetailById: (threadId: ThreadId) =>
         Effect.sync(() => Option.fromNullishOr(threads.get(threadId))),
+      getProjectShellById: () => Effect.succeedSome({ workspaceRoot: "/repo" }),
     } as unknown as ProjectionSnapshotQueryShape;
+    const git = {
+      removeWorktree: (input: { cwd: string; path: string; force?: boolean }) =>
+        Effect.sync(() => {
+          removedWorktrees.push(input);
+        }),
+    } as unknown as GitWorkflowService.GitWorkflowService["Service"];
     const engine = {
       dispatch: (command: OrchestrationCommand) =>
         Effect.sync(() => {
@@ -265,6 +275,7 @@ const makeHarness = (initialThreads: ReadonlyArray<TestThread>) =>
 
     return {
       commands,
+      removedWorktrees,
       threads,
       publish: (event: OrchestrationEvent) =>
         Effect.gen(function* () {
@@ -275,6 +286,7 @@ const makeHarness = (initialThreads: ReadonlyArray<TestThread>) =>
         Layer.provide(Layer.succeed(ProjectionSnapshotQuery, projection)),
         Layer.provide(Layer.succeed(OrchestrationEngineService, engine)),
         Layer.provide(Layer.succeed(Crypto.Crypto, testCrypto)),
+        Layer.provide(Layer.succeed(GitWorkflowService.GitWorkflowService, git)),
       ),
     };
   });
@@ -556,6 +568,169 @@ describe("TeamReportReactor", () => {
           const retry = turnStarts(harness.commands)[1]?.message.text ?? "";
           expect(retry).toContain("No assistant output.");
           expect(retry).not.toContain("Round one verdict.");
+        }).pipe(Effect.provide(harness.layer));
+      }),
+    ),
+  );
+
+  const planOwner = () => {
+    const owner = makeThread({
+      id: OWNER_ID,
+      team: { role: "orchestrator", workflow: workflow() },
+      latestTurn: turn("owner", "completed"),
+    });
+    owner.team = {
+      role: "orchestrator",
+      workflow: { ...workflow(), type: "plan", roles: BUILT_IN_RESEARCH_PLAN_WORKFLOW.roles },
+    };
+    return owner;
+  };
+  const reviewerAt = (id: ThreadId, worktreePath: string | null, sessionStatus = "running") => {
+    const reviewer = makeThread({
+      id,
+      team: { ...workerTeam, roleId: TeamRoleId.make("plan-reviewer"), roleLabel: "Plan reviewer" },
+      latestTurn: turn(id, "running"),
+      sessionStatus: sessionStatus as "running",
+    });
+    reviewer.worktreePath = worktreePath;
+    return reviewer;
+  };
+  const requestEvent = (
+    sequence: number,
+    worker: TestThread,
+    requestId: string,
+    detail: string,
+  ) => {
+    const event = approvalEvent(sequence, worker, `approval-${requestId}`);
+    return {
+      ...event,
+      payload: {
+        ...event.payload,
+        activity: { ...event.payload.activity, payload: { requestId, detail } },
+      },
+    };
+  };
+
+  effectIt.effect("answers a shared-checkout read-only worker's approvals itself", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const owner = planOwner();
+        const shared = reviewerAt(WORKER_ONE_ID, null);
+        const isolated = reviewerAt(WORKER_TWO_ID, "/worktrees/reviewer");
+        const harness = yield* makeHarness([owner, shared, isolated]);
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* TeamReportReactor;
+          yield* reactor.start();
+          yield* harness.publish(requestEvent(1, shared, "web", 'WebSearch: {"query":"x"}'));
+          yield* harness.publish(requestEvent(2, shared, "write", 'Write: {"file_path":"a"}'));
+          yield* harness.publish(requestEvent(3, shared, "shell", "Bash: node -e 1"));
+          yield* reactor.drainThrough(3);
+          expect(
+            harness.commands.map((command) =>
+              command.type === "thread.approval.respond"
+                ? [command.threadId, command.requestId, command.decision]
+                : command.type,
+            ),
+          ).toEqual([
+            [WORKER_ONE_ID, "web", "accept"],
+            [WORKER_ONE_ID, "write", "decline"],
+            [WORKER_ONE_ID, "shell", "decline"],
+          ]);
+
+          // An isolated reviewer's request is left to the user, and the planner hears about it.
+          isolated.hasPendingApprovals = true;
+          yield* harness.publish(requestEvent(4, isolated, "iso", 'Write: {"file_path":"a"}'));
+          yield* reactor.drainThrough(4);
+          expect(harness.commands.slice(3).map((command) => command.type)).toEqual([
+            "thread.turn.start",
+          ]);
+          expect(turnStarts(harness.commands)[0]?.message.text).toContain("approval requested");
+        }).pipe(Effect.provide(harness.layer));
+      }),
+    ),
+  );
+
+  effectIt.effect("removes an isolated read-only worktree once its session stops", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const owner = planOwner();
+        const isolated = reviewerAt(WORKER_ONE_ID, "/worktrees/reviewer", "stopped");
+        const shared = reviewerAt(WORKER_TWO_ID, null, "stopped");
+        const builder = makeThread({
+          id: ThreadId.make("builder"),
+          team: workerTeam,
+          sessionStatus: "stopped",
+        });
+        builder.worktreePath = "/worktrees/builder";
+        const harness = yield* makeHarness([owner, isolated, shared, builder]);
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* TeamReportReactor;
+          yield* reactor.start();
+          yield* harness.publish(sessionEvent(1, isolated));
+          yield* harness.publish(sessionEvent(2, shared));
+          yield* harness.publish(sessionEvent(3, builder));
+          yield* reactor.drainThrough(3);
+          expect(harness.removedWorktrees).toEqual([
+            { cwd: "/repo", path: "/worktrees/reviewer", force: true },
+          ]);
+        }).pipe(Effect.provide(harness.layer));
+      }),
+    ),
+  );
+
+  effectIt.effect("reports no diff stats for read-only workers", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const owner = planOwner();
+        const reviewer = reviewerAt(WORKER_ONE_ID, null);
+        reviewer.latestTurn = turn("one", "completed");
+        const builder = makeThread({
+          id: WORKER_TWO_ID,
+          team: workerTeam,
+          latestTurn: turn("two", "completed"),
+        });
+        // The reviewer's checkpoint holds the planner's plan edits from the shared checkout.
+        for (const thread of [reviewer, builder]) {
+          thread.checkpoints = [
+            {
+              turnId: thread.latestTurn!.turnId,
+              checkpointTurnCount: 1,
+              checkpointRef: CheckpointRef.make(`refs/t3/checkpoints/${thread.id}/1`),
+              status: "ready",
+              files: [{ path: "docs/plans/p.md", kind: "modified", additions: 63, deletions: 33 }],
+              assistantMessageId: null,
+              completedAt: NOW,
+            },
+          ];
+        }
+        const harness = yield* makeHarness([owner, reviewer, builder]);
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* TeamReportReactor;
+          yield* reactor.start();
+          yield* reactor.drain;
+          const [report] = turnStarts(harness.commands);
+          const sections = report?.message.text.split("### ") ?? [];
+          expect(sections.find((section) => section.startsWith("Plan reviewer"))).not.toContain(
+            "Diff:",
+          );
+          expect(sections.find((section) => section.startsWith("Builder"))).toContain(
+            "Diff: 1 files, +63/-33",
+          );
+          const payload = report?.message.context?.records[0] as
+            | { payload: { reports: Array<{ workerThreadId: string; diffStats: unknown }> } }
+            | undefined;
+          expect(
+            payload?.payload.reports.map(({ workerThreadId, diffStats }) => [
+              workerThreadId,
+              diffStats,
+            ]),
+          ).toEqual([
+            [WORKER_ONE_ID, null],
+            [WORKER_TWO_ID, { files: 1, additions: 63, deletions: 33 }],
+          ]);
         }).pipe(Effect.provide(harness.layer));
       }),
     ),

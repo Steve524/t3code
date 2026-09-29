@@ -151,7 +151,11 @@ vi.mock("../../../components/ui/switch", () => ({
 }));
 vi.mock("../../../components/ui/textarea", () => ({ Textarea: "textarea" }));
 
-import { shouldSuggestIndependentQa, WorkflowsSettingsPanel } from "./WorkflowsSettings";
+import {
+  readOnlyPermissionLabel,
+  shouldSuggestIndependentQa,
+  WorkflowsSettingsPanel,
+} from "./WorkflowsSettings";
 
 let renderer: ReactTestRenderer | null;
 
@@ -197,6 +201,19 @@ afterEach(async () => {
 });
 
 describe("workflow settings", () => {
+  it("labels read-only roles by whether their provider enforces read-only", () => {
+    expect(
+      readOnlyPermissionLabel({ driverKind: "claudeAgent" as never, displayName: "Claude" }),
+    ).toBe("Read-only (enforced)");
+    expect(readOnlyPermissionLabel({ driverKind: "codex" as never, displayName: "work1" })).toBe(
+      "Read-only not enforced on work1 (isolated worktree)",
+    );
+    // "Same as host": the planner's provider is only known when a thread starts.
+    expect(readOnlyPermissionLabel(undefined)).toBe(
+      "Read-only: enforced on Claude, isolated worktree elsewhere",
+    );
+  });
+
   it("suggests an independent QA provider for the built-in inherited models", () => {
     expect(
       shouldSuggestIndependentQa(

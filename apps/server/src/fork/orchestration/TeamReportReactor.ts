@@ -1,15 +1,18 @@
 import {
+  ApprovalRequestId,
   CommandId,
   ComposerContextId,
   EventId,
   MessageId,
   type OrchestrationEvent,
+  type OrchestrationThreadActivity,
   type OrchestrationReadModel,
   type OrchestrationThread,
   type OrchestrationThreadShell,
   type ThreadId,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { isReadOnlyTeamRoleKind } from "@t3tools/shared/team";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -21,9 +24,11 @@ import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { forkParked } from "../../serverActivation.ts";
 import * as OrchestrationEngine from "../../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { readOnlyApprovalDecision } from "../provider/teamReadOnly.ts";
 
 const TEAM_REPORT_KIND = "team-report";
 const ASSISTANT_MESSAGE_LIMIT = 1_500;
@@ -42,17 +47,22 @@ type OwnerState = {
   suppressed: boolean;
 };
 
+type WorkerShell = OrchestrationThreadShell & {
+  readonly team: Extract<NonNullable<OrchestrationThreadShell["team"]>, { role: "worker" }>;
+};
+
 type TeamReport = {
   readonly workerThreadId: ThreadId;
   readonly roleLabel: string;
   readonly title: string;
   readonly state: string;
   readonly branch: string | null;
+  /** Null for read-only workers: their checkpoints only capture the planner's edits. */
   readonly diffStats: {
     readonly files: number;
     readonly additions: number;
     readonly deletions: number;
-  };
+  } | null;
   readonly lastAssistantMessage: string | null;
 };
 
@@ -104,7 +114,11 @@ const reportText = (reports: ReadonlyArray<TeamReport>) =>
         `### ${report.roleLabel}: ${report.title}`,
         `State: ${report.state}`,
         `Branch: ${report.branch ?? "default"}`,
-        `Diff: ${report.diffStats.files} files, +${report.diffStats.additions}/-${report.diffStats.deletions}`,
+        ...(report.diffStats === null
+          ? []
+          : [
+              `Diff: ${report.diffStats.files} files, +${report.diffStats.additions}/-${report.diffStats.deletions}`,
+            ]),
         output,
       ].join("\n");
     }),
@@ -115,6 +129,7 @@ export const make = Effect.gen(function* () {
   const engine = yield* OrchestrationEngine.OrchestrationEngineService;
   const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const crypto = yield* Crypto.Crypto;
+  const git = yield* GitWorkflowService.GitWorkflowService;
   const owners = new Map<ThreadId, OwnerState>();
 
   const ownerState = (ownerThreadId: ThreadId) => {
@@ -135,6 +150,20 @@ export const make = Effect.gen(function* () {
   const randomId = <A>(makeId: (value: string) => A) =>
     crypto.randomUUIDv4.pipe(Effect.orDie, Effect.map(makeId));
 
+  const readShell = Effect.fn("TeamReportReactor.readShell")(function* (threadId: ThreadId) {
+    const found = yield* snapshots.getThreadShellById(threadId);
+    return Option.getOrNull(found);
+  });
+
+  /** The worker's role kind, and whether it works in its planner's checkout. */
+  const workerRole = Effect.fn("TeamReportReactor.workerRole")(function* (worker: WorkerShell) {
+    const owner = yield* readShell(worker.team.orchestratorThreadId);
+    if (owner?.team?.role !== "orchestrator") return null;
+    const kind = owner.team.workflow.roles.find((role) => role.id === worker.team.roleId)?.kind;
+    if (kind === undefined) return null;
+    return { kind, sharesCheckout: worker.worktreePath === owner.worktreePath };
+  });
+
   const buildReport = Effect.fn("TeamReportReactor.buildReport")(function* (
     pending: PendingWorker,
   ) {
@@ -154,21 +183,16 @@ export const make = Effect.gen(function* () {
       }),
       { files: 0, additions: 0, deletions: 0 },
     );
-    const owner = yield* snapshots.getThreadShellById(shell.value.team.orchestratorThreadId);
-    const roleId = shell.value.team.roleId;
-    const kind =
-      Option.isSome(owner) && owner.value.team?.role === "orchestrator"
-        ? owner.value.team.workflow.roles.find((role) => role.id === roleId)?.kind
-        : undefined;
+    const kind = (yield* workerRole({ ...shell.value, team: shell.value.team }))?.kind;
+    const readOnly = kind !== undefined && isReadOnlyTeamRoleKind(kind);
     // A research brief or a verdict JSON at the end of the reply must arrive whole, and only from
     // this turn: a failed later review round must not resend the previous round's verdict.
-    const fullMessage = kind === "researcher" || kind === "plan-reviewer";
     const latestTurnId = shell.value.latestTurn?.turnId;
     const lastAssistantMessage = detail.value.messages.findLast(
       (message) =>
         message.role === "assistant" &&
         !message.streaming &&
-        (!fullMessage || message.turnId === latestTurnId),
+        (!readOnly || message.turnId === latestTurnId),
     );
     return {
       workerThreadId: shell.value.id,
@@ -176,9 +200,9 @@ export const make = Effect.gen(function* () {
       title: shell.value.team.taskTitle,
       state: workerState(shell.value),
       branch: shell.value.branch,
-      diffStats,
+      diffStats: readOnly ? null : diffStats,
       lastAssistantMessage:
-        (fullMessage
+        (readOnly
           ? lastAssistantMessage?.text
           : lastAssistantMessage?.text.slice(0, ASSISTANT_MESSAGE_LIMIT)) ?? null,
     } satisfies TeamReport;
@@ -296,9 +320,56 @@ export const make = Effect.gen(function* () {
     yield* flush(worker.team.orchestratorThreadId);
   });
 
-  const readShell = Effect.fn("TeamReportReactor.readShell")(function* (threadId: ThreadId) {
-    const found = yield* snapshots.getThreadShellById(threadId);
-    return Option.getOrNull(found);
+  /**
+   * A read-only worker in its planner's checkout never waits on a person: the server accepts reads
+   * and declines everything else, so no approval can let it write to the shared checkout.
+   */
+  const answerReadOnlyApproval = Effect.fn("TeamReportReactor.answerReadOnlyApproval")(function* (
+    worker: WorkerShell,
+    activity: OrchestrationThreadActivity,
+  ) {
+    const role = yield* workerRole(worker);
+    const payload = activity.payload as { readonly requestId?: unknown; readonly detail?: unknown };
+    if (
+      role === null ||
+      !isReadOnlyTeamRoleKind(role.kind) ||
+      !role.sharesCheckout ||
+      typeof payload?.requestId !== "string"
+    ) {
+      return false;
+    }
+    const createdAt = DateTime.formatIso(yield* DateTime.now);
+    yield* engine.dispatch({
+      type: "thread.approval.respond",
+      commandId: yield* randomId((id) => CommandId.make(`server:team-read-only:${id}`)),
+      threadId: worker.id,
+      requestId: ApprovalRequestId.make(payload.requestId),
+      decision: readOnlyApprovalDecision(payload.detail),
+      createdAt,
+    });
+    return true;
+  });
+
+  /** An isolated read-only worker's worktree is scratch space; the branch stays so a resume can recreate it. */
+  const removeIsolatedWorktree = Effect.fn("TeamReportReactor.removeIsolatedWorktree")(function* (
+    worker: WorkerShell,
+  ) {
+    const role = yield* workerRole(worker);
+    if (
+      role === null ||
+      !isReadOnlyTeamRoleKind(role.kind) ||
+      role.sharesCheckout ||
+      worker.worktreePath === null
+    ) {
+      return;
+    }
+    const project = yield* snapshots.getProjectShellById(worker.projectId);
+    if (Option.isNone(project)) return;
+    yield* git.removeWorktree({
+      cwd: project.value.workspaceRoot,
+      path: worker.worktreePath,
+      force: true,
+    });
   });
 
   const resetOwner = Effect.fn("TeamReportReactor.resetOwner")(function* (threadId: ThreadId) {
@@ -344,12 +415,15 @@ export const make = Effect.gen(function* () {
       const kind = event.payload.activity.kind;
       if (kind !== "approval.requested" && kind !== "user-input.requested") return;
       const worker = yield* readShell(event.payload.threadId);
-      if (worker?.team?.role === "worker") {
-        yield* queueWorker(
-          { ...worker, team: worker.team },
-          `${kind}:${event.payload.activity.id}`,
-        );
+      if (worker?.team?.role !== "worker") return;
+      const workerShell = { ...worker, team: worker.team };
+      if (
+        kind === "approval.requested" &&
+        (yield* answerReadOnlyApproval(workerShell, event.payload.activity))
+      ) {
+        return;
       }
+      yield* queueWorker(workerShell, `${kind}:${event.payload.activity.id}`);
       return;
     }
     if (event.type !== "thread.session-set") return;
@@ -369,6 +443,16 @@ export const make = Effect.gen(function* () {
         yield* flush(thread.id);
       }
       return;
+    }
+    if (thread.team?.role === "worker" && event.payload.session.status === "stopped") {
+      yield* removeIsolatedWorktree({ ...thread, team: thread.team }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("could not remove an isolated read-only worktree", {
+            threadId: thread.id,
+            error,
+          }),
+        ),
+      );
     }
     if (
       thread.team?.role === "worker" &&

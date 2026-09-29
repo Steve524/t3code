@@ -13,9 +13,11 @@ import {
   type TeamWorkflow,
 } from "@t3tools/contracts";
 import { BUILT_IN_RESEARCH_PLAN_WORKFLOW, BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -169,6 +171,7 @@ const testCrypto = Crypto.make({
 interface HarnessOptions {
   readonly threads?: ReadonlyArray<OrchestrationThreadShell>;
   readonly providerAvailable?: boolean;
+  readonly driverKind?: string;
   readonly integrateResult?: TeamBranchIntegration.GitIntegrateBranchesResult;
 }
 
@@ -188,6 +191,7 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
       Effect.as({ sequence: 1 }),
     );
   const dependencies = Layer.mergeAll(
+    NodeServices.layer,
     Layer.mock(ProjectionSnapshotQuery)({
       getThreadShellById: (threadId) =>
         Effect.succeed(Option.fromNullishOr(threads.find((thread) => thread.id === threadId))),
@@ -229,7 +233,9 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
     Layer.mock(ProviderInstanceRegistry)({
       getInstance: () =>
         Effect.succeed(
-          options.providerAvailable === false ? undefined : ({ enabled: true } as ProviderInstance),
+          options.providerAvailable === false
+            ? undefined
+            : ({ enabled: true, driverKind: options.driverKind ?? "codex" } as ProviderInstance),
         ),
     }),
     Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -464,35 +470,189 @@ describe("team toolkit handlers", () => {
     }),
   );
 
-  it.effect("runs read-only workers in the planner's checkout with no branch or setup", () =>
-    Effect.gen(function* () {
-      const planner = shell({
-        id: ORCHESTRATOR_ID,
-        branch: "feature/plan",
-        worktreePath: "/workspace/planner-worktree",
-        team: { role: "orchestrator", workflow: BUILT_IN_RESEARCH_PLAN_WORKFLOW },
-      });
-      const harness = yield* makeHarness({ threads: [planner] });
-      for (const roleId of ["researcher", "plan-reviewer"]) {
+  it.effect(
+    "runs Claude read-only workers in the planner's checkout in approval-required mode",
+    () =>
+      Effect.gen(function* () {
+        const planner = shell({
+          id: ORCHESTRATOR_ID,
+          branch: "feature/plan",
+          worktreePath: "/workspace/planner-worktree",
+          interactionMode: "plan",
+          team: {
+            role: "orchestrator",
+            workflow: {
+              ...BUILT_IN_RESEARCH_PLAN_WORKFLOW,
+              roles: BUILT_IN_RESEARCH_PLAN_WORKFLOW.roles.map((role) => ({
+                ...role,
+                runtimeMode: "full-access" as const,
+              })),
+            },
+          },
+        });
+        const harness = yield* makeHarness({ threads: [planner], driverKind: "claudeAgent" });
+        const roster = yield* harness.call("team_roster", {});
+        expect(roster.roles.map(({ runtimeMode }) => runtimeMode)).toEqual([
+          "approval-required",
+          "approval-required",
+        ]);
+        for (const roleId of ["researcher", "plan-reviewer"]) {
+          const result = yield* harness.call("team_spawn_worker", {
+            roleId: TeamRoleId.make(roleId),
+            title: "Read-only task",
+            task: "Read the plan.",
+            baseBranch: "ignored",
+            planPath: "docs/plans/missing.md",
+          });
+          expect(result.branch).toBeNull();
+        }
+        const commands = yield* Ref.get(harness.bootstrapCommands);
+        expect(commands).toHaveLength(2);
+        for (const command of commands) {
+          if (command.type !== "thread.turn.start") throw new Error("Expected a turn start");
+          // The role's full-access and the planner's plan mode are both replaced.
+          expect(command).toMatchObject({
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            message: { text: "Read the plan." },
+            bootstrap: {
+              createThread: {
+                branch: "feature/plan",
+                worktreePath: "/workspace/planner-worktree",
+                runtimeMode: "approval-required",
+                interactionMode: "default",
+              },
+              runSetupScript: false,
+            },
+          });
+          expect(command.bootstrap?.prepareWorktree).toBeUndefined();
+        }
+      }),
+  );
+
+  it.effect("isolates read-only workers on other providers and inlines the plan", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const checkout = yield* fs.makeTempDirectoryScoped({ prefix: "team-planner-" });
+        yield* fs.makeDirectory(`${checkout}/docs/plans`, { recursive: true });
+        yield* fs.writeFileString(`${checkout}/docs/plans/p.md`, "# Plan\n\nUncommitted text.");
+        const planner = shell({
+          id: ORCHESTRATOR_ID,
+          branch: "feature/plan",
+          worktreePath: checkout,
+          team: {
+            role: "orchestrator",
+            workflow: {
+              ...BUILT_IN_RESEARCH_PLAN_WORKFLOW,
+              roles: BUILT_IN_RESEARCH_PLAN_WORKFLOW.roles.map((role) => ({
+                ...role,
+                runtimeMode: "approval-required" as const,
+              })),
+            },
+          },
+        });
+        const harness = yield* makeHarness({ threads: [planner], driverKind: "codex" });
+        // An isolated worker follows the planner's modes, not a stored role mode.
+        const roster = yield* harness.call("team_roster", {});
+        expect(roster.roles.map(({ runtimeMode }) => runtimeMode)).toEqual([
+          "full-access",
+          "full-access",
+        ]);
         const result = yield* harness.call("team_spawn_worker", {
-          roleId: TeamRoleId.make(roleId),
-          title: "Read-only task",
-          task: "Read the plan.",
-          baseBranch: "ignored",
+          roleId: TeamRoleId.make("plan-reviewer"),
+          title: "Review plan",
+          task: "Review the plan.",
+          planPath: "docs/plans/p.md",
         });
-        expect(result.branch).toBeNull();
-      }
-      const commands = yield* Ref.get(harness.bootstrapCommands);
-      for (const command of commands) {
-        if (command.type !== "thread.turn.start") throw new Error("Expected a turn start");
-        expect(command.runtimeMode).toBe("approval-required");
-        expect(command.bootstrap).toMatchObject({
-          createThread: { branch: "feature/plan", worktreePath: "/workspace/planner-worktree" },
-          runSetupScript: false,
+        expect(result.branch).toBe("team/thread-t/plan-rev-07070707");
+        const [command] = yield* Ref.get(harness.bootstrapCommands);
+        if (command?.type !== "thread.turn.start") throw new Error("Expected a turn start");
+        expect(command).toMatchObject({
+          runtimeMode: "full-access",
+          bootstrap: {
+            createThread: { branch: "feature/plan", worktreePath: null },
+            prepareWorktree: {
+              baseBranch: "feature/plan",
+              branch: "team/thread-t/plan-rev-07070707",
+            },
+            runSetupScript: false,
+          },
         });
-        expect(command.bootstrap?.prepareWorktree).toBeUndefined();
-      }
-    }),
+        expect(command.message.text).toContain("isolated worktree of `feature/plan`");
+        expect(command.message.text).toContain("# Plan\n\nUncommitted text.");
+
+        expect(
+          yield* harness
+            .call("team_spawn_worker", {
+              roleId: TeamRoleId.make("plan-reviewer"),
+              title: "Review plan",
+              task: "Review the plan.",
+              planPath: "../outside.md",
+            })
+            .pipe(Effect.flip),
+        ).toMatchObject({ _tag: "TeamPlanFileError", reason: "outside-checkout" });
+        expect(
+          yield* harness
+            .call("team_spawn_worker", {
+              roleId: TeamRoleId.make("plan-reviewer"),
+              title: "Review plan",
+              task: "Review the plan.",
+              planPath: "docs/plans/missing.md",
+            })
+            .pipe(Effect.flip),
+        ).toMatchObject({ _tag: "TeamPlanFileError", reason: "unreadable" });
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("sends the revised plan to an isolated reviewer only", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const checkout = yield* fs.makeTempDirectoryScoped({ prefix: "team-planner-" });
+        yield* fs.writeFileString(`${checkout}/plan.md`, "Revised plan.");
+        const planner = shell({
+          id: ORCHESTRATOR_ID,
+          worktreePath: checkout,
+          team: { role: "orchestrator", workflow: BUILT_IN_RESEARCH_PLAN_WORKFLOW },
+        });
+        const reviewer = (id: string, worktreePath: string) =>
+          worker({
+            id: ThreadId.make(id),
+            worktreePath,
+            team: {
+              role: "worker",
+              orchestratorThreadId: ORCHESTRATOR_ID,
+              roleId: TeamRoleId.make("plan-reviewer"),
+              roleLabel: "Plan reviewer",
+              taskTitle: "Review plan",
+            },
+          });
+        const harness = yield* makeHarness({
+          threads: [planner, reviewer("isolated", "/worktrees/r"), reviewer("shared", checkout)],
+        });
+        for (const id of ["isolated", "shared"]) {
+          yield* harness.call("team_message_worker", {
+            workerThreadId: ThreadId.make(id),
+            message: "Round 2.",
+            planPath: "plan.md",
+          });
+        }
+        const [isolated, shared] = yield* Ref.get(harness.bootstrapCommands);
+        if (isolated?.type !== "thread.turn.start" || shared?.type !== "thread.turn.start") {
+          throw new Error("Expected turn starts");
+        }
+        expect(isolated.message.text).toContain("Round 2.");
+        expect(isolated.message.text).toContain("Revised plan.");
+        expect(shared.message.text).toBe("Round 2.");
+        // Its checkpoint would show the planner's edits, so no diff totals are reported.
+        const detail = yield* harness.call("team_get_worker", {
+          workerThreadId: ThreadId.make("shared"),
+        });
+        expect(detail.diffStats).toBeNull();
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("caps plan-reviewer rounds and refuses to integrate a plan workflow", () =>

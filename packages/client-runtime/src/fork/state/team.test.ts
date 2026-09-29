@@ -158,6 +158,28 @@ describe("team selectors", () => {
       ],
     };
     expect(selectTeamReport({ context })?.[0]).toMatchObject({ roleLabel: "Frontend" });
+    const reviewer = { ...context.records[0]!.payload.reports[0]!, diffStats: null };
+    expect(
+      selectTeamReport({
+        context: {
+          ...context,
+          records: [{ ...context.records[0]!, payload: { reports: [reviewer] } }],
+        },
+      })?.[0]?.diffStats,
+    ).toBeNull();
+    expect(
+      selectTeamReport({
+        context: {
+          ...context,
+          records: [
+            {
+              ...context.records[0]!,
+              payload: { reports: [{ ...reviewer, diffStats: { files: -1 } }] },
+            },
+          ],
+        },
+      }),
+    ).toBeNull();
     expect(
       selectTeamReport({
         context: {

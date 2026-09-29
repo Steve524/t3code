@@ -11,6 +11,8 @@ import {
   ThreadPullRequestLink,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Tool from "effect/unstable/ai/Tool";
 import * as Toolkit from "effect/unstable/ai/Toolkit";
@@ -31,6 +33,8 @@ const dependencies = [
   ProjectionSnapshotQuery.ProjectionSnapshotQuery,
   ProviderInstanceRegistry.ProviderInstanceRegistry,
   ThreadBootstrap.ThreadBootstrap,
+  FileSystem.FileSystem,
+  Path.Path,
 ];
 
 export class TeamThreadNotFoundError extends Schema.TaggedError<TeamThreadNotFoundError>()(
@@ -159,6 +163,17 @@ export class TeamIntegrationUnsupportedError extends Schema.TaggedError<TeamInte
   }
 }
 
+export class TeamPlanFileError extends Schema.TaggedError<TeamPlanFileError>()(
+  "TeamPlanFileError",
+  { planPath: TrimmedNonEmptyString, reason: Schema.Literals(["outside-checkout", "unreadable"]) },
+) {
+  override get message(): string {
+    return this.reason === "outside-checkout"
+      ? `planPath ${this.planPath} must be relative to your checkout and stay inside it.`
+      : `Could not read the plan at ${this.planPath}.`;
+  }
+}
+
 export class WorkerBusyError extends Schema.TaggedError<WorkerBusyError>()("WorkerBusyError", {
   workerThreadId: ThreadId,
 }) {
@@ -202,6 +217,7 @@ export const TeamToolError = Schema.Union([
   TeamIntegrationBranchOwnershipError,
   TeamIntegrationTargetError,
   TeamIntegrationUnsupportedError,
+  TeamPlanFileError,
   WorkerBusyError,
   TeamOperationFailedError,
 ]);
@@ -245,11 +261,12 @@ const SpawnWorkerInput = Schema.Struct({
   task: TrimmedNonEmptyString,
   baseBranch: Schema.optional(TrimmedNonEmptyString),
   reviewRound: Schema.optional(PositiveInt),
+  planPath: Schema.optional(TrimmedNonEmptyString),
 });
 
 const SpawnWorkerResult = Schema.Struct({
   workerThreadId: ThreadId,
-  /** Null for read-only workers, which run in the orchestrator's checkout. */
+  /** Null for read-only workers that share the orchestrator's checkout. */
   branch: Schema.NullOr(TrimmedNonEmptyString),
 });
 
@@ -259,11 +276,14 @@ const GetWorkerResult = Schema.Struct({
   ...TeamWorkerSummary.fields,
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   lastAssistantMessage: Schema.NullOr(Schema.String),
-  diffStats: Schema.Struct({
-    files: NonNegativeInt,
-    additions: NonNegativeInt,
-    deletions: NonNegativeInt,
-  }),
+  /** Null for researchers and plan reviewers, which never change files. */
+  diffStats: Schema.NullOr(
+    Schema.Struct({
+      files: NonNegativeInt,
+      additions: NonNegativeInt,
+      deletions: NonNegativeInt,
+    }),
+  ),
   hasPendingApprovals: Schema.Boolean,
   hasPendingUserInput: Schema.Boolean,
   pullRequests: Schema.Array(ThreadPullRequestLink),
@@ -272,6 +292,7 @@ const GetWorkerResult = Schema.Struct({
 const MessageWorkerInput = Schema.Struct({
   workerThreadId: ThreadId,
   message: TrimmedNonEmptyString,
+  planPath: Schema.optional(TrimmedNonEmptyString),
 });
 
 const WorkerActionResult = Schema.Struct({ workerThreadId: ThreadId });
@@ -310,7 +331,7 @@ const RosterTool = Tool.make("team_roster", {
 
 const SpawnWorkerTool = Tool.make("team_spawn_worker", {
   description:
-    "Start one worker using the selected role's configured provider, model, effort, and permission mode. Implementer and reviewer workers get their own worktree and branch; researcher and plan-reviewer workers run in this thread's checkout with no branch. Returns as soon as the worker start is committed.",
+    "Start one worker using the selected role's configured provider, model, effort, and permission mode. Implementer and reviewer workers get their own worktree and branch; researcher and plan-reviewer workers are read-only: they share this thread's checkout with no branch where the provider can be held to read-only, and otherwise get an isolated worktree that can't see your uncommitted files. For a plan reviewer, pass planPath (relative to your checkout); an isolated reviewer gets the plan's text inline. Returns as soon as the worker start is committed.",
   parameters: SpawnWorkerInput,
   success: SpawnWorkerResult,
   failure: TeamToolError,
@@ -338,7 +359,7 @@ const GetWorkerTool = Tool.make("team_get_worker", {
 
 const MessageWorkerTool = Tool.make("team_message_worker", {
   description:
-    "Send a follow-up task to one owned worker. Running workers reject messages; wait for the next team update first.",
+    "Send a follow-up task to one owned worker. Running workers reject messages; wait for the next team update first. Pass planPath again for a plan reviewer so an isolated reviewer gets the revised plan inline.",
   parameters: MessageWorkerInput,
   success: WorkerActionResult,
   failure: TeamToolError,
@@ -351,7 +372,8 @@ const MessageWorkerTool = Tool.make("team_message_worker", {
   .annotate(Tool.OpenWorld, false);
 
 const StopWorkerTool = Tool.make("team_stop_worker", {
-  description: "Stop one owned worker's provider session.",
+  description:
+    "Stop one owned worker's provider session. An isolated read-only worker's worktree is deleted once its session stops.",
   parameters: WorkerInput,
   success: WorkerActionResult,
   failure: TeamToolError,

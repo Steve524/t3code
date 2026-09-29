@@ -45,13 +45,17 @@ export function TeamReportTimelineRow({ reports }: { reports: ReadonlyArray<Team
                 <div className="mt-1 flex flex-wrap gap-x-2 font-mono text-[.7rem] text-muted-foreground">
                   <span>{report.state}</span>
                   <span>{report.branch ?? "default branch"}</span>
-                  <span>{report.diffStats.files} files</span>
-                  <span className="text-diff-addition-foreground">
-                    +{report.diffStats.additions}
-                  </span>
-                  <span className="text-diff-deletion-foreground">
-                    −{report.diffStats.deletions}
-                  </span>
+                  {report.diffStats ? (
+                    <>
+                      <span>{report.diffStats.files} files</span>
+                      <span className="text-diff-addition-foreground">
+                        +{report.diffStats.additions}
+                      </span>
+                      <span className="text-diff-deletion-foreground">
+                        −{report.diffStats.deletions}
+                      </span>
+                    </>
+                  ) : null}
                 </div>
                 {report.lastAssistantMessage ? (
                   <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground">

@@ -50,7 +50,13 @@ const worker: EnvironmentThreadShell = {
 describe("TeamWorkerRow", () => {
   it("keeps a fixed row height and exposes open, stop, and message actions", () => {
     const markup = renderToStaticMarkup(
-      <TeamWorkerRow worker={worker} onOpen={() => {}} onStop={() => {}} onMessage={() => {}} />,
+      <TeamWorkerRow
+        worker={worker}
+        readOnly={false}
+        onOpen={() => {}}
+        onStop={() => {}}
+        onMessage={() => {}}
+      />,
     );
     expect(markup).toContain("h-[6.5rem]");
     expect(markup).toContain('aria-label="Open worker"');

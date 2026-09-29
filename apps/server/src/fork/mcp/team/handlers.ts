@@ -3,14 +3,18 @@ import {
   MessageId,
   ThreadId,
   type OrchestrationThreadShell,
-  type TeamRoleKind,
+  type TeamRole,
+  type TeamWorkflow,
 } from "@t3tools/contracts";
 import { deriveLocalBranchNameFromRemoteRef, sanitizeBranchFragment } from "@t3tools/shared/git";
+import { isReadOnlyTeamRoleKind, teamReadOnlyLaunch } from "@t3tools/shared/team";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
 import * as TeamBranchIntegration from "../../git/TeamBranchIntegration.ts";
@@ -19,6 +23,7 @@ import * as OrchestrationEngine from "../../../orchestration/Services/Orchestrat
 import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProviderInstanceRegistry from "../../../provider/Services/ProviderInstanceRegistry.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
+import { isolatedReadOnlyTask, withPlanText } from "../../provider/teamReadOnly.ts";
 import {
   TeamBaseBranchUnavailableError,
   TeamIntegrationBranchOwnershipError,
@@ -26,6 +31,7 @@ import {
   TeamIntegrationUnsupportedError,
   TeamOperationFailedError,
   TeamOrchestratorRequiredError,
+  TeamPlanFileError,
   TeamProjectNotFoundError,
   TeamProviderUnavailableError,
   TeamReviewRoundLimitError,
@@ -41,13 +47,39 @@ import {
 
 type Operation = TeamOperationFailedError["operation"];
 
-/** Researchers and plan reviewers never commit, so they share the orchestrator's checkout. */
-const isReadOnlyKind = (kind: TeamRoleKind) => kind === "researcher" || kind === "plan-reviewer";
-
 const isRunning = (thread: OrchestrationThreadShell) =>
   thread.session?.status === "starting" ||
   thread.session?.status === "running" ||
   thread.latestTurn?.state === "running";
+
+/**
+ * How a role's worker runs. Read-only roles ignore their own runtime mode: where the provider can be
+ * held to read-only they share the planner's checkout in its read-only modes; otherwise they get an
+ * isolated worktree and the planner's modes (docs/fork/research-plan-team-testing.md, Phase 2).
+ */
+const workerModes = (
+  role: TeamRole,
+  orchestrator: OrchestrationThreadShell,
+  driverKind: string | undefined,
+) => {
+  const readOnly = isReadOnlyTeamRoleKind(role.kind);
+  const launch = readOnly && driverKind !== undefined ? teamReadOnlyLaunch(driverKind) : null;
+  return {
+    readOnly,
+    sharesCheckout: launch !== null,
+    runtimeMode:
+      launch?.runtimeMode ??
+      (readOnly ? orchestrator.runtimeMode : (role.runtimeMode ?? orchestrator.runtimeMode)),
+    interactionMode: launch?.interactionMode ?? orchestrator.interactionMode,
+  };
+};
+
+const isReadOnlyWorker = (workflow: TeamWorkflow, worker: OrchestrationThreadShell) => {
+  const team = worker.team;
+  if (team?.role !== "worker") return false;
+  const kind = workflow.roles.find((role) => role.id === team.roleId)?.kind;
+  return kind !== undefined && isReadOnlyTeamRoleKind(kind);
+};
 
 const workerState = (thread: OrchestrationThreadShell) =>
   thread.session?.status ?? thread.latestTurn?.state ?? "idle";
@@ -83,6 +115,8 @@ const make = Effect.gen(function* () {
   const bootstrap = yield* ThreadBootstrap.ThreadBootstrap;
   const git = yield* GitWorkflowService.GitWorkflowService;
   const integration = yield* TeamBranchIntegration.TeamBranchIntegration;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
 
   const randomId = <A>(makeId: (value: string) => A) =>
     crypto.randomUUIDv4.pipe(Effect.orDie, Effect.map(makeId));
@@ -146,23 +180,59 @@ const make = Effect.gen(function* () {
     return yield* new TeamBaseBranchUnavailableError({});
   });
 
+  const plannerCwd = Effect.fn("TeamToolkit.plannerCwd")(function* (
+    orchestrator: OrchestrationThreadShell,
+    operation: Operation,
+  ) {
+    if (orchestrator.worktreePath !== null) return orchestrator.worktreePath;
+    const project = yield* snapshots
+      .getProjectShellById(orchestrator.projectId)
+      .pipe(mapFailure(operation));
+    if (Option.isNone(project)) return yield* new TeamProjectNotFoundError({});
+    return project.value.workspaceRoot;
+  });
+
+  /** Reads a plan file from the planner's checkout, for a reviewer that can't see it. */
+  const readPlan = Effect.fn("TeamToolkit.readPlan")(function* (cwd: string, planPath: string) {
+    const relative = path.relative(cwd, path.resolve(cwd, planPath));
+    if (
+      path.isAbsolute(planPath) ||
+      relative === ".." ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    ) {
+      return yield* new TeamPlanFileError({ planPath, reason: "outside-checkout" });
+    }
+    const text = yield* fileSystem
+      .readFileString(path.join(cwd, relative))
+      .pipe(Effect.mapError(() => new TeamPlanFileError({ planPath, reason: "unreadable" })));
+    return { path: planPath, text };
+  });
+
   return TeamToolkit.of({
     team_roster: () =>
       Effect.gen(function* () {
         const orchestrator = yield* requireOrchestrator("roster");
         const workers = yield* listWorkers(orchestrator.id, "roster");
         const workflow = orchestrator.team.workflow;
+        const roles = yield* Effect.forEach(
+          workflow.roles.filter((role) => role.enabled),
+          (role) =>
+            Effect.gen(function* () {
+              const modelSelection = role.modelSelection ?? orchestrator.modelSelection;
+              const provider = yield* providers.getInstance(modelSelection.instanceId);
+              return {
+                id: role.id,
+                label: role.label,
+                kind: role.kind,
+                summary: role.summary,
+                modelSelection,
+                runtimeMode: workerModes(role, orchestrator, provider?.driverKind).runtimeMode,
+              };
+            }),
+        );
         return {
-          roles: workflow.roles
-            .filter((role) => role.enabled)
-            .map((role) => ({
-              id: role.id,
-              label: role.label,
-              kind: role.kind,
-              summary: role.summary,
-              modelSelection: role.modelSelection ?? orchestrator.modelSelection,
-              runtimeMode: role.runtimeMode ?? orchestrator.runtimeMode,
-            })),
+          roles,
           limits: {
             maxParallelWorkers: workflow.maxParallelWorkers,
             maxReviewRounds: workflow.maxReviewRounds,
@@ -210,8 +280,12 @@ const make = Effect.gen(function* () {
           .pipe(mapFailure("spawn"));
         if (Option.isNone(project)) return yield* new TeamProjectNotFoundError({});
 
-        const readOnly = isReadOnlyKind(role.kind);
-        const baseBranch = readOnly
+        const { readOnly, sharesCheckout, runtimeMode, interactionMode } = workerModes(
+          role,
+          orchestrator,
+          provider.driverKind,
+        );
+        const baseBranch = sharesCheckout
           ? orchestrator.branch
           : (input.baseBranch ??
             orchestrator.branch ??
@@ -219,13 +293,21 @@ const make = Effect.gen(function* () {
         const workerThreadId = yield* randomId(ThreadId.make);
         // ponytail: Short refs leave room for deep Windows checkout paths; deeper homes need Git long-path support.
         const roleSlug = sanitizeBranchFragment(role.id).replaceAll("/", "-").slice(0, 8);
-        const branch = readOnly
+        const branch = sharesCheckout
           ? null
           : `team/${orchestratorSlug(orchestrator.id)}/${roleSlug}-${workerThreadId.slice(0, 8)}`;
         const messageId = yield* randomId(MessageId.make);
         const commandId = yield* randomId((id) => CommandId.make(`server:team-spawn:${id}`));
         const createdAt = yield* nowIso;
-        const runtimeMode = role.runtimeMode ?? orchestrator.runtimeMode;
+        const isolatedBase = readOnly && !sharesCheckout ? baseBranch : null;
+        let text = input.task;
+        if (isolatedBase !== null) {
+          text = isolatedReadOnlyTask(text, isolatedBase);
+          if (input.planPath !== undefined) {
+            const cwd = orchestrator.worktreePath ?? project.value.workspaceRoot;
+            text = withPlanText(text, yield* readPlan(cwd, input.planPath));
+          }
+        }
 
         yield* bootstrap
           .dispatch({
@@ -235,22 +317,22 @@ const make = Effect.gen(function* () {
             message: {
               messageId,
               role: "user",
-              text: input.task,
+              text,
               attachments: [],
             },
             modelSelection,
             titleSeed: input.title,
             runtimeMode,
-            interactionMode: orchestrator.interactionMode,
+            interactionMode,
             bootstrap: {
               createThread: {
                 projectId: orchestrator.projectId,
                 title: input.title,
                 modelSelection,
                 runtimeMode,
-                interactionMode: orchestrator.interactionMode,
+                interactionMode,
                 branch: baseBranch,
-                worktreePath: readOnly ? orchestrator.worktreePath : null,
+                worktreePath: sharesCheckout ? orchestrator.worktreePath : null,
                 team: {
                   role: "worker",
                   orchestratorThreadId: orchestrator.id,
@@ -281,7 +363,7 @@ const make = Effect.gen(function* () {
 
     team_get_worker: ({ workerThreadId }) =>
       Effect.gen(function* () {
-        const { worker } = yield* requireOwnedWorker("get", workerThreadId);
+        const { orchestrator, worker } = yield* requireOwnedWorker("get", workerThreadId);
         const detail = yield* snapshots.getThreadDetailById(worker.id).pipe(mapFailure("get"));
         if (Option.isNone(detail)) return yield* new TeamWorkerNotFoundError({ workerThreadId });
         const team = worker.team;
@@ -305,17 +387,27 @@ const make = Effect.gen(function* () {
           worktreePath: worker.worktreePath,
           lastAssistantMessage:
             lastAssistantMessage === undefined ? null : lastAssistantMessage.text.slice(0, 4_000),
-          diffStats,
+          diffStats: isReadOnlyWorker(orchestrator.team.workflow, worker) ? null : diffStats,
           hasPendingApprovals: worker.hasPendingApprovals,
           hasPendingUserInput: worker.hasPendingUserInput,
           pullRequests: visibleThreadPullRequests(detail.value.pullRequests),
         };
       }),
 
-    team_message_worker: ({ workerThreadId, message }) =>
+    team_message_worker: ({ workerThreadId, message, planPath }) =>
       Effect.gen(function* () {
-        const { worker } = yield* requireOwnedWorker("message", workerThreadId);
+        const { orchestrator, worker } = yield* requireOwnedWorker("message", workerThreadId);
         if (isRunning(worker)) return yield* new WorkerBusyError({ workerThreadId });
+        const isolated =
+          isReadOnlyWorker(orchestrator.team.workflow, worker) &&
+          worker.worktreePath !== orchestrator.worktreePath;
+        const text =
+          isolated && planPath !== undefined
+            ? withPlanText(
+                message,
+                yield* readPlan(yield* plannerCwd(orchestrator, "message"), planPath),
+              )
+            : message;
         const createdAt = yield* nowIso;
         yield* bootstrap
           .dispatch({
@@ -325,7 +417,7 @@ const make = Effect.gen(function* () {
             message: {
               messageId: yield* randomId(MessageId.make),
               role: "user",
-              text: message,
+              text,
               attachments: [],
             },
             modelSelection: worker.modelSelection,

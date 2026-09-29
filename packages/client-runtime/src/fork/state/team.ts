@@ -28,7 +28,8 @@ export interface TeamReportWorker {
   readonly title: string;
   readonly state: string;
   readonly branch: string | null;
-  readonly diffStats: TeamDiffStats;
+  /** Null for researchers and plan reviewers, which never change files. */
+  readonly diffStats: TeamDiffStats | null;
   readonly lastAssistantMessage: string | null;
 }
 
@@ -155,7 +156,7 @@ function parseDiffStats(value: unknown): TeamDiffStats | null {
 
 function parseTeamReportWorker(value: unknown): TeamReportWorker | null {
   if (!isRecord(value)) return null;
-  const diffStats = parseDiffStats(value.diffStats);
+  const diffStats = value.diffStats === null ? null : parseDiffStats(value.diffStats);
   if (
     typeof value.workerThreadId !== "string" ||
     typeof value.roleLabel !== "string" ||
@@ -163,7 +164,7 @@ function parseTeamReportWorker(value: unknown): TeamReportWorker | null {
     typeof value.state !== "string" ||
     !(typeof value.branch === "string" || value.branch === null) ||
     !(typeof value.lastAssistantMessage === "string" || value.lastAssistantMessage === null) ||
-    diffStats === null
+    (diffStats === null && value.diffStats !== null)
   ) {
     return null;
   }

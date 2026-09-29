@@ -1,3 +1,5 @@
+// FORK: This fixture describes a POSIX filesystem, independently of the host.
+import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeAssert from "node:assert/strict";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -68,7 +70,7 @@ it.effect("reads Go limits with the instance's XDG credentials and preserves res
           );
         }),
       ),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.merge(NodeServices.layer, NodePath.layerPosix)), // FORK: Match the POSIX credential fixture.
     );
     NodeAssert.equal(limits.unavailable, undefined);
     NodeAssert.deepEqual(

@@ -1,5 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off - Vite's build plugin runs before an Effect runtime exists.
 
+// FORK: Keep generated notice labels stable across build hosts.
+import { noticePath } from "./fork/noticePath.ts";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -698,7 +700,7 @@ async function readPackageNoticeText(packageRoot: string): Promise<string | null
   for (const fileName of noticeFiles) {
     const contents = (await NodeFSP.readFile(NodePath.join(packageRoot, fileName), "utf8")).trim();
     if (contents.length === 0) continue;
-    sections.push(noticeFiles.length === 1 ? contents : `${fileName}\n\n${contents}`);
+    sections.push(noticeFiles.length === 1 ? contents : `${noticePath(fileName)}\n\n${contents}`); // FORK: Portable notice labels.
   }
   return sections.length > 0 ? sections.join("\n\n---\n\n") : null;
 }

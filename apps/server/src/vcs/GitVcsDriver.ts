@@ -1,3 +1,5 @@
+// FORK: Preserve nested checkpoint workspaces after git clean.
+import { restoreCheckpointWorkspace } from "../fork/git/restoreCheckpointWorkspace.ts";
 import * as NodeCrypto from "node:crypto";
 import * as NodeBuffer from "node:buffer";
 
@@ -1113,6 +1115,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           });
       }
 
+      yield* restoreCheckpointWorkspace(fileSystem, input.cwd); // FORK: git clean can remove cwd itself.
       const headExists = yield* hasHeadCommit(input.cwd);
       if (headExists) {
         yield* execute({

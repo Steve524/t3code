@@ -271,8 +271,8 @@ function RoleRow({
           <ChevronDownIcon className="size-3.5" />
           Instructions
         </CollapsibleTrigger>
-        <CollapsiblePanel className="pb-3">
-          <div className="space-y-2">
+        <CollapsiblePanel>
+          <div className="space-y-2 pb-3">
             <Textarea
               key={role.instructions}
               size="sm"

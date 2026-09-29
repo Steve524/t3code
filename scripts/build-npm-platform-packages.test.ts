@@ -1,4 +1,6 @@
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+// FORK: Use the host's tar for Windows drive-letter archive paths.
+import { archiveTestCommand, archiveListingLines } from "./fork/archiveTestCommand.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -35,7 +37,10 @@ const run = Effect.fn("test.run")(function* (
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const child = yield* spawner.spawn(
-    ChildProcess.make(command, args, { cwd: options.cwd, env: options.env ?? {} }),
+    ChildProcess.make(archiveTestCommand(command), args, {
+      cwd: options.cwd,
+      env: options.env ?? {},
+    }), // FORK: Select Windows system tar.
   );
   const [stdout, stderr, exitCode] = yield* Effect.all(
     [collect(child.stdout), collect(child.stderr), child.exitCode.pipe(Effect.map(Number))],
@@ -155,7 +160,10 @@ it.layer(NodeServices.layer)("build-npm-platform-packages", (it) => {
         "# @t3code/t3-linux-x64",
       );
       assert.isTrue(yield* fs.exists(path.join(linuxDir, "node_modules/node-pty")));
-      assert.equal(Number((yield* fs.stat(path.join(linuxDir, "t3"))).mode) & 0o111, 0o111);
+      // FORK-BEGIN: NTFS does not expose POSIX execute bits; POSIX hosts verify them.
+      if (HostProcessPlatform.defaultValue() !== "win32")
+        assert.equal(Number((yield* fs.stat(path.join(linuxDir, "t3"))).mode) & 0o111, 0o111);
+      // FORK-END
 
       const darwinManifest = yield* decodeManifest(
         yield* fs.readFileString(
@@ -193,7 +201,7 @@ it.layer(NodeServices.layer)("build-npm-platform-packages", (it) => {
         { cwd: fixture.outputDir },
       );
       assert.equal(listing.exitCode, 0, listing.stderr);
-      const lines = listing.stdout.split("\n");
+      const lines = archiveListingLines(listing.stdout); // FORK: Windows tar emits CRLF.
       assert.isTrue(lines.some((line) => line.endsWith(" package/node_modules/node-pty/")));
       assert.isTrue(lines.some((line) => line.endsWith(" package/package.json")));
       assert.isTrue(

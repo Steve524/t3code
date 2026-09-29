@@ -1,3 +1,5 @@
+// FORK: Run the same launcher IPC fixtures on Windows through Node.
+import { prepareLauncherRuntime } from "./fork/testing/launcherRuntime.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -94,6 +96,7 @@ const writeFakeRuntime = (
       path.join(versionDir, ".install-complete"),
       `${path.basename(versionDir)}\n`,
     );
+    yield* prepareLauncherRuntime(fs, entryPath, childSource); // FORK: Windows executable fixture.
     return entryPath;
   });
 

@@ -37,12 +37,12 @@ export function TeamReportTimelineRow({ reports }: { reports: ReadonlyArray<Team
               />
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className="shrink-0 rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
+                  <span className="shrink-0 rounded-sm border border-border/60 px-1 font-mono text-3xs text-muted-foreground">
                     {report.roleLabel}
                   </span>
                   <span className="truncate text-sm font-medium">{report.title}</span>
                 </div>
-                <div className="mt-1 flex flex-wrap gap-x-2 font-mono text-[.7rem] text-muted-foreground">
+                <div className="mt-1 flex flex-wrap gap-x-2 font-mono text-2xs text-muted-foreground">
                   <span>{report.state}</span>
                   <span>{report.branch ?? "default branch"}</span>
                   {report.diffStats ? (

@@ -243,7 +243,8 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
     ),
   );
 
-  it.effect.skipIf(!symlinksSupported)(
+  it.effect.skipIf(windowsHost || !symlinksSupported)(
+    // FORK: POSIX shell executables are not Windows launchers.
     "pins npm updates to the global prefix that owns the package",
     () =>
       Effect.gen(function* () {
@@ -389,7 +390,8 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
     }),
   );
 
-  it.effect.skipIf(!symlinksSupported)(
+  it.effect.skipIf(windowsHost || !symlinksSupported)(
+    // FORK: POSIX shell executables are not Windows launchers.
     "switches to pnpm updates when the real path lives in pnpm's global store",
     () =>
       Effect.gen(function* () {
@@ -509,7 +511,8 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
     }),
   );
 
-  it.effect.skipIf(!symlinksSupported)(
+  it.effect.skipIf(windowsHost || !symlinksSupported)(
+    // FORK: Homebrew's Node keg is a POSIX fixture.
     "prefers npm ownership over the Node keg the package lives under",
     () =>
       Effect.gen(function* () {
@@ -703,7 +706,7 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
           },
         });
       }),
-    { skip: !symlinksSupported },
+    { skip: windowsHost || !symlinksSupported }, // FORK: Homebrew PATH fixtures require POSIX paths.
   );
 
   it.effect.skipIf(windowsHost)(

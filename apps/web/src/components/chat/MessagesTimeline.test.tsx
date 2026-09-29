@@ -1,3 +1,5 @@
+// FORK: Allow the measured Windows cold-import cost before running timeline assertions.
+import { timelineImportTimeout } from "../../fork/testing/importTimeout";
 import {
   ApprovalRequestId,
   CheckpointRef,
@@ -186,7 +188,7 @@ function stubDomGlobals() {
 beforeAll(async () => {
   stubDomGlobals();
   ({ MessagesTimeline, resolvePreviewAnnotationImage } = await import("./MessagesTimeline"));
-}, 30_000);
+}, timelineImportTimeout); // FORK: Keep the original deadline outside Windows.
 
 // The scroll-settling test clears every global stub; mounted timeline rows
 // still touch `window` through the tooltip's focus handling.

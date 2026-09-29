@@ -1,4 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
+// FORK: Expect a JSON-quoted attachment path on every platform.
+import { quoteFixtureString } from "../fork/testing/platformFixtures.ts";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -33,7 +35,7 @@ describe("question answer paths", () => {
       expect(answers.q).toEqual([
         "First",
         "Second",
-        `Attached file "spec \\"final\\".txt": "${path}"`,
+        `Attached file "spec \\"final\\".txt": ${quoteFixtureString(path)}`, // FORK: Escape backslashes too.
       ]);
       expect(answers.other).toBe("No file");
       expect(original.q).toEqual(["First", "Second"]);
@@ -44,7 +46,7 @@ describe("question answer paths", () => {
         attachmentsByQuestionId: { ["__proto__"]: [attachment] },
       });
       expect(Object.keys(specialKey)).toEqual(["__proto__"]);
-      expect(specialKey["__proto__"]).toContain(path);
+      expect(specialKey["__proto__"]).toContain(quoteFixtureString(path)); // FORK: JSON escapes Windows paths.
     }).pipe(Effect.provide(layer)),
   );
   it.effect("does not send an unavailable attachment path", () =>

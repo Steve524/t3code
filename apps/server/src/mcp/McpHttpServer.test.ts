@@ -1,3 +1,5 @@
+// FORK: Compare decoded screenshot metadata on Windows too.
+import { screenshotMetadata } from "../fork/testing/platformFixtures.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -393,7 +395,9 @@ it.effect("saves the snapshot PNG on request and reports its path", () =>
       );
       expect(Buffer.from(yield* fileSystem.readFile(screenshotPath!)).toString()).toBe("png");
       const [, text] = snapshot.content;
-      expect(text?.type === "text" ? text.text : "").toContain(screenshotPath);
+      expect(screenshotMetadata(text?.type === "text" ? text.text : "").screenshotPath).toBe(
+        screenshotPath,
+      ); // FORK: JSON escapes Windows paths.
 
       const unsaved = yield* callSnapshot({});
       expect(unsaved.structuredContent).not.toHaveProperty("screenshotPath");

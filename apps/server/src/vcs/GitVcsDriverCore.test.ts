@@ -1328,6 +1328,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         assert.notInclude(scopedSource.diff, "ordinary.ts");
         assert.strictEqual(yield* git(cwd, ["ls-files", "--stage"]), indexBefore);
       }),
+      { skip: HostProcessPlatform.defaultValue() === "win32" }, // FORK: Windows filenames cannot contain colons.
     );
 
     it.effect("detects an unstaged rename with edits without mutating a split index", () =>

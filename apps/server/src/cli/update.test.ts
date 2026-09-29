@@ -1,3 +1,5 @@
+// FORK: Exercise native PATH parsing against native temporary directories.
+import { fixturePlatform, joinFixtureSearchPath } from "../fork/testing/platformFixtures.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -86,7 +88,7 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
       const bare = yield* resolveLauncherPath.pipe(
         Effect.provideService(HostProcessInvokedAs, "t3"),
         Effect.provideService(HostProcessEnvironment, {
-          PATH: `${path.join(root, "missing")}:${path.join(root, "bin")}`,
+          PATH: joinFixtureSearchPath(path.join(root, "missing"), path.join(root, "bin")), // FORK: Preserve drive letters.
         }),
         Effect.provideService(HostProcessWorkingDirectory, root),
       );
@@ -104,6 +106,6 @@ it.layer(NodeServices.layer)("t3 update launcher", (it) => {
       assert.equal(bare, launcher);
       assert.equal(relative, launcher);
       assert.equal(absent, undefined);
-    }).pipe(Effect.scoped, Effect.provideService(HostProcessPlatform, "linux")),
+    }).pipe(Effect.scoped, Effect.provideService(HostProcessPlatform, fixturePlatform)), // FORK: Native PATH delimiter.
   );
 });

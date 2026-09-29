@@ -1,3 +1,5 @@
+// FORK: Preserve the generated snapshot check on slower Windows hosts.
+import { encodingTestTimeout } from "../fork/testing/encodingTimeout.ts";
 import {
   OrchestrationProjectShell,
   OrchestrationShellSnapshot,
@@ -51,5 +53,6 @@ describe("encodeShellSnapshotForCache", () => {
       expect(projects.length).toBeGreaterThan(0);
       expect(yield* encodeShellSnapshotForCache(snapshot)).toEqual(yield* encodeSnapshot(snapshot));
     }),
+    encodingTestTimeout, // FORK: Keep all 2,000 generated samples.
   );
 });

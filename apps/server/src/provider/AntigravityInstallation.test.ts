@@ -1,3 +1,5 @@
+// FORK: Validate the runtime temp variable used by the host platform.
+import { runtimeTempDirectory } from "../fork/testing/platformFixtures.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -343,7 +345,7 @@ it.layer(NodeServices.layer)("Antigravity installation", (it) => {
           profiles.add(profile);
           const helper = command.args[0] === "-e";
           // The runtime unpacks straight into the disposable profile.
-          if (!helper) expect(command.options.env?.TMPDIR).toBe(profile);
+          if (!helper) expect(runtimeTempDirectory(command.options.env)).toBe(profile); // FORK: Windows uses TEMP.
           const output = yield* Queue.unbounded<Uint8Array>();
           const exited = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
           const terminate = Deferred.succeed(exited, ChildProcessSpawner.ExitCode(0)).pipe(

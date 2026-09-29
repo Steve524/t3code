@@ -45,7 +45,7 @@ export function TeamWorkerBackLink({
 
 export function TeamWorkerRoleBadge({ team }: { team: WorkerTeam }) {
   return (
-    <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1.5 font-mono text-[.65rem] text-muted-foreground">
+    <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1.5 font-mono text-3xs text-muted-foreground">
       {team.roleLabel}
     </span>
   );

@@ -33,6 +33,8 @@
     "test",
     "scripts/warm-dep-cache.ts",
     "../../scripts/lib/public-config.ts",
+    // FORK: Include the portable notice-label helper used by the build plugin.
+    "../../scripts/lib/fork/noticePath.ts",
     "../../scripts/lib/third-party-licenses.ts"
   ]
 }

@@ -1,3 +1,9 @@
+// FORK: Keep runtime fixtures and assertions portable to Windows.
+import {
+  pathWithSlashes,
+  runtimeFixtureVersion,
+  systemdFixtureArgument,
+} from "../fork/testing/platformFixtures.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
@@ -184,7 +190,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
           input.args[0] === "--version"
             ? // The runtime under test reports the version of the directory it
               // was launched from, like the real executable.
-              `t3 v${/versions\/([^/]+)\//.exec(input.command)?.[1] ?? "1.2.3"}\n`
+              `t3 v${runtimeFixtureVersion(input.command)}\n` // FORK: Native path separators.
             : input.command === "loginctl" && input.args[0] === "show-user"
               ? `${control.linger}\n`
               : input.args[1] === "is-enabled"
@@ -353,7 +359,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       });
       expect(plan.program).toEqual([runtime.entryPath, "__service-launcher"]);
       expect(yield* fs.readFileString(plan.unitPath)).toContain(
-        `ExecStart=${runtime.entryPath} __service-launcher`,
+        `ExecStart=${systemdFixtureArgument(runtime.entryPath)} __service-launcher`, // FORK: Escaped Windows paths.
       );
       expect(yield* service.status).toMatchObject({
         current: true,
@@ -502,7 +508,9 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         protocol: SERVICE_LAUNCHER_PROTOCOL,
         activeVersion: "1.2.4",
       });
-      expect(yield* fs.readFileString(plan.unitPath)).toContain("versions/1.2.4/t3");
+      expect(pathWithSlashes(yield* fs.readFileString(plan.unitPath))).toContain(
+        "versions/1.2.4/t3",
+      ); // FORK: Normalize escaped path separators.
       expect(
         commands.filter(
           (command) => command.startsWith("systemctl ") && !command.includes("show-environment"),

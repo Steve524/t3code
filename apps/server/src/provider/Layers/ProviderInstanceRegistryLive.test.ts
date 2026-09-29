@@ -22,6 +22,9 @@
  * binaries. That keeps the assertions focused on registry routing
  * behaviour rather than the runtime details of each provider.
  */
+// FORK: Give the real Claude fixture subprocess a native Windows launcher.
+import { claudeFixtureExecutable } from "../../fork/testing/claudeFixtureExecutable.ts";
+import { fixturePlatform } from "../../fork/testing/platformFixtures.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -230,7 +233,7 @@ const makeTildeProviderFixtures = Effect.fn(
   const asTildePath = (filePath: string) => `~/${path.relative(homePath, filePath)}`;
   return {
     codexBinaryPath: asTildePath(codexPath),
-    claudeBinaryPath: asTildePath(claudePath),
+    claudeBinaryPath: asTildePath(yield* claudeFixtureExecutable(fileSystem, claudePath)), // FORK: Windows uses a .cmd shim.
     claudeHomePath,
     codexScriptPath,
   };
@@ -515,7 +518,7 @@ describe("ProviderInstanceRegistryLive — multi-instance codex slice", () => {
       return { outcome, after: yield* instance!.snapshot.getSnapshot };
     }).pipe(
       // macOS logins live in the Keychain, where resets are never read.
-      Effect.provideService(HostProcessPlatform, "linux"),
+      Effect.provideService(HostProcessPlatform, fixturePlatform), // FORK: Keep native spawning on Windows.
       Effect.provide(testLayer),
     );
 

@@ -82,7 +82,7 @@ export function TeamWorkerRow(props: {
     >
       <span aria-hidden className={cn("size-2 rounded-full", visual.dotClass)} />
       <div className="flex min-w-0 items-center gap-2">
-        <span className="shrink-0 rounded-sm border border-border/60 px-1.5 font-mono text-[.65rem] text-muted-foreground">
+        <span className="shrink-0 rounded-sm border border-border/60 px-1.5 font-mono text-3xs text-muted-foreground">
           {team?.roleLabel ?? "Worker"}
         </span>
         <span className="min-w-0 truncate text-sm font-medium">
@@ -141,10 +141,10 @@ export function TeamWorkerRow(props: {
         </Tooltip>
       </div>
       <span className="col-start-2 truncate text-xs text-muted-foreground">{model}</span>
-      <span className="col-start-2 truncate font-mono text-[.7rem] text-muted-foreground/80">
+      <span className="col-start-2 truncate font-mono text-2xs text-muted-foreground/80">
         {worker.branch ?? "default branch"}
       </span>
-      <span className="col-start-2 flex min-w-0 items-center gap-2 font-mono text-[.7rem] text-muted-foreground/80">
+      <span className="col-start-2 flex min-w-0 items-center gap-2 font-mono text-2xs text-muted-foreground/80">
         <span>{visual.label}</span>
         {props.readOnly ? null : status === "working" ? (
           <span>—</span>

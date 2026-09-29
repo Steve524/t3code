@@ -42,6 +42,8 @@ import { isCommandAvailable } from "@t3tools/shared/shell";
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { windowsSystemTar } from "./build-cli-archive.ts";
+// FORK: Preserve archive modes when staging and packing through NTFS.
+import { recordNpmArchiveModes, npmArchiveCommand } from "./fork/npmArchiveModes.ts";
 
 export const NPM_PLATFORM_PACKAGE_SCOPE = "@t3code";
 export const NPM_LAUNCHER_PACKAGE_NAME = "t3";
@@ -255,7 +257,7 @@ const extractArchive = Effect.fn("extractArchive")(function* (archive: string, i
   const path = yield* Path.Path;
   const platform = yield* HostProcessPlatform;
   if (!archive.endsWith(".zip")) {
-    yield* runCommand(ChildProcess.make("tar", ["-xf", archive, "-C", into]), "tar -xf");
+    yield* runCommand(ChildProcess.make(yield* hostTar, ["-xf", archive, "-C", into]), "tar -xf"); // FORK: Use Windows system tar for gzip archives too.
   } else if (platform === "win32") {
     yield* runCommand(
       ChildProcess.make(windowsSystemTar(), ["-xf", archive, "-C", into]),
@@ -270,6 +272,7 @@ const extractArchive = Effect.fn("extractArchive")(function* (archive: string, i
     }
     yield* runCommand(ChildProcess.make("unzip", ["-q", archive, "-d", into]), "unzip");
   }
+  yield* recordNpmArchiveModes(archive, into); // FORK: Retain original archive permissions on Windows.
   const entries = yield* fs.readDirectory(into);
   const [root] = entries;
   if (root === undefined || entries.length !== 1) {
@@ -298,7 +301,7 @@ const packAndPlace = Effect.fn("packAndPlace")(function* (input: {
   const fs = yield* FileSystem.FileSystem;
   yield* fs.remove(input.tarball, { force: true });
   yield* runCommand(
-    ChildProcess.make(yield* hostTar, ["-czf", input.tarball, "-C", input.stageDir, "package"]),
+    yield* npmArchiveCommand(input.stageDir, input.tarball, yield* hostTar), // FORK: Restore archive modes lost on NTFS.
     `tar (${input.tarball})`,
   );
   yield* fs.remove(input.packageDir, { recursive: true, force: true });

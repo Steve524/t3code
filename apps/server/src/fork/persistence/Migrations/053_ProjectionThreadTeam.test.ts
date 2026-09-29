@@ -33,7 +33,7 @@ layer("053_ProjectionThreadTeam", (it) => {
         )
       `;
 
-      yield* runMigrations({ toMigrationInclusive: 54 });
+      yield* runMigrations({ toMigrationInclusive: 55 });
 
       const rows = yield* sql<{ readonly threadId: string; readonly team: string | null }>`
         SELECT thread_id AS "threadId", team_json AS team FROM projection_threads

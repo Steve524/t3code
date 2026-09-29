@@ -65,8 +65,9 @@ import Migration0050 from "./Migrations/050_ProjectionThreadPullRequests.ts";
 import Migration0051 from "./Migrations/051_ProjectionThreadMessageContext.ts";
 import Migration0052 from "./Migrations/052_ProjectionThreadTitleState.ts";
 import Migration0053 from "./Migrations/053_PullRequestFilesViewed.ts";
-// FORK: Reconcile the upstream and Team Workflow migration 53 histories.
-import Migration0054 from "../fork/persistence/Migrations/054_ReconcileTeamAndPullRequestFilesViewed.ts";
+import Migration0054 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
+// FORK: Reconcile databases that ran either fork or upstream migrations in slots 53 and 54.
+import Migration0055 from "../fork/persistence/Migrations/055_ReconcileTeamAndUpstream.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -132,7 +133,8 @@ const migrationEntries = [
   [51, "ProjectionThreadMessageContext", Migration0051],
   [52, "ProjectionThreadTitleState", Migration0052],
   [53, "PullRequestFilesViewed", Migration0053],
-  [54, "ReconcileTeamAndPullRequestFilesViewed", Migration0054],
+  [54, "ProjectionThreadsAutoSettleDisabledAt", Migration0054],
+  [55, "ReconcileTeamAndUpstream", Migration0055], // FORK: Fill missing schemas from either migration history.
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

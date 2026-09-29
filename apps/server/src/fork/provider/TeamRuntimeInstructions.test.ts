@@ -1,7 +1,10 @@
+import { it as effectIt } from "@effect/vitest";
 import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
 import { describe, expect, it } from "vite-plus/test";
+import * as Effect from "effect/Effect";
 
 import { buildRuntimeInstructions } from "../../provider/RuntimeInstructions.ts";
+import { buildTurnStartParams } from "../../provider/Layers/CodexSessionRuntime.ts";
 
 describe("Team Workflow runtime instructions", () => {
   it("adds orchestrator rules, the enabled roster, and workflow instructions", () => {
@@ -69,4 +72,19 @@ describe("Team Workflow runtime instructions", () => {
   it("leaves plain-thread instructions free of team prompts", () => {
     expect(buildRuntimeInstructions({ harness: "OpenCode" })).not.toContain("<team_");
   });
+
+  effectIt.effect("sends Team Workflow context in Codex additional context", () =>
+    Effect.gen(function* () {
+      const params = yield* buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        team: {
+          role: "orchestrator",
+          workflow: BUILT_IN_TEAM_WORKFLOW,
+        },
+      });
+      expect(params.additionalContext?.t3_code_runtime?.value).toContain("<team_orchestrator>");
+    }),
+  );
 });

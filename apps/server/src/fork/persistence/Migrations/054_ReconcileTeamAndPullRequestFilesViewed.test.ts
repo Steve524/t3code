@@ -5,8 +5,9 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../../../persistence/Migrations.ts";
 import projectionThreadTeam from "./053_ProjectionThreadTeam.ts";
+import reconcileTeamAndPullRequestFilesViewed from "./054_ReconcileTeamAndPullRequestFilesViewed.ts";
 
-for (const history of ["fresh", "team", "upstream"] as const) {
+for (const history of ["fresh", "team", "upstream", "fork54"] as const) {
   it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
     `reconcile ${history} database`,
     (it) => {
@@ -14,7 +15,7 @@ for (const history of ["fresh", "team", "upstream"] as const) {
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* runMigrations({ toMigrationInclusive: history === "upstream" ? 53 : 52 });
-          if (history === "team") {
+          if (history === "team" || history === "fork54") {
             yield* projectionThreadTeam;
             yield* sql`INSERT INTO effect_sql_migrations (migration_id, name)
             VALUES (53, 'ProjectionThreadTeam')`;
@@ -26,7 +27,7 @@ for (const history of ["fresh", "team", "upstream"] as const) {
           (thread_id, project_id, title, model_selection_json, runtime_mode,
            interaction_mode, created_at, updated_at)
           VALUES ('t', 'p', 'Thread', '{}', 'full-access', 'default', '2026-09-20', '2026-09-20')`;
-          if (history === "team") {
+          if (history === "team" || history === "fork54") {
             yield* sql`UPDATE projection_threads SET team_json = '{"role":"worker"}' WHERE thread_id = 't'`;
           }
           if (history === "upstream") {
@@ -34,14 +35,25 @@ for (const history of ["fresh", "team", "upstream"] as const) {
             (provider, host, repository, number, viewer, path, revision, viewed_at)
             VALUES ('github', 'github.com', 'owner/repo', 1, 'user', 'file.ts', 'abc', '2026-09-20')`;
           }
+          if (history === "fork54") {
+            yield* reconcileTeamAndPullRequestFilesViewed;
+            yield* sql`INSERT INTO effect_sql_migrations (migration_id, name)
+            VALUES (54, 'ReconcileTeamAndPullRequestFilesViewed')`;
+          }
           yield* runMigrations();
           const threads = yield* sql<{ team: string | null }>`
           SELECT team_json AS team FROM projection_threads WHERE thread_id = 't'`;
-          assert.deepEqual(threads, [{ team: history === "team" ? '{"role":"worker"}' : null }]);
+          assert.deepEqual(threads, [
+            { team: history === "team" || history === "fork54" ? '{"role":"worker"}' : null },
+          ]);
           const viewed = yield* sql<{
             revision: string;
           }>`SELECT revision FROM pull_request_files_viewed`;
           assert.deepEqual(viewed, history === "upstream" ? [{ revision: "abc" }] : []);
+          const columns = yield* sql<{
+            readonly name: string;
+          }>`PRAGMA table_info(projection_threads)`;
+          assert.ok(columns.some((column) => column.name === "auto_settle_disabled_at"));
           assert.deepEqual(yield* runMigrations(), []);
         }),
       );

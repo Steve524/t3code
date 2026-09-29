@@ -6,6 +6,7 @@ import {
   PositiveInt,
   RuntimeMode,
   TeamRoleId,
+  TeamRoleKind,
   ThreadId,
   ThreadPullRequestLink,
   TrimmedNonEmptyString,
@@ -149,6 +150,15 @@ export class TeamIntegrationTargetError extends Schema.TaggedError<TeamIntegrati
   }
 }
 
+export class TeamIntegrationUnsupportedError extends Schema.TaggedError<TeamIntegrationUnsupportedError>()(
+  "TeamIntegrationUnsupportedError",
+  {},
+) {
+  override get message(): string {
+    return "This workflow stops at an approved plan. It has no branches to integrate.";
+  }
+}
+
 export class WorkerBusyError extends Schema.TaggedError<WorkerBusyError>()("WorkerBusyError", {
   workerThreadId: ThreadId,
 }) {
@@ -191,6 +201,7 @@ export const TeamToolError = Schema.Union([
   TeamWorkerOwnershipError,
   TeamIntegrationBranchOwnershipError,
   TeamIntegrationTargetError,
+  TeamIntegrationUnsupportedError,
   WorkerBusyError,
   TeamOperationFailedError,
 ]);
@@ -215,7 +226,7 @@ const TeamRosterResult = Schema.Struct({
     Schema.Struct({
       id: TeamRoleId,
       label: TrimmedNonEmptyString,
-      kind: Schema.Literals(["implementer", "reviewer"]),
+      kind: TeamRoleKind,
       summary: Schema.String,
       modelSelection: ModelSelection,
       runtimeMode: RuntimeMode,
@@ -238,7 +249,8 @@ const SpawnWorkerInput = Schema.Struct({
 
 const SpawnWorkerResult = Schema.Struct({
   workerThreadId: ThreadId,
-  branch: TrimmedNonEmptyString,
+  /** Null for read-only workers, which run in the orchestrator's checkout. */
+  branch: Schema.NullOr(TrimmedNonEmptyString),
 });
 
 const WorkerInput = Schema.Struct({ workerThreadId: ThreadId });
@@ -298,7 +310,7 @@ const RosterTool = Tool.make("team_roster", {
 
 const SpawnWorkerTool = Tool.make("team_spawn_worker", {
   description:
-    "Start one worker in its own worktree using the selected role's configured provider, model, effort, and permission mode. Returns as soon as the worker start is committed.",
+    "Start one worker using the selected role's configured provider, model, effort, and permission mode. Implementer and reviewer workers get their own worktree and branch; researcher and plan-reviewer workers run in this thread's checkout with no branch. Returns as soon as the worker start is committed.",
   parameters: SpawnWorkerInput,
   success: SpawnWorkerResult,
   failure: TeamToolError,

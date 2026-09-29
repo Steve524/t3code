@@ -5,7 +5,7 @@ import { ExecutionEnvironmentDescriptor } from "../environment.ts";
 import { KeybindingRule } from "../keybindings.ts";
 import { ThreadCreatedPayload, ThreadTurnStartCommand } from "../orchestration.ts";
 import { ServerSettings, ServerSettingsPatch } from "../settings.ts";
-import { TeamRoleId } from "./team.ts";
+import { TeamRoleId, TeamWorkflow } from "./team.ts";
 
 const workflow = {
   id: "full-stack-team",
@@ -73,7 +73,7 @@ describe("Team Workflow contracts", () => {
       Schema.decodeUnknownSync(ServerSettingsPatch)({
         teamWorkflows: [workflow],
       }).teamWorkflows,
-    ).toEqual([workflow]);
+    ).toEqual([{ ...workflow, type: "build" }]);
   });
 
   it("decodes historical and Team Workflow thread events", () => {
@@ -99,6 +99,26 @@ describe("Team Workflow contracts", () => {
     if (worker.team?.role !== "worker") throw new Error("Expected worker");
     expect(orchestrator.team.workflow.roles[0]?.id).toBe(TeamRoleId.make("backend"));
     expect(worker.team.orchestratorThreadId).toBe("thread-team");
+  });
+
+  it("decodes saved workflows without a type as build workflows", () => {
+    const decode = Schema.decodeUnknownSync(TeamWorkflow);
+    expect(decode(workflow).type).toBe("build");
+    expect(decode({ ...workflow, type: "plan" }).type).toBe("plan");
+    expect(() => decode({ ...workflow, type: "other" })).toThrow();
+  });
+
+  it("decodes the research and plan role kinds", () => {
+    const decode = Schema.decodeUnknownSync(TeamWorkflow);
+    const roles = decode({
+      ...workflow,
+      roles: (["researcher", "plan-reviewer"] as const).map((kind) => ({
+        ...workflow.roles[0],
+        id: kind,
+        kind,
+      })),
+    }).roles;
+    expect(roles.map((role) => role.kind)).toEqual(["researcher", "plan-reviewer"]);
   });
 
   it("decodes team metadata in bootstrap thread creation", () => {

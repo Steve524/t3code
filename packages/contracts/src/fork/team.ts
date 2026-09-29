@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "../baseSchemas.ts";
@@ -6,7 +7,12 @@ import { ModelSelection, RuntimeMode } from "../orchestration.ts";
 export const TeamRoleId = TrimmedNonEmptyString.pipe(Schema.brand("TeamRoleId"));
 export type TeamRoleId = typeof TeamRoleId.Type;
 
-export const TeamRoleKind = Schema.Literals(["implementer", "reviewer"]);
+export const TeamRoleKind = Schema.Literals([
+  "implementer",
+  "reviewer",
+  "researcher",
+  "plan-reviewer",
+]);
 export type TeamRoleKind = typeof TeamRoleKind.Type;
 
 export const TeamRole = Schema.Struct({
@@ -21,10 +27,15 @@ export const TeamRole = Schema.Struct({
 });
 export type TeamRole = typeof TeamRole.Type;
 
+/** `build` workflows implement and integrate; `plan` workflows stop at an approved plan. */
+export const TeamWorkflowType = Schema.Literals(["build", "plan"]);
+export type TeamWorkflowType = typeof TeamWorkflowType.Type;
+
 export const TeamWorkflow = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
   builtIn: Schema.Boolean,
+  type: TeamWorkflowType.pipe(Schema.withDecodingDefault(Effect.succeed("build" as const))),
   roles: Schema.Array(TeamRole),
   maxParallelWorkers: PositiveInt,
   maxReviewRounds: PositiveInt,

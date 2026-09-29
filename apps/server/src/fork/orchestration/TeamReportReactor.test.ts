@@ -32,6 +32,8 @@ import {
   ProjectionSnapshotQuery,
   type ProjectionSnapshotQueryShape,
 } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { BUILT_IN_RESEARCH_PLAN_WORKFLOW } from "@t3tools/shared/team";
+
 import { layer, TeamReportReactor } from "./TeamReportReactor.ts";
 
 const NOW = "2026-09-16T00:00:00.000Z";
@@ -56,6 +58,7 @@ const workflow = (maxAutoReports = 30) => ({
   id: "default-team",
   name: "Default team",
   builtIn: true,
+  type: "build" as const,
   roles: [],
   maxParallelWorkers: 4,
   maxReviewRounds: 2,
@@ -487,6 +490,72 @@ describe("TeamReportReactor", () => {
           expect(reports).toHaveLength(1);
           expect(reports[0]?.message.text).toContain("The feature is ready.");
           expect(reports[0]?.message.context?.records[0]?.kind).toBe("team-report");
+        }).pipe(Effect.provide(harness.layer));
+      }),
+    ),
+  );
+
+  effectIt.effect("reports a plan reviewer's whole reply from its latest turn only", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const owner = makeThread({
+          id: OWNER_ID,
+          team: { role: "orchestrator", workflow: workflow() },
+          latestTurn: {
+            ...turn("owner", "completed"),
+            completedAt: "2026-09-16T00:00:02.000Z",
+          },
+        });
+        owner.team = {
+          role: "orchestrator",
+          workflow: { ...workflow(), type: "plan", roles: BUILT_IN_RESEARCH_PLAN_WORKFLOW.roles },
+        };
+        const reviewerTeam = {
+          ...workerTeam,
+          roleId: TeamRoleId.make("plan-reviewer"),
+          roleLabel: "Plan reviewer",
+        };
+        const builder = makeThread({
+          id: WORKER_TWO_ID,
+          team: workerTeam,
+          latestTurn: turn("two", "completed"),
+        });
+        const reviewer = makeThread({
+          id: WORKER_ONE_ID,
+          team: reviewerTeam,
+          latestTurn: turn("one", "completed"),
+        });
+        const verdict = `${"Finding detail. ".repeat(200)}{"verdict": "APPROVED"}`;
+        const answer = (id: string, turnId: string, text: string): OrchestrationMessage => ({
+          id: MessageId.make(id),
+          role: "assistant",
+          text,
+          turnId: TurnId.make(turnId),
+          streaming: false,
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+        builder.messages.push(answer("builder-answer", "two", verdict));
+        reviewer.messages.push(answer("round-one", "zero", "Round one verdict."));
+        reviewer.messages.push(answer("round-two", "one", verdict));
+        const harness = yield* makeHarness([owner, reviewer, builder]);
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* TeamReportReactor;
+          yield* reactor.start();
+          yield* reactor.drain;
+          const text = turnStarts(harness.commands)[0]?.message.text ?? "";
+          expect(text).toContain(verdict);
+          expect(text.split('{"verdict": "APPROVED"}')).toHaveLength(2);
+          expect(text).not.toContain("Round one verdict.");
+
+          reviewer.messages.pop();
+          reviewer.latestTurn = turn("three", "error");
+          yield* harness.publish(sessionEvent(1, reviewer));
+          yield* reactor.drainThrough(1);
+          const retry = turnStarts(harness.commands)[1]?.message.text ?? "";
+          expect(retry).toContain("No assistant output.");
+          expect(retry).not.toContain("Round one verdict.");
         }).pipe(Effect.provide(harness.layer));
       }),
     ),

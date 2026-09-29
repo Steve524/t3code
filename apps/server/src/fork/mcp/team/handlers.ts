@@ -1,4 +1,10 @@
-import { CommandId, MessageId, ThreadId, type OrchestrationThreadShell } from "@t3tools/contracts";
+import {
+  CommandId,
+  MessageId,
+  ThreadId,
+  type OrchestrationThreadShell,
+  type TeamRoleKind,
+} from "@t3tools/contracts";
 import { deriveLocalBranchNameFromRemoteRef, sanitizeBranchFragment } from "@t3tools/shared/git";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import * as Crypto from "effect/Crypto";
@@ -17,6 +23,7 @@ import {
   TeamBaseBranchUnavailableError,
   TeamIntegrationBranchOwnershipError,
   TeamIntegrationTargetError,
+  TeamIntegrationUnsupportedError,
   TeamOperationFailedError,
   TeamOrchestratorRequiredError,
   TeamProjectNotFoundError,
@@ -33,6 +40,9 @@ import {
 } from "./tools.ts";
 
 type Operation = TeamOperationFailedError["operation"];
+
+/** Researchers and plan reviewers never commit, so they share the orchestrator's checkout. */
+const isReadOnlyKind = (kind: TeamRoleKind) => kind === "researcher" || kind === "plan-reviewer";
 
 const isRunning = (thread: OrchestrationThreadShell) =>
   thread.session?.status === "starting" ||
@@ -172,7 +182,7 @@ const make = Effect.gen(function* () {
         if (!role) return yield* new TeamRoleNotFoundError({ roleId: input.roleId });
         if (!role.enabled) return yield* new TeamRoleDisabledError({ roleId: input.roleId });
         if (
-          role.kind === "reviewer" &&
+          (role.kind === "reviewer" || role.kind === "plan-reviewer") &&
           input.reviewRound !== undefined &&
           input.reviewRound > workflow.maxReviewRounds
         ) {
@@ -200,14 +210,18 @@ const make = Effect.gen(function* () {
           .pipe(mapFailure("spawn"));
         if (Option.isNone(project)) return yield* new TeamProjectNotFoundError({});
 
-        const baseBranch =
-          input.baseBranch ??
-          orchestrator.branch ??
-          (yield* defaultBranch(project.value.workspaceRoot, "spawn"));
+        const readOnly = isReadOnlyKind(role.kind);
+        const baseBranch = readOnly
+          ? orchestrator.branch
+          : (input.baseBranch ??
+            orchestrator.branch ??
+            (yield* defaultBranch(project.value.workspaceRoot, "spawn")));
         const workerThreadId = yield* randomId(ThreadId.make);
         // ponytail: Short refs leave room for deep Windows checkout paths; deeper homes need Git long-path support.
         const roleSlug = sanitizeBranchFragment(role.id).replaceAll("/", "-").slice(0, 8);
-        const branch = `team/${orchestratorSlug(orchestrator.id)}/${roleSlug}-${workerThreadId.slice(0, 8)}`;
+        const branch = readOnly
+          ? null
+          : `team/${orchestratorSlug(orchestrator.id)}/${roleSlug}-${workerThreadId.slice(0, 8)}`;
         const messageId = yield* randomId(MessageId.make);
         const commandId = yield* randomId((id) => CommandId.make(`server:team-spawn:${id}`));
         const createdAt = yield* nowIso;
@@ -236,7 +250,7 @@ const make = Effect.gen(function* () {
                 runtimeMode,
                 interactionMode: orchestrator.interactionMode,
                 branch: baseBranch,
-                worktreePath: null,
+                worktreePath: readOnly ? orchestrator.worktreePath : null,
                 team: {
                   role: "worker",
                   orchestratorThreadId: orchestrator.id,
@@ -247,12 +261,16 @@ const make = Effect.gen(function* () {
                 },
                 createdAt,
               },
-              prepareWorktree: {
-                projectCwd: project.value.workspaceRoot,
-                baseBranch,
-                branch,
-              },
-              runSetupScript: true,
+              ...(branch === null || baseBranch === null
+                ? {}
+                : {
+                    prepareWorktree: {
+                      projectCwd: project.value.workspaceRoot,
+                      baseBranch,
+                      branch,
+                    },
+                  }),
+              runSetupScript: !readOnly,
             },
             createdAt,
           })
@@ -336,6 +354,9 @@ const make = Effect.gen(function* () {
     team_integrate: (input) =>
       Effect.gen(function* () {
         const orchestrator = yield* requireOrchestrator("integrate");
+        if (orchestrator.team.workflow.type === "plan") {
+          return yield* new TeamIntegrationUnsupportedError({});
+        }
         const project = yield* snapshots
           .getProjectShellById(orchestrator.projectId)
           .pipe(mapFailure("integrate"));

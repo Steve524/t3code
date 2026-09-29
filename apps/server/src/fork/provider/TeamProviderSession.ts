@@ -43,6 +43,8 @@ export const resolveRuntimeInstructionTeam = Effect.fn(
     return {
       role: "worker",
       roleId: team.roleId,
+      // A role removed from the workflow keeps the original build-worker prompt.
+      roleKind: role?.kind ?? "implementer",
       roleLabel: team.roleLabel,
       roleInstructions: role?.instructions ?? "",
       orchestratorTitle: orchestratorShell?.title ?? team.orchestratorThreadId,

@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
+import { BUILT_IN_TEAM_WORKFLOW, BUILT_IN_TEAM_WORKFLOWS } from "@t3tools/shared/team";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -18,12 +18,12 @@ const TestLayer = ServerSettingsModule.layer.pipe(
   Layer.provideMerge(NodeServices.layer),
 );
 
-it.effect("resolves an empty Team Workflow setting to the built-in preset", () =>
+it.effect("resolves Team Workflow settings to include every built-in preset", () =>
   Effect.gen(function* () {
     const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
     const settings = yield* serverSettings.getSettings;
 
-    assert.deepEqual(settings.teamWorkflows, [BUILT_IN_TEAM_WORKFLOW]);
+    assert.deepEqual(settings.teamWorkflows, [...BUILT_IN_TEAM_WORKFLOWS]);
     const custom = {
       ...BUILT_IN_TEAM_WORKFLOW,
       id: "custom-team",
@@ -33,10 +33,10 @@ it.effect("resolves an empty Team Workflow setting to the built-in preset", () =
     };
     assert.deepEqual(
       (yield* serverSettings.updateSettings({ teamWorkflows: [custom] })).teamWorkflows,
-      [custom],
+      [custom, ...BUILT_IN_TEAM_WORKFLOWS],
     );
     assert.deepEqual((yield* serverSettings.updateSettings({ teamWorkflows: [] })).teamWorkflows, [
-      BUILT_IN_TEAM_WORKFLOW,
+      ...BUILT_IN_TEAM_WORKFLOWS,
     ]);
   }).pipe(Effect.provide(TestLayer)),
 );

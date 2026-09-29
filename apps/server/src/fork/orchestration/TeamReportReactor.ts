@@ -154,8 +154,21 @@ export const make = Effect.gen(function* () {
       }),
       { files: 0, additions: 0, deletions: 0 },
     );
+    const owner = yield* snapshots.getThreadShellById(shell.value.team.orchestratorThreadId);
+    const roleId = shell.value.team.roleId;
+    const kind =
+      Option.isSome(owner) && owner.value.team?.role === "orchestrator"
+        ? owner.value.team.workflow.roles.find((role) => role.id === roleId)?.kind
+        : undefined;
+    // A research brief or a verdict JSON at the end of the reply must arrive whole, and only from
+    // this turn: a failed later review round must not resend the previous round's verdict.
+    const fullMessage = kind === "researcher" || kind === "plan-reviewer";
+    const latestTurnId = shell.value.latestTurn?.turnId;
     const lastAssistantMessage = detail.value.messages.findLast(
-      (message) => message.role === "assistant" && !message.streaming,
+      (message) =>
+        message.role === "assistant" &&
+        !message.streaming &&
+        (!fullMessage || message.turnId === latestTurnId),
     );
     return {
       workerThreadId: shell.value.id,
@@ -164,7 +177,10 @@ export const make = Effect.gen(function* () {
       state: workerState(shell.value),
       branch: shell.value.branch,
       diffStats,
-      lastAssistantMessage: lastAssistantMessage?.text.slice(0, ASSISTANT_MESSAGE_LIMIT) ?? null,
+      lastAssistantMessage:
+        (fullMessage
+          ? lastAssistantMessage?.text
+          : lastAssistantMessage?.text.slice(0, ASSISTANT_MESSAGE_LIMIT)) ?? null,
     } satisfies TeamReport;
   });
 

@@ -12,7 +12,7 @@ import {
   type OrchestrationThreadShell,
   type TeamWorkflow,
 } from "@t3tools/contracts";
-import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
+import { BUILT_IN_RESEARCH_PLAN_WORKFLOW, BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -345,7 +345,7 @@ describe("team toolkit handlers", () => {
         title: "Locate TeamPanel.tsx read-only",
         task: "Find the Team panel source file.",
       });
-      expect(result.branch.length).toBeLessThanOrEqual(40);
+      expect(result.branch?.length).toBeLessThanOrEqual(40);
       expect(result.branch).toMatch(/^team\/thread-t\/frontend-[0-9a-f]{8}$/);
     }),
   );
@@ -461,6 +461,64 @@ describe("team toolkit handlers", () => {
           prepareWorktree: { baseBranch: "team/thread-t/integration" },
         },
       });
+    }),
+  );
+
+  it.effect("runs read-only workers in the planner's checkout with no branch or setup", () =>
+    Effect.gen(function* () {
+      const planner = shell({
+        id: ORCHESTRATOR_ID,
+        branch: "feature/plan",
+        worktreePath: "/workspace/planner-worktree",
+        team: { role: "orchestrator", workflow: BUILT_IN_RESEARCH_PLAN_WORKFLOW },
+      });
+      const harness = yield* makeHarness({ threads: [planner] });
+      for (const roleId of ["researcher", "plan-reviewer"]) {
+        const result = yield* harness.call("team_spawn_worker", {
+          roleId: TeamRoleId.make(roleId),
+          title: "Read-only task",
+          task: "Read the plan.",
+          baseBranch: "ignored",
+        });
+        expect(result.branch).toBeNull();
+      }
+      const commands = yield* Ref.get(harness.bootstrapCommands);
+      for (const command of commands) {
+        if (command.type !== "thread.turn.start") throw new Error("Expected a turn start");
+        expect(command.runtimeMode).toBe("approval-required");
+        expect(command.bootstrap).toMatchObject({
+          createThread: { branch: "feature/plan", worktreePath: "/workspace/planner-worktree" },
+          runSetupScript: false,
+        });
+        expect(command.bootstrap?.prepareWorktree).toBeUndefined();
+      }
+    }),
+  );
+
+  it.effect("caps plan-reviewer rounds and refuses to integrate a plan workflow", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        threads: [
+          orchestrator({ ...BUILT_IN_RESEARCH_PLAN_WORKFLOW, maxReviewRounds: 2 }),
+          worker(),
+        ],
+      });
+      expect(
+        yield* harness
+          .call("team_spawn_worker", {
+            roleId: TeamRoleId.make("plan-reviewer"),
+            title: "Review plan",
+            task: "Review it.",
+            reviewRound: 3,
+          })
+          .pipe(Effect.flip),
+      ).toMatchObject({ _tag: "TeamReviewRoundLimitError", limit: 2, reviewRound: 3 });
+      expect(
+        yield* harness
+          .call("team_integrate", { branches: ["team/thread-t/frontend-build-ui"] })
+          .pipe(Effect.flip),
+      ).toMatchObject({ _tag: "TeamIntegrationUnsupportedError" });
+      expect(yield* Ref.get(harness.integrationInputs)).toEqual([]);
     }),
   );
 

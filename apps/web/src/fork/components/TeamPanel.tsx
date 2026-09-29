@@ -13,7 +13,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { ExternalLink, MessageSquare, Square, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { useThreadDetail, useThreadShells } from "~/state/entities";
+import { useThreadDetail, useThreadShell, useThreadShells } from "~/state/entities";
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import {
@@ -28,6 +28,7 @@ import {
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Textarea } from "~/components/ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { PlanRunPanel } from "./PlanRunPanel";
 
 const STATUS_VISUALS: Record<TeamWorkerStatus, { label: string; dotClass: string }> = {
   idle: { label: "Idle", dotClass: "bg-muted-foreground/50" },
@@ -62,11 +63,13 @@ export function TeamWorkerRow(props: {
   onOpen: () => void;
   onStop: () => void;
   onMessage: () => void;
+  allowMessage?: boolean;
 }) {
   const { worker } = props;
   const status = teamWorkerStatus(worker);
   const visual = STATUS_VISUALS[status];
   const actions = teamWorkerActionAvailability(status);
+  const canMessage = actions.canMessage && props.allowMessage !== false;
   const model =
     formatSubagentModelLabel(worker.modelSelection.model, teamWorkerEffort(worker)) ??
     worker.modelSelection.model;
@@ -109,7 +112,7 @@ export function TeamWorkerRow(props: {
                 size="icon-micro"
                 variant="ghost-muted"
                 onClick={props.onMessage}
-                disabled={!actions.canMessage}
+                disabled={!canMessage}
                 aria-label="Message worker"
               />
             }
@@ -117,7 +120,11 @@ export function TeamWorkerRow(props: {
             <MessageSquare aria-hidden className="size-3.5" />
           </TooltipTrigger>
           <TooltipPopup>
-            {actions.canMessage ? "Message worker" : "Wait for the worker to become idle"}
+            {canMessage
+              ? "Message worker"
+              : props.allowMessage === false
+                ? "Planning follow-ups go through your starting chat"
+                : "Wait for the worker to become idle"}
           </TooltipPopup>
         </Tooltip>
         <Tooltip>
@@ -154,7 +161,13 @@ export function TeamPanel(props: {
   onOpenWorker: (worker: EnvironmentThreadShell) => void;
   onStopWorker: (worker: EnvironmentThreadShell) => void | Promise<void>;
   onMessageWorker: (worker: EnvironmentThreadShell, message: string) => Promise<boolean>;
+  onChooseNotes: (message: string) => Promise<boolean>;
 }) {
+  const orchestrator = useThreadShell(props.orchestratorRef);
+  const detail = useThreadDetail(props.orchestratorRef);
+  const planning =
+    orchestrator?.team?.role === "orchestrator" &&
+    orchestrator.team.workflow.protocolId === "t3-plan-loop";
   const threads = useThreadShells();
   const workers = useMemo(
     () => selectTeamWorkers(threads, props.orchestratorRef),
@@ -199,10 +212,24 @@ export function TeamPanel(props: {
             </Button>
           ) : null}
         </header>
+        {planning ? (
+          <PlanRunPanel
+            activities={detail?.activities ?? []}
+            messages={detail?.messages ?? []}
+            environmentId={props.orchestratorRef.environmentId}
+            orchestratorBusy={
+              orchestrator.latestTurn?.state === "running" ||
+              orchestrator.session?.status === "starting" ||
+              orchestrator.session?.status === "running"
+            }
+            onChooseNotes={props.onChooseNotes}
+          />
+        ) : null}
         <ScrollArea className="min-h-0 flex-1">
           {workers.length === 0 ? (
             <div className="flex h-40 items-center justify-center px-6 text-center text-sm text-muted-foreground">
-              Workers appear here after the orchestrator delegates work.
+              Workers appear here after {planning ? "the planner" : "the orchestrator"} delegates
+              work.
             </div>
           ) : (
             workers.map((worker) => (
@@ -212,6 +239,7 @@ export function TeamPanel(props: {
                 onOpen={() => props.onOpenWorker(worker)}
                 onStop={() => void props.onStopWorker(worker)}
                 onMessage={() => setMessageWorker(worker)}
+                allowMessage={!planning}
               />
             ))
           )}

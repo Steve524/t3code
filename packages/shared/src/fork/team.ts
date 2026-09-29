@@ -67,14 +67,14 @@ export const RESEARCH_PLAN_TEAM_WORKFLOW: TeamWorkflow = {
   name: "Research and plan",
   builtIn: true,
   protocolId: "t3-plan-loop",
-  skillVersion: "1.0.0",
+  skillVersion: "1.1.0",
   roles: [
     {
       id: TeamRoleId.make("planner"),
       label: "Planner",
       kind: "planner",
       enabled: true,
-      summary: "Requirements and plan drafts",
+      summary: "Your starting chat: questions, plan drafts, and coordination",
       modelSelection: null,
       runtimeMode: null,
       instructions: "",
@@ -116,7 +116,25 @@ export function resolveTeamWorkflows(
   workflows: ReadonlyArray<TeamWorkflow>,
 ): ReadonlyArray<TeamWorkflow> {
   return [
-    ...workflows,
+    ...workflows.map((workflow) =>
+      workflow.id === RESEARCH_PLAN_TEAM_WORKFLOW.id && workflow.skillVersion === "1.0.0"
+        ? {
+            ...workflow,
+            skillVersion: RESEARCH_PLAN_TEAM_WORKFLOW.skillVersion!,
+            roles: workflow.roles.map((role) =>
+              role.id === "planner"
+                ? {
+                    ...role,
+                    enabled: true,
+                    modelSelection: null,
+                    runtimeMode: null,
+                    summary: RESEARCH_PLAN_TEAM_WORKFLOW.roles[0]!.summary,
+                  }
+                : role,
+            ),
+          }
+        : workflow,
+    ),
     ...BUILT_IN_TEAM_WORKFLOWS.filter((preset) => !workflows.some(({ id }) => id === preset.id)),
   ];
 }

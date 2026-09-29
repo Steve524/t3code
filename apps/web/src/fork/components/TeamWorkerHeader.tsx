@@ -35,7 +35,7 @@ export function TeamWorkerBackLink({
           className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ArrowLeftIcon aria-hidden className="size-3" />
-          Back to orchestrator
+          Back to main chat
         </button>
       </WorkspaceBreadcrumbItem>
       <WorkspaceBreadcrumbSeparator />

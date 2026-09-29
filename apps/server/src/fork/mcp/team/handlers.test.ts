@@ -301,6 +301,41 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
 });
 
 describe("team toolkit handlers", () => {
+  it.effect(
+    "reports the composer model for the main planner while retaining legacy worker choices",
+    () =>
+      Effect.gen(function* () {
+        for (const skillVersion of ["1.0.0", "1.1.0"]) {
+          const planning = {
+            ...RESEARCH_PLAN_TEAM_WORKFLOW,
+            skillVersion,
+            roles: RESEARCH_PLAN_TEAM_WORKFLOW.roles.map((role) =>
+              role.id === "planner"
+                ? {
+                    ...role,
+                    modelSelection: { instanceId: ROLE_INSTANCE_ID, model: "old-planner" },
+                    runtimeMode: "approval-required" as const,
+                  }
+                : role,
+            ),
+          };
+          const harness = yield* makeHarness({ threads: [orchestrator(planning)] });
+          const roster = yield* harness.call("team_roster", {});
+          expect(roster.roles.find((role) => role.id === "planner")).toMatchObject(
+            skillVersion === "1.1.0"
+              ? {
+                  modelSelection: { instanceId: HOST_INSTANCE_ID, model: "gpt-host" },
+                  runtimeMode: "full-access",
+                }
+              : {
+                  modelSelection: { instanceId: ROLE_INSTANCE_ID, model: "old-planner" },
+                  runtimeMode: "approval-required",
+                },
+          );
+        }
+      }),
+  );
+
   it.effect("rejects generic planning spawn, follow-up and integration bypasses", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({

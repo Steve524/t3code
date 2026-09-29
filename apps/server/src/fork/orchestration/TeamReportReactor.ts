@@ -101,7 +101,7 @@ const reportText = (reports: ReadonlyArray<TeamReport>) =>
   [
     "Team update",
     ...reports.map((report) => {
-      const output = report.lastAssistantMessage ?? "No assistant output.";
+      const output = report.lastAssistantMessage ?? "No completed assistant output for this turn.";
       return [
         `### ${report.roleLabel}: ${report.title}`,
         `State: ${report.state}`,
@@ -163,12 +163,16 @@ export const make = Effect.gen(function* () {
       { files: 0, additions: 0, deletions: 0 },
     );
     const lastAssistantMessage = detail.value.messages.findLast(
-      (message) => message.role === "assistant" && !message.streaming,
+      (message) =>
+        message.role === "assistant" &&
+        !message.streaming &&
+        message.turnId === shell.value.latestTurn?.turnId,
     );
+    const latestTask = detail.value.messages.findLast((message) => message.role === "user");
     return {
       workerThreadId: shell.value.id,
       roleLabel: shell.value.team.roleLabel,
-      title: shell.value.team.taskTitle,
+      title: latestTask?.text.split("\n", 1)[0]?.trim().slice(0, 80) || shell.value.team.taskTitle,
       state: workerState(shell.value),
       branch: shell.value.branch,
       diffStats,

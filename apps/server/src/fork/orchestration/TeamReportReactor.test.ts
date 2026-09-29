@@ -332,7 +332,7 @@ describe("TeamReportReactor", () => {
     ),
   );
 
-  effectIt.effect("reports a worker approval once without starting a worker turn", () =>
+  effectIt.effect("reports a worker approval once using only the current turn's output", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const owner = makeThread({
@@ -341,10 +341,30 @@ describe("TeamReportReactor", () => {
         });
         const worker = makeThread({
           id: WORKER_ONE_ID,
-          team: workerTeam,
-          latestTurn: turn("one", "running"),
+          team: { ...workerTeam, taskTitle: "Review v1" },
+          latestTurn: turn("two", "running"),
           sessionStatus: "running",
         });
+        worker.messages.push(
+          {
+            id: MessageId.make("old-review"),
+            role: "assistant",
+            text: '{"verdict":"REVISE"}',
+            turnId: TurnId.make("one"),
+            streaming: false,
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
+          {
+            id: MessageId.make("new-review-request"),
+            role: "user",
+            text: "Review plan v2 independently.\nThe revised plan follows.",
+            turnId: null,
+            streaming: false,
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
+        );
         const harness = yield* makeHarness([owner, worker]);
 
         yield* Effect.gen(function* () {
@@ -360,11 +380,29 @@ describe("TeamReportReactor", () => {
           expect(reports).toHaveLength(1);
           expect(reports[0]?.threadId).toBe(OWNER_ID);
           expect(reports[0]?.message.text).toContain("approval requested");
+          expect(reports[0]?.message.text).toContain("Review plan v2 independently.");
+          expect(reports[0]?.message.text).not.toContain("Review v1");
+          expect(reports[0]?.message.text).not.toContain("REVISE");
           expect(
             harness.commands.some(
               (command) => "threadId" in command && command.threadId === WORKER_ONE_ID,
             ),
           ).toBe(false);
+          worker.messages.push({
+            id: MessageId.make("new-review"),
+            role: "assistant",
+            text: '{"verdict":"APPROVED"}',
+            turnId: TurnId.make("two"),
+            streaming: false,
+            createdAt: NOW,
+            updatedAt: NOW,
+          });
+          worker.hasPendingApprovals = false;
+          worker.latestTurn = turn("two", "completed");
+          worker.session = { ...worker.session!, status: "ready", activeTurnId: null };
+          yield* harness.publish(sessionEvent(3, worker));
+          yield* reactor.drainThrough(3);
+          expect(turnStarts(harness.commands).at(-1)?.message.text).toContain("APPROVED");
         }).pipe(Effect.provide(harness.layer));
       }),
     ),

@@ -1,12 +1,18 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFS from "node:fs";
 import type { TeamWorkflow } from "@t3tools/contracts";
 
-import skill from "../skills/t3-plan-loop/SKILL.md";
-import planner from "../skills/t3-plan-loop/references/planner.md";
-import reviewer from "../skills/t3-plan-loop/references/reviewer.md";
-import researcher from "../skills/t3-plan-loop/references/researcher.md";
+const source = new URL("../skills/t3-plan-loop/", import.meta.url);
+const packaged = new URL("./skills/t3-plan-loop/", import.meta.url);
+const skillRoot = NodeFS.existsSync(new URL("SKILL.md", packaged)) ? packaged : source;
+const readSkill = (path: string) => NodeFS.readFileSync(new URL(path, skillRoot), "utf8");
+const skill = readSkill("SKILL.md");
+const planner = readSkill("references/planner.md");
+const reviewer = readSkill("references/reviewer.md");
+const researcher = readSkill("references/researcher.md");
 
 export const PLAN_LOOP_PROTOCOL = "t3-plan-loop";
-export const PLAN_LOOP_SKILL_VERSION = "1.0.0";
+export const PLAN_LOOP_SKILL_VERSION = "1.1.0";
 export const PLAN_LOOP_INVOCATION = /^\s*[/$]t3-plan-loop(?=\s|$)/u;
 
 const roleInstructions: Readonly<Record<string, string>> = { planner, reviewer, researcher };
@@ -16,15 +22,18 @@ export function planLoopCoordinatorInstructions(workflow: TeamWorkflow): string 
     return `The Research and plan workflow requires t3-plan-loop ${PLAN_LOOP_SKILL_VERSION}, but this thread has ${workflow.skillVersion ?? "no version"}. Update the workflow package and start a compatible thread. Do not dispatch workers.`;
   }
 
+  const plannerInstructions =
+    workflow.roles.find((role) => role.id === "planner")?.instructions.trim() || planner;
   const roster = workflow.roles
     .filter((role) => role.enabled)
-    .map(
-      (role) =>
-        `- ${role.label} (${role.id}, ${role.kind}): ${role.summary}; model=${JSON.stringify(role.modelSelection ?? "same as host")}; permissions=${role.runtimeMode ?? "same as host"}`,
+    .map((role) =>
+      role.id === "planner"
+        ? "- Planner: you, in this chat, using the model and permissions selected in the composer."
+        : `- ${role.label} (${role.id}, ${role.kind}): ${role.summary}; model=${JSON.stringify(role.modelSelection ?? "same as host")}; permissions=${role.runtimeMode ?? "same as host"}`,
     )
     .join("\n");
   const custom = workflow.orchestratorInstructions.trim();
-  return `${skill}\n\n<team_roster>\n${roster}\nLimits: ${workflow.maxParallelWorkers} parallel workers, ${workflow.maxReviewRounds} review attempts, ${workflow.maxAutoReports} automatic updates, ${workflow.deepResearchWorkers ?? 3} deep-research workers.\n</team_roster>${custom ? `\n\n<team_orchestrator_instructions>\n${custom}\n</team_orchestrator_instructions>` : ""}`;
+  return `${skill}\n\n<planner_instructions>\n${plannerInstructions}\n</planner_instructions>\n\n<team_roster>\n${roster}\nLimits: ${workflow.maxParallelWorkers} parallel workers, ${workflow.maxReviewRounds} review attempts, ${workflow.maxAutoReports} automatic updates, ${workflow.deepResearchWorkers ?? 3} deep-research workers.\n</team_roster>${custom ? `\n\n<team_orchestrator_instructions>\n${custom}\n</team_orchestrator_instructions>` : ""}`;
 }
 
 export function planLoopWorkerInstructions(input: {
@@ -34,7 +43,7 @@ export function planLoopWorkerInstructions(input: {
   readonly orchestratorTitle: string;
 }): string {
   const role = input.roleInstructions.trim() || roleInstructions[input.roleId] || "";
-  return `<team_worker>\nYou are the ${input.roleLabel} worker for the T3 Code Research and plan thread "${input.orchestratorTitle}". Return your complete result to the coordinator. Do not edit project source, commit, push, open a pull request, or delegate with native subagent tools.\n</team_worker>${role ? `\n\n<team_role_instructions>\n${role}\n</team_role_instructions>` : ""}`;
+  return `<team_worker>\nYou are the ${input.roleLabel} worker for the T3 Code Research and plan thread "${input.orchestratorTitle}". Return your complete result to the planner in the starting chat. Return any clarification questions with your result; do not ask the user directly or wait for input in this worker thread. Do not edit project source, commit, push, open a pull request, or delegate with native subagent tools.\n</team_worker>${role ? `\n\n<team_role_instructions>\n${role}\n</team_role_instructions>` : ""}`;
 }
 
 export function resolvePlanLoopInvocation(

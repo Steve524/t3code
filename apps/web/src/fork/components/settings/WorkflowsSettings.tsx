@@ -6,8 +6,9 @@ import type {
   TeamWorkflow,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
+import { BUILT_IN_TEAM_WORKFLOW, BUILT_IN_TEAM_WORKFLOWS } from "@t3tools/shared/team";
 import { ChevronDownIcon, InfoIcon, RotateCcwIcon } from "lucide-react";
+import { useState } from "react";
 
 import { getCustomModelOptionsByInstance } from "../../../modelSelection";
 import {
@@ -55,7 +56,6 @@ import {
   useUpdateScopedSettings,
 } from "../../../components/settings/useScopedSettings";
 
-const WORKFLOW_ID = BUILT_IN_TEAM_WORKFLOW.id;
 const INHERIT_RUNTIME_MODE = "same-as-orchestrator";
 
 function isRuntimeMode(value: string): value is RuntimeMode {
@@ -173,7 +173,10 @@ function RoleRow({
   onChange: (workflow: TeamWorkflow) => void;
   showQaHint: boolean;
 }) {
-  const builtInRole = BUILT_IN_TEAM_WORKFLOW.roles.find(({ id }) => id === role.id);
+  const builtInRole = BUILT_IN_TEAM_WORKFLOWS.find(({ id }) => id === workflow.id)?.roles.find(
+    ({ id }) => id === role.id,
+  );
+  const isPlanner = workflow.protocolId === "t3-plan-loop" && role.id === "planner";
   const updateRole = (patch: Partial<TeamRole>) =>
     onChange({
       ...workflow,
@@ -185,51 +188,63 @@ function RoleRow({
   return (
     <SettingsRow
       title={role.label}
-      description={role.summary}
+      description={
+        isPlanner ? "Your starting chat: questions, plan drafts, and coordination" : role.summary
+      }
       control={
-        <Switch
-          checked={role.enabled}
-          aria-label={`${role.enabled ? "Disable" : "Enable"} ${role.label}`}
-          onCheckedChange={(enabled) => updateRole({ enabled })}
-        />
+        isPlanner ? undefined : (
+          <Switch
+            checked={role.enabled}
+            aria-label={`${role.enabled ? "Disable" : "Enable"} ${role.label}`}
+            onCheckedChange={(enabled) => updateRole({ enabled })}
+          />
+        )
       }
     >
       <div className="grid gap-3 py-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-muted-foreground">Model</p>
-          <RoleModelControls
-            role={role}
-            settings={settings}
-            providers={providers}
-            entries={entries}
-            onChange={(modelSelection) => updateRole({ modelSelection })}
-          />
+          {isPlanner ? (
+            <p className="text-sm text-muted-foreground">Chosen in the chat composer</p>
+          ) : (
+            <RoleModelControls
+              role={role}
+              settings={settings}
+              providers={providers}
+              entries={entries}
+              onChange={(modelSelection) => updateRole({ modelSelection })}
+            />
+          )}
         </div>
         <div className="space-y-1.5">
           <p className="text-xs font-medium text-muted-foreground">Permissions</p>
-          <Select
-            value={role.runtimeMode ?? INHERIT_RUNTIME_MODE}
-            onValueChange={(value) => {
-              if (value === INHERIT_RUNTIME_MODE) updateRole({ runtimeMode: null });
-              else if (value && isRuntimeMode(value)) updateRole({ runtimeMode: value });
-            }}
-          >
-            <SelectTrigger size="sm" aria-label={`${role.label} permissions`}>
-              <SelectValue>
-                {role.runtimeMode === null
-                  ? "Same as orchestrator"
-                  : runtimeModeConfig[role.runtimeMode].label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="start">
-              <SelectItem value={INHERIT_RUNTIME_MODE}>Same as orchestrator</SelectItem>
-              {runtimeModeOptions.map((mode) => (
-                <SelectItem key={mode} value={mode}>
-                  {runtimeModeConfig[mode].label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
+          {isPlanner ? (
+            <p className="text-sm text-muted-foreground">Chosen in the chat composer</p>
+          ) : (
+            <Select
+              value={role.runtimeMode ?? INHERIT_RUNTIME_MODE}
+              onValueChange={(value) => {
+                if (value === INHERIT_RUNTIME_MODE) updateRole({ runtimeMode: null });
+                else if (value && isRuntimeMode(value)) updateRole({ runtimeMode: value });
+              }}
+            >
+              <SelectTrigger size="sm" aria-label={`${role.label} permissions`}>
+                <SelectValue>
+                  {role.runtimeMode === null
+                    ? "Same as orchestrator"
+                    : runtimeModeConfig[role.runtimeMode].label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="start">
+                <SelectItem value={INHERIT_RUNTIME_MODE}>Same as orchestrator</SelectItem>
+                {runtimeModeOptions.map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {runtimeModeConfig[mode].label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          )}
         </div>
       </div>
       {showQaHint ? (
@@ -244,8 +259,8 @@ function RoleRow({
           <ChevronDownIcon className="size-3.5" />
           Instructions
         </CollapsibleTrigger>
-        <CollapsiblePanel className="pb-3">
-          <div className="space-y-2">
+        <CollapsiblePanel>
+          <div className="space-y-2 pb-3">
             <Textarea
               key={role.instructions}
               size="sm"
@@ -276,6 +291,7 @@ export function WorkflowsSettingsPanel() {
   const { scope, environment } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>(BUILT_IN_TEAM_WORKFLOW.id);
 
   if (scope.kind !== "environment") {
     return (
@@ -285,8 +301,11 @@ export function WorkflowsSettingsPanel() {
     );
   }
 
+  const builtInWorkflow =
+    BUILT_IN_TEAM_WORKFLOWS.find(({ id }) => id === selectedWorkflowId) ?? BUILT_IN_TEAM_WORKFLOW;
   const workflow =
-    settings.teamWorkflows.find(({ id }) => id === WORKFLOW_ID) ?? BUILT_IN_TEAM_WORKFLOW;
+    settings.teamWorkflows.find(({ id }) => id === selectedWorkflowId) ?? builtInWorkflow;
+  const planning = workflow.protocolId === "t3-plan-loop";
   const providers = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
@@ -300,7 +319,7 @@ export function WorkflowsSettingsPanel() {
       selection.instanceId
     );
   };
-  const showQaHint = shouldSuggestIndependentQa(workflow, providerKey);
+  const showQaHint = !planning && shouldSuggestIndependentQa(workflow, providerKey);
 
   return (
     <SettingsPageContainer width="wide">
@@ -308,21 +327,34 @@ export function WorkflowsSettingsPanel() {
         {...searchableSetting("team-workflows")}
         title="Presets"
         headerAction={
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            onClick={() => saveWorkflow(BUILT_IN_TEAM_WORKFLOW)}
-          >
+          <Button size="xs" variant="ghost-muted" onClick={() => saveWorkflow(builtInWorkflow)}>
             <RotateCcwIcon />
             Restore built-in preset
           </Button>
         }
       >
-        <SettingsRow
-          title={workflow.name}
-          description="Built-in workflow for parallel implementation and independent review."
-          status="Selected"
-        />
+        {BUILT_IN_TEAM_WORKFLOWS.map((preset) => (
+          <SettingsRow
+            key={preset.id}
+            title={preset.name}
+            description={
+              preset.protocolId === "t3-plan-loop"
+                ? "Research, planning, and independent plan review."
+                : "Parallel implementation and independent code review."
+            }
+            status={preset.id === workflow.id ? "Selected" : undefined}
+            control={
+              <Button
+                size="xs"
+                variant="ghost-muted"
+                aria-label={`Configure ${preset.name}`}
+                onClick={() => setSelectedWorkflowId(preset.id)}
+              >
+                Configure
+              </Button>
+            }
+          />
+        ))}
       </SettingsSection>
 
       <SettingsSection title="Roles">
@@ -344,7 +376,13 @@ export function WorkflowsSettingsPanel() {
         {(
           [
             ["maxParallelWorkers", "Max parallel workers", "Workers that may run at once."],
-            ["maxReviewRounds", "Max review rounds", "QA passes before the team stops."],
+            [
+              "maxReviewRounds",
+              "Max review rounds",
+              planning
+                ? "Plan review attempts before the run stops."
+                : "QA passes before the team stops.",
+            ],
             [
               "maxAutoReports",
               "Max automatic updates",
@@ -377,10 +415,81 @@ export function WorkflowsSettingsPanel() {
         ))}
       </SettingsSection>
 
-      <SettingsSection title="Orchestrator">
+      {planning ? (
+        <SettingsSection title="Research">
+          <SettingsRow
+            title="Research depth"
+            description="Ask at run start, or use this depth for new runs."
+            control={
+              <Select
+                value={workflow.researchDepth ?? "ask"}
+                onValueChange={(value) => {
+                  if (value === "ask") {
+                    const { researchDepth: _researchDepth, ...rest } = workflow;
+                    saveWorkflow(rest);
+                  } else if (value === "none" || value === "web" || value === "deep") {
+                    saveWorkflow({ ...workflow, researchDepth: value });
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" aria-label="Research depth">
+                  <SelectValue>
+                    {workflow.researchDepth === "none"
+                      ? "None"
+                      : workflow.researchDepth === "web"
+                        ? "Web"
+                        : workflow.researchDepth === "deep"
+                          ? "Deep"
+                          : "Ask at run start"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="start">
+                  <SelectItem value="ask">Ask at run start</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="web">Web</SelectItem>
+                  <SelectItem value="deep">Deep</SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+          <SettingsRow
+            title="Deep research workers"
+            description="Total workers for one deep research run, including later batches."
+            control={
+              <NumberField
+                value={workflow.deepResearchWorkers ?? 3}
+                min={3}
+                max={5}
+                step={1}
+                size="sm"
+                className="w-24"
+                onValueCommitted={(value) => {
+                  if (
+                    typeof value === "number" &&
+                    Number.isInteger(value) &&
+                    value >= 3 &&
+                    value <= 5
+                  )
+                    saveWorkflow({ ...workflow, deepResearchWorkers: value });
+                }}
+              >
+                <NumberFieldGroup>
+                  <NumberFieldInput aria-label="Deep research workers" />
+                </NumberFieldGroup>
+              </NumberField>
+            }
+          />
+        </SettingsSection>
+      ) : null}
+
+      <SettingsSection title={planning ? "Coordination" : "Orchestrator"}>
         <SettingsRow
           title="Extra instructions"
-          description="Added after the built-in orchestrator instructions."
+          description={
+            planning
+              ? "Extra guidance for the planner when coordinating research and review."
+              : "Added after the built-in orchestrator instructions."
+          }
           resetAction={
             workflow.orchestratorInstructions ? (
               <SettingResetButton

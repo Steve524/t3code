@@ -67,6 +67,7 @@ it.effect("registers Team Workflow tools and requires the team capability", () =
         "team_get_worker",
         "team_get_worker_result",
         "team_export_worker_result",
+        "team_export_plan",
         "team_list_artifacts",
         "team_message_worker",
         "team_stop_worker",

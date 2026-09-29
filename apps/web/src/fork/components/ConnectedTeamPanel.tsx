@@ -8,6 +8,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 
 import { newMessageId } from "../../lib/utils";
+import { useThreadShell } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
@@ -16,6 +17,7 @@ import { TeamPanel } from "./TeamPanel";
 
 export function ConnectedTeamPanel({ orchestratorRef }: { orchestratorRef: ScopedThreadRef }) {
   const navigate = useNavigate();
+  const orchestrator = useThreadShell(orchestratorRef);
   const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, { reportFailure: false });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
 
@@ -39,6 +41,12 @@ export function ConnectedTeamPanel({ orchestratorRef }: { orchestratorRef: Scope
     });
   };
   const messageWorker = async (worker: EnvironmentThreadShell, text: string) => {
+    if (
+      worker.team?.role === "worker" &&
+      orchestrator?.team?.role === "orchestrator" &&
+      orchestrator.team.workflow.protocolId === "t3-plan-loop"
+    )
+      return false;
     const result = await startThreadTurn({
       environmentId: worker.environmentId,
       input: {
@@ -53,11 +61,15 @@ export function ConnectedTeamPanel({ orchestratorRef }: { orchestratorRef: Scope
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: "Could not message worker",
+        title: "Could not send message",
         description: error instanceof Error ? error.message : "An unexpected error occurred.",
       });
     }
     return false;
+  };
+  const chooseNotes = async (text: string) => {
+    if (!orchestrator) return false;
+    return messageWorker(orchestrator, text);
   };
 
   return (
@@ -66,6 +78,7 @@ export function ConnectedTeamPanel({ orchestratorRef }: { orchestratorRef: Scope
       onOpenWorker={openWorker}
       onStopWorker={stopWorker}
       onMessageWorker={messageWorker}
+      onChooseNotes={chooseNotes}
     />
   );
 }

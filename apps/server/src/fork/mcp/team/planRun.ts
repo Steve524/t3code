@@ -8,13 +8,18 @@ import {
   TurnId,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
+import { extractJsonObject } from "@t3tools/shared/schemaJson";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
+
+import { ReviewVerdict } from "../../provider/PlanReviewVerdict.ts";
 
 export class PlanRunError extends Schema.TaggedError<PlanRunError>()("PlanRunError", {
   detail: Schema.String,
@@ -24,35 +29,23 @@ export class PlanRunError extends Schema.TaggedError<PlanRunError>()("PlanRunErr
   }
 }
 
-export const ReviewVerdict = Schema.Struct({
-  verdict: Schema.Literals(["APPROVED", "REVISE", "BLOCKED"]),
-  planHash: TrimmedNonEmptyString,
-  baseline: TrimmedNonEmptyString,
-  summary: TrimmedNonEmptyString,
-  findings: Schema.Array(
-    Schema.Struct({
-      id: TrimmedNonEmptyString,
-      severity: Schema.Literals(["critical", "major", "minor"]),
-      evidence: TrimmedNonEmptyString,
-      proposedFix: TrimmedNonEmptyString,
-    }),
-  ),
-  coverage: Schema.Array(TrimmedNonEmptyString).check(Schema.isMinLength(1)),
-  limitations: Schema.Array(TrimmedNonEmptyString),
-});
-
 const Source = Schema.Struct({ workerThreadId: ThreadId, turnId: TurnId, messageId: MessageId });
 export const FindingDisposition = Schema.Struct({
   id: TrimmedNonEmptyString,
   decision: Schema.Literals(["accepted", "rejected"]),
   evidence: TrimmedNonEmptyString,
 });
-const Plan = Schema.Struct({
-  ...Source.fields,
+const PlannerSource = Schema.Struct({ threadId: ThreadId, proposedPlanId: TrimmedNonEmptyString });
+const PlanSource = Schema.Union([Source, PlannerSource]);
+const planFields = {
   hash: Schema.String,
   version: Schema.Int,
   dispositions: Schema.Array(FindingDisposition),
-});
+};
+const Plan = Schema.Union([
+  Schema.Struct({ ...Source.fields, ...planFields }),
+  Schema.Struct({ ...PlannerSource.fields, ...planFields }),
+]);
 export const PlanPurpose = Schema.Literals([
   "planner",
   "reviewer",
@@ -101,11 +94,40 @@ const lock = Semaphore.makeUnsafe(1);
 export const withPlanRunLock = lock.withPermits(1);
 const fail = (detail: string) => new PlanRunError({ detail });
 
+const requireRecordedReviews = (run: PlanRun) => {
+  if (
+    run.reservations.some(
+      (item) =>
+        item.purpose === "reviewer" &&
+        item.status !== "failed" &&
+        !run.reviews.some((review) => review.requestId === item.requestId),
+    )
+  ) {
+    throw fail(
+      "The previous review must finish and be recorded with action=record-review before continuing.",
+    );
+  }
+};
+
 export function reservePlanWork(
   run: PlanRun,
-  input: { requestId: string; purpose: typeof PlanPurpose.Type; task: string; title: string },
+  input: {
+    requestId: string;
+    purpose: typeof PlanPurpose.Type;
+    task: string;
+    title: string;
+    workerThreadId?: ThreadId | undefined;
+  },
 ): { run: PlanRun; reservation: PlanReservation; duplicate: boolean } {
-  const fingerprint = hashPlan(JSON.stringify([input.purpose, input.title, input.task]));
+  // Keep fingerprints of older requests unchanged when no follow-up target is supplied.
+  const fingerprint = hashPlan(
+    JSON.stringify([
+      input.purpose,
+      input.title,
+      input.task,
+      ...(input.workerThreadId ? [input.workerThreadId] : []),
+    ]),
+  );
   const duplicate = run.reservations.find((item) => item.requestId === input.requestId);
   if (duplicate) {
     if (duplicate.fingerprint !== fingerprint)
@@ -113,21 +135,52 @@ export function reservePlanWork(
     return { run, reservation: duplicate, duplicate: true };
   }
   if (run.phase === "cancelled") throw fail("This run is cancelled. Resume it explicitly first.");
+  if (input.purpose === "planner" && run.workflow.skillVersion !== "1.0.0")
+    throw fail(
+      "You are the planner. Ask the user and draft the plan in this chat; do not dispatch a planner worker.",
+    );
   if (run.phase === "approved" && input.purpose !== "planner")
-    throw fail("Ask the planner for a revised plan before dispatching more work.");
+    throw fail("Record a revised plan before dispatching more work.");
+  if (input.workerThreadId && input.purpose !== "research-worker")
+    throw fail("workerThreadId is supported only for research-worker follow-ups.");
   const previous = run.reservations.filter((item) => item.purpose === input.purpose);
+  const researchWorkers = run.reservations.filter((item) => item.purpose === "research-worker");
+  const latestWorkers = [
+    ...new Map(researchWorkers.map((item) => [item.workerThreadId, item])).values(),
+  ];
+  if (
+    input.purpose === "research-lead" &&
+    latestWorkers.some((item) => item.status !== "completed")
+  )
+    throw fail("Wait for all research workers and follow-ups to complete before synthesis.");
   if (input.purpose === "reviewer") {
     if (!run.plan) throw fail("Record a completed plan before requesting review.");
     if (previous.length >= run.workflow.maxReviewRounds)
       throw fail("Review attempt budget exhausted.");
-    if (previous.some((item) => item.status === "reserved" || item.status === "dispatched")) {
-      throw fail("The previous review must finish and be recorded before another attempt.");
+    requireRecordedReviews(run);
+    const research = run.reservations.filter((item) => item.purpose.startsWith("research"));
+    if (
+      research.some((item) => item.status === "reserved" || item.status === "dispatched") ||
+      (run.workflow.researchDepth !== "none" &&
+        (research.findLast((item) => item.purpose === "research-lead")?.status !== "completed" ||
+          latestWorkers.some((item) => item.status !== "completed") ||
+          research.findLastIndex((item) => item.purpose === "research-worker") >
+            research.findLastIndex((item) => item.purpose === "research-lead")))
+    ) {
+      throw fail("Wait for selected research to complete before requesting review.");
     }
   }
   if (input.purpose === "research-worker") {
     if (run.workflow.researchDepth !== "deep")
       throw fail("Research workers require deep research.");
-    if (previous.length >= (run.workflow.deepResearchWorkers ?? 3))
+    const owned = previous.filter((item) => item.workerThreadId === input.workerThreadId);
+    if (input.workerThreadId && owned.length === 0)
+      throw fail("Follow-up target must be an owned research worker in this run.");
+    if (owned.length >= 2)
+      throw fail(
+        "Research-worker follow-up budget exhausted: one follow-up per worker, including failed attempts.",
+      );
+    if (!input.workerThreadId && latestWorkers.length >= (run.workflow.deepResearchWorkers ?? 3))
       throw fail("Total research-worker budget exhausted.");
   }
   if (input.purpose === "research-lead" && run.workflow.researchDepth === "none") {
@@ -139,10 +192,17 @@ export function reservePlanWork(
   ) {
     throw fail("Parallel worker limit reached. Wait for completion reports.");
   }
-  const existing = input.purpose === "research-worker" ? undefined : previous[0];
+  const existing =
+    input.purpose === "research-worker"
+      ? previous.find((item) => item.workerThreadId === input.workerThreadId)
+      : previous[0];
   if (
     existing &&
-    previous.some((item) => item.status === "reserved" || item.status === "dispatched")
+    previous.some(
+      (item) =>
+        item.workerThreadId === existing.workerThreadId &&
+        (item.status === "reserved" || item.status === "dispatched"),
+    )
   ) {
     throw fail("This role already has pending work.");
   }
@@ -176,14 +236,21 @@ export function reservePlanWork(
 
 export function recordPlan(
   run: PlanRun,
-  source: typeof Source.Type,
+  source: typeof PlanSource.Type,
   text: string,
   dispositions: ReadonlyArray<typeof FindingDisposition.Type> = [],
 ): PlanRun {
   if (run.phase === "cancelled") throw fail("Resume the run before recording a plan.");
   const hash = hashPlan(text);
   if (run.plan?.hash === hash) return run;
-  const findings = run.reviews.at(-1)?.verdict?.findings ?? [];
+  requireRecordedReviews(run);
+  const latestReview = run.reviews.at(-1);
+  if (latestReview && !latestReview.verdict) {
+    throw fail(
+      "Retry the invalid review against the same saved plan before recording a revision. The retry counts toward the review budget.",
+    );
+  }
+  const findings = latestReview?.verdict?.findings ?? [];
   if (findings.some((finding) => !dispositions.some((item) => item.id === finding.id)))
     throw fail("Record a disposition and evidence for each previous finding.");
   return {
@@ -192,6 +259,19 @@ export function recordPlan(
     plan: { ...source, hash, version: (run.plan?.version ?? 0) + 1, dispositions },
   };
 }
+
+/** Read the exact saved version, including plans from legacy planner workers. */
+export const readPlanText = Effect.fn("TeamPlan.readPlanText")(function* (plan: typeof Plan.Type) {
+  const snapshots = yield* ProjectionSnapshotQuery;
+  const detail = yield* snapshots.getThreadDetailById(
+    "proposedPlanId" in plan ? plan.threadId : plan.workerThreadId,
+    { activityKinds: [] },
+  );
+  if (Option.isNone(detail)) return undefined;
+  return "proposedPlanId" in plan
+    ? detail.value.proposedPlans.find((item) => item.id === plan.proposedPlanId)?.planMarkdown
+    : detail.value.messages.find((item) => item.id === plan.messageId)?.text;
+});
 
 export function recordReview(
   run: PlanRun,
@@ -213,7 +293,10 @@ export function recordReview(
   let verdict: typeof ReviewVerdict.Type | null = null;
   let error: string | null = null;
   try {
-    verdict = decodeVerdict(text);
+    const json = extractJsonObject(text);
+    if (text.slice(text.indexOf(json) + json.length).includes("{"))
+      throw fail("Reviewer output must contain only one verdict JSON object.");
+    verdict = decodeVerdict(json);
     if (
       verdict.planHash !== attempt.planHash ||
       verdict.planHash !== run.plan?.hash ||

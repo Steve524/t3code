@@ -3,7 +3,7 @@ import {
   ProviderInstanceId,
   type UnifiedSettings,
 } from "@t3tools/contracts";
-import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
+import { BUILT_IN_TEAM_WORKFLOW, RESEARCH_PLAN_TEAM_WORKFLOW } from "@t3tools/shared/team";
 import { act, type ComponentProps, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -109,8 +109,8 @@ vi.mock("../../../components/settings/SettingsScopeNotice", () => ({
   SettingsScopeNotice: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("../../../components/ui/button", () => ({
-  Button: ({ children, onClick, disabled }: ComponentProps<"button">) => (
-    <button onClick={onClick} disabled={disabled}>
+  Button: ({ children, onClick, disabled, "aria-label": ariaLabel }: ComponentProps<"button">) => (
+    <button onClick={onClick} disabled={disabled} aria-label={ariaLabel}>
       {children}
     </button>
   ),
@@ -121,7 +121,22 @@ vi.mock("../../../components/ui/collapsible", () => ({
   CollapsiblePanel: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("../../../components/ui/number-field", () => ({
-  NumberField: ({ children }: { children: ReactNode }) => children,
+  NumberField: ({
+    children,
+    max,
+    onValueCommitted,
+  }: {
+    children: ReactNode;
+    max?: number;
+    onValueCommitted?: (value: number) => void;
+  }) => (
+    <div>
+      {children}
+      {max === 5 ? (
+        <button aria-label="Set deep workers to five" onClick={() => onValueCommitted?.(5)} />
+      ) : null}
+    </div>
+  ),
   NumberFieldGroup: ({ children }: { children: ReactNode }) => children,
   NumberFieldInput: () => <input />,
 }));
@@ -129,15 +144,20 @@ vi.mock("../../../components/ui/select", () => ({
   Select: ({
     children,
     onValueChange,
+    value,
   }: {
     children: ReactNode;
     onValueChange: (value: string) => void;
+    value?: string;
   }) => (
     <div>
       <button
         aria-label="Use inherited permissions"
         onClick={() => onValueChange("same-as-orchestrator")}
       />
+      {value === "ask" || value === "deep" ? (
+        <button aria-label="Choose deep research" onClick={() => onValueChange("deep")} />
+      ) : null}
       {children}
     </div>
   ),
@@ -255,5 +275,41 @@ describe("workflow settings", () => {
     act(() => buttonByLabel("Use inherited permissions").props.onClick());
 
     expect(frontendRole().runtimeMode).toBeNull();
+  });
+
+  it("edits and resets Research and plan without changing Full-stack team", () => {
+    state.settings = {
+      ...state.settings,
+      teamWorkflows: [
+        { ...BUILT_IN_TEAM_WORKFLOW, maxParallelWorkers: 7 },
+        RESEARCH_PLAN_TEAM_WORKFLOW,
+      ],
+    };
+    rerenderPanel();
+
+    act(() => buttonByLabel("Configure Research and plan").props.onClick());
+    expect(buttonByLabel("Planner model")).toBeUndefined();
+    act(() => buttonByLabel("Reviewer model").props.onClick());
+    rerenderPanel();
+    act(() => buttonByLabel("Choose deep research").props.onClick());
+    rerenderPanel();
+    act(() => buttonByLabel("Set deep workers to five").props.onClick());
+    expect(state.settings.teamWorkflows[1]).toMatchObject({
+      researchDepth: "deep",
+      deepResearchWorkers: 5,
+      roles: expect.arrayContaining([
+        expect.objectContaining({
+          id: "reviewer",
+          modelSelection: { instanceId, model: "gpt-test" },
+        }),
+      ]),
+    });
+
+    rerenderPanel();
+    act(() => buttonByText("Restore built-in preset").props.onClick());
+    expect(state.settings.teamWorkflows).toEqual([
+      { ...BUILT_IN_TEAM_WORKFLOW, maxParallelWorkers: 7 },
+      RESEARCH_PLAN_TEAM_WORKFLOW,
+    ]);
   });
 });

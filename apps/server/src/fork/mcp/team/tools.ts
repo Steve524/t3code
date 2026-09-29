@@ -331,12 +331,9 @@ const ExportWorkerResultInput = Schema.Struct({
   destination: Schema.optional(NotesDestination),
 });
 
-export const TeamArtifact = Schema.Struct({
+const artifactFields = {
   artifactId: TrimmedNonEmptyString,
   kind: ArtifactKind,
-  sourceWorkerThreadId: ThreadId,
-  sourceTurnId: TurnId,
-  sourceMessageId: MessageId,
   sha256: TrimmedNonEmptyString,
   path: TrimmedNonEmptyString,
   temporary: Schema.Boolean,
@@ -347,7 +344,22 @@ export const TeamArtifact = Schema.Struct({
     mimeType: Schema.Literal("text/markdown"),
   }),
   createdAt: IsoDateTime,
-});
+};
+export const TeamArtifact = Schema.Union([
+  Schema.Struct({
+    ...artifactFields,
+    sourceWorkerThreadId: ThreadId,
+    sourceTurnId: TurnId,
+    sourceMessageId: MessageId,
+  }),
+  Schema.Struct({
+    ...artifactFields,
+    sourceThreadId: ThreadId,
+    sourceProposedPlanId: TrimmedNonEmptyString,
+    planHash: TrimmedNonEmptyString,
+    planVersion: PositiveInt,
+  }),
+]);
 
 const TeamArtifactsResult = Schema.Struct({ artifacts: Schema.Array(TeamArtifact) });
 
@@ -517,7 +529,7 @@ const IntegrateTool = Tool.make("team_integrate", {
 export const TeamToolkit = Toolkit.make(
   Tool.make("team_plan_run", {
     description:
-      "Start, inspect, cancel or resume a durable planning run. Dispatch reserves budgets before launching. Reuse a requestId only for an identical retry. Record-plan and record-review consume exact completed reserved results. End your turn after dispatch; wait for completion reports. Baseline is committed HEAD; uncommitted changes are excluded.",
+      "You are the planner in the user's starting chat. Start, inspect, cancel or resume a durable planning run. Use record-plan with planMarkdown to save your exact plan for independent review. Dispatch research and review only; it reserves budgets before launching. Titles are at most 40 characters. For one follow-up per research worker, supply workerThreadId with purpose=research-worker and a new requestId; failed attempts count. Research-lead dispatch includes complete saved worker results automatically and waits for pending workers. Reuse a requestId only for an identical retry. Record-review consumes an exact completed reserved result. End your turn after dispatch; wait for completion reports. Baseline is committed HEAD; uncommitted changes are excluded.",
     parameters: PlanRunToolInput,
     success: PlanRun,
     failure: PlanRunError,
@@ -532,6 +544,13 @@ export const TeamToolkit = Toolkit.make(
   GetWorkerTool,
   GetWorkerResultTool,
   ExportWorkerResultTool,
+  Tool.make("team_export_plan", {
+    description:
+      "Export the current saved plan from this planning chat. Returns an immutable attachment and the saved plan's hash and version.",
+    success: TeamArtifact,
+    failure: TeamToolError,
+    dependencies,
+  }),
   ListArtifactsTool,
   MessageWorkerTool,
   StopWorkerTool,

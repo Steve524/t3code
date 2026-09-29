@@ -3,12 +3,13 @@ import {
   EventId,
   MessageId,
   ThreadId,
+  type TurnId,
   type OrchestrationThreadShell,
 } from "@t3tools/contracts";
 import { deriveLocalBranchNameFromRemoteRef, sanitizeBranchFragment } from "@t3tools/shared/git";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import { handlePlanTool } from "./planHandlers.ts";
-import { PlanRunError } from "./planRun.ts";
+import { hashPlan, makePlanRunStore, PlanRunError, readPlanText } from "./planRun.ts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -23,7 +24,7 @@ import * as ProjectionSnapshotQuery from "../../../orchestration/Services/Projec
 import * as ProviderInstanceRegistry from "../../../provider/Services/ProviderInstanceRegistry.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as ServerConfig from "../../../config.ts";
-import { writeTeamArtifact } from "./artifacts.ts";
+import { writeTeamArtifact, type ArtifactKind, type NotesDestination } from "./artifacts.ts";
 import { completedTurnResult, pageResult } from "./results.ts";
 import {
   TeamArtifact,
@@ -172,6 +173,60 @@ const make = Effect.gen(function* () {
     return { orchestrator, message };
   });
 
+  const exportArtifact = Effect.fn("TeamToolkit.exportArtifact")(function* (
+    orchestrator: OrchestrationThreadShell,
+    content: string,
+    kind: ArtifactKind,
+    destination: NotesDestination,
+    source:
+      | { sourceWorkerThreadId: ThreadId; sourceTurnId: TurnId; sourceMessageId: MessageId }
+      | {
+          sourceThreadId: ThreadId;
+          sourceProposedPlanId: string;
+          planHash: string;
+          planVersion: number;
+        },
+  ) {
+    const scope = yield* McpInvocationContext.requireMcpCapability("team");
+    const project = yield* snapshots
+      .getProjectShellById(orchestrator.projectId)
+      .pipe(mapFailure("export"));
+    if (Option.isNone(project)) return yield* new TeamProjectNotFoundError({});
+    const createdAt = yield* nowIso;
+    const saved = yield* Effect.tryPromise(() =>
+      writeTeamArtifact({
+        environmentId: scope.environmentId,
+        threadId: orchestrator.id,
+        projectRoot: project.value.workspaceRoot,
+        title: orchestrator.title,
+        kind,
+        destination,
+        content,
+        attachmentsDir: config.attachmentsDir,
+        date: createdAt,
+      }),
+    ).pipe(mapFailure("export"));
+    const artifact = { ...saved, kind, ...source, createdAt };
+    yield* engine
+      .dispatch({
+        type: "thread.activity.append",
+        commandId: yield* randomId((id) => CommandId.make(`server:team-artifact:${id}`)),
+        threadId: orchestrator.id,
+        activity: {
+          id: yield* randomId(EventId.make),
+          tone: "info",
+          kind: "team.artifact.exported",
+          summary: `Saved ${kind} artifact`,
+          payload: artifact,
+          turnId: null,
+          createdAt,
+        },
+        createdAt,
+      })
+      .pipe(mapFailure("export"));
+    return artifact;
+  });
+
   return TeamToolkit.of({
     team_plan_run: handlePlanTool,
     team_roster: () =>
@@ -179,6 +234,8 @@ const make = Effect.gen(function* () {
         const orchestrator = yield* requireOrchestrator("roster");
         const workers = yield* listWorkers(orchestrator.id, "roster");
         const workflow = orchestrator.team.workflow;
+        const plannerInMainChat =
+          workflow.protocolId === "t3-plan-loop" && workflow.skillVersion === "1.1.0";
         return {
           roles: workflow.roles
             .filter((role) => role.enabled)
@@ -187,8 +244,14 @@ const make = Effect.gen(function* () {
               label: role.label,
               kind: role.kind,
               summary: role.summary,
-              modelSelection: role.modelSelection ?? orchestrator.modelSelection,
-              runtimeMode: role.runtimeMode ?? orchestrator.runtimeMode,
+              modelSelection:
+                plannerInMainChat && role.id === "planner"
+                  ? orchestrator.modelSelection
+                  : (role.modelSelection ?? orchestrator.modelSelection),
+              runtimeMode:
+                plannerInMainChat && role.id === "planner"
+                  ? orchestrator.runtimeMode
+                  : (role.runtimeMode ?? orchestrator.runtimeMode),
             })),
           limits: {
             maxParallelWorkers: workflow.maxParallelWorkers,
@@ -354,56 +417,51 @@ const make = Effect.gen(function* () {
         if (kind === "research" && destination === undefined) {
           return yield* new TeamNotesDestinationRequiredError({});
         }
-        const scope = yield* McpInvocationContext.requireMcpCapability("team");
         const { orchestrator, message } = yield* requireCompletedResult(
           workerThreadId,
           turnId,
           "export",
         );
-        const project = yield* snapshots
-          .getProjectShellById(orchestrator.projectId)
-          .pipe(mapFailure("export"));
-        if (Option.isNone(project)) return yield* new TeamProjectNotFoundError({});
-        const createdAt = yield* nowIso;
-        const saved = yield* Effect.tryPromise(() =>
-          writeTeamArtifact({
-            environmentId: scope.environmentId,
-            threadId: orchestrator.id,
-            projectRoot: project.value.workspaceRoot,
-            title: orchestrator.title,
-            kind,
-            destination: destination ?? { kind: "temporary" },
-            content: message.text,
-            attachmentsDir: config.attachmentsDir,
-            date: createdAt,
-          }),
-        ).pipe(mapFailure("export"));
-        const artifact = {
-          ...saved,
+        return yield* exportArtifact(
+          orchestrator,
+          message.text,
           kind,
-          sourceWorkerThreadId: workerThreadId,
-          sourceTurnId: turnId,
-          sourceMessageId: message.id,
-          createdAt,
-        };
-        yield* engine
-          .dispatch({
-            type: "thread.activity.append",
-            commandId: yield* randomId((id) => CommandId.make(`server:team-artifact:${id}`)),
-            threadId: orchestrator.id,
-            activity: {
-              id: yield* randomId(EventId.make),
-              tone: "info",
-              kind: "team.artifact.exported",
-              summary: `Saved ${kind} artifact`,
-              payload: artifact,
-              turnId: null,
-              createdAt,
-            },
-            createdAt,
-          })
-          .pipe(mapFailure("export"));
-        return artifact;
+          destination ?? { kind: "temporary" },
+          {
+            sourceWorkerThreadId: workerThreadId,
+            sourceTurnId: turnId,
+            sourceMessageId: message.id,
+          },
+        );
+      }),
+
+    team_export_plan: () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* requireOrchestrator("export");
+        const store = yield* makePlanRunStore;
+        const run = yield* store.read(orchestrator.id).pipe(mapFailure("export"));
+        const plan = run?.plan;
+        if (!plan || !("proposedPlanId" in plan) || plan.threadId !== orchestrator.id)
+          return yield* new PlanRunError({
+            detail: "Record a plan in this planning chat before exporting it.",
+          });
+        const text = yield* readPlanText(plan).pipe(mapFailure("export"));
+        if (text === undefined || hashPlan(text) !== plan.hash)
+          return yield* new PlanRunError({
+            detail: "Saved plan content changed. Record its new version before export.",
+          });
+        return yield* exportArtifact(
+          orchestrator,
+          text,
+          "plan",
+          { kind: "temporary" },
+          {
+            sourceThreadId: orchestrator.id,
+            sourceProposedPlanId: plan.proposedPlanId,
+            planHash: plan.hash,
+            planVersion: plan.version,
+          },
+        );
       }),
 
     team_list_artifacts: () =>
@@ -433,7 +491,8 @@ const make = Effect.gen(function* () {
         const { worker, orchestrator } = yield* requireOwnedWorker("message", workerThreadId);
         if (orchestrator.team.workflow.protocolId === "t3-plan-loop")
           return yield* new PlanRunError({
-            detail: "Use team_plan_run dispatch for guarded follow-up work.",
+            detail:
+              "Use team_plan_run dispatch for guarded follow-up work. For research-worker, supply workerThreadId and a new requestId; one follow-up attempt per worker is allowed before approval. Reviewer and research-lead dispatches reuse their saved threads automatically.",
           });
         if (isRunning(worker)) return yield* new WorkerBusyError({ workerThreadId });
         const createdAt = yield* nowIso;

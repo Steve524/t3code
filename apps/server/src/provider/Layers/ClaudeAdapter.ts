@@ -94,6 +94,7 @@ import { claudeSignedOutMessage, makeClaudeEnvironment } from "../Drivers/Claude
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
+import { resolveClaudeThinking } from "../../fork/provider/ClaudeThinkingDefaults.ts"; // FORK: Honor the displayed thinking default.
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   type ClaudeModelCatalog,
@@ -4856,15 +4857,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const fastModeSupported = descriptors.some(
         (descriptor) => descriptor.type === "boolean" && descriptor.id === "fastMode",
       );
-      const thinkingSupported = descriptors.some(
-        (descriptor) => descriptor.type === "boolean" && descriptor.id === "thinking",
-      );
       const fastMode =
         getModelSelectionBooleanOptionValue(modelSelection, "fastMode") === true &&
         fastModeSupported;
-      const thinking = thinkingSupported
-        ? getModelSelectionBooleanOptionValue(modelSelection, "thinking")
-        : undefined;
+      const thinking = resolveClaudeThinking(modelSelection, descriptors); // FORK: Unset toggles use their displayed default.
       const thinkingDisplayArg = extraArgs["thinking-display"];
       const requestThinkingSummaries = shouldRequestClaudeThinkingSummaries({
         thinking,

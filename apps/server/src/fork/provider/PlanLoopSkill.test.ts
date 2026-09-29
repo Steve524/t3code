@@ -59,9 +59,14 @@ describe("t3-plan-loop protocol", () => {
     expect(coordinator).toContain(`version: ${PLAN_LOOP_SKILL_VERSION}`);
     expect(coordinator).toContain("Before work starts, require the server's guarded planning-run");
     expect(coordinator).toContain('model="same as host"');
+    expect(coordinator).toContain("You are the planner in the user's starting chat");
+    expect(coordinator).toContain("Maintain an assumptions ledger");
+    expect(coordinator).toContain("planMarkdown");
+    expect(coordinator).not.toContain("Ask the planner to inspect");
     expect(coordinator).not.toContain("When implementers are done, call team_integrate");
     expect(worker).toContain("Maintain an assumptions ledger");
     expect(worker).not.toContain("Commit your work to this branch");
+    expect(worker).toContain("do not ask the user directly");
   });
 });
 

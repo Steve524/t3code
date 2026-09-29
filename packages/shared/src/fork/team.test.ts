@@ -20,4 +20,34 @@ describe("built-in team workflows", () => {
       RESEARCH_PLAN_TEAM_WORKFLOW,
     ]);
   });
+
+  it("upgrades saved planning presets without changing worker choices or the old snapshot", () => {
+    const saved = {
+      ...RESEARCH_PLAN_TEAM_WORKFLOW,
+      skillVersion: "1.0.0",
+      maxReviewRounds: 4,
+      roles: RESEARCH_PLAN_TEAM_WORKFLOW.roles.map((role) =>
+        role.id === "planner"
+          ? {
+              ...role,
+              enabled: false,
+              instructions: "Ask about acceptance criteria",
+              runtimeMode: "full-access" as const,
+            }
+          : role,
+      ),
+    };
+    const upgraded = resolveTeamWorkflows([saved])[0]!;
+    expect(upgraded.skillVersion).toBe("1.1.0");
+    expect(upgraded.maxReviewRounds).toBe(4);
+    expect(upgraded.roles[0]).toMatchObject({
+      enabled: true,
+      instructions: "Ask about acceptance criteria",
+      modelSelection: null,
+      runtimeMode: null,
+    });
+    expect(upgraded.roles.slice(1)).toEqual(saved.roles.slice(1));
+    expect(saved.skillVersion).toBe("1.0.0");
+    expect(saved.roles[0]!.enabled).toBe(false);
+  });
 });

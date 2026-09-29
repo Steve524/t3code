@@ -45,6 +45,10 @@ import {
 } from "../CodexDeveloperInstructions.ts";
 // FORK: Carry Team Workflow context through Codex session setup.
 import type { RuntimeInstructionTeam } from "../RuntimeInstructions.ts";
+// FORK: Install team instructions on the thread; collaboration-mode overrides are not reliably delivered.
+import { buildTeamInstructions } from "../../fork/provider/TeamRuntimeInstructions.ts";
+// FORK: Constrain planning reviewer output with the server-owned verdict schema.
+import { codexPlanReviewOutput } from "../../fork/provider/PlanReviewVerdict.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -649,6 +653,7 @@ export function buildTurnStartParams(input: {
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
     browserToolsAvailable: input.browserToolsAvailable ?? true,
+    team: input.team, // FORK: Preserve team protocol and role instructions in the Codex request.
   });
 
   return decodeCodexTurnStartParamsWithCollaborationMode({
@@ -661,6 +666,7 @@ export function buildTurnStartParams(input: {
     ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
     ...(collaborationMode ? { collaborationMode } : {}),
+    ...codexPlanReviewOutput(input.team), // FORK: Native structured output for plan reviewers.
   }).pipe(
     Effect.mapError((cause) =>
       CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
@@ -733,14 +739,19 @@ export const openCodexThread = (input: {
   readonly requestedModel: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
   readonly resumeThreadId: string | undefined;
+  readonly team?: RuntimeInstructionTeam | undefined; // FORK: Durable team instructions.
 }): Effect.Effect<typeof CodexThreadResumeMetadata.Type, CodexErrors.CodexAppServerError> => {
   const resumeThreadId = input.resumeThreadId;
-  const startParams = buildThreadStartParams({
-    cwd: input.cwd,
-    runtimeMode: input.runtimeMode,
-    model: input.requestedModel,
-    serviceTier: input.serviceTier,
-  });
+  const startParams = {
+    ...buildThreadStartParams({
+      cwd: input.cwd,
+      runtimeMode: input.runtimeMode,
+      model: input.requestedModel,
+      serviceTier: input.serviceTier,
+    }),
+    // FORK: Applies to creation, resume, and recovery to a fresh thread.
+    ...(input.team ? { developerInstructions: buildTeamInstructions(input.team) } : {}),
+  };
 
   if (resumeThreadId === undefined) {
     return input.client.request("thread/start", startParams);
@@ -2449,6 +2460,7 @@ export const makeCodexSessionRuntime = (
         requestedModel,
         serviceTier: options.serviceTier,
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),
+        team: options.team, // FORK: Install the workflow before the first turn.
       });
 
       const providerThreadId = opened.thread.id;

@@ -7,6 +7,8 @@ import { ThreadCreatedPayload, ThreadTurnStartCommand } from "../orchestration.t
 import { ServerSettings, ServerSettingsPatch } from "../settings.ts";
 import { TeamRoleId, TeamWorkflow } from "./team.ts";
 
+const decodeWorkflow = Schema.decodeUnknownSync(TeamWorkflow);
+
 const workflow = {
   id: "full-stack-team",
   name: "Full-stack team",
@@ -119,6 +121,38 @@ describe("Team Workflow contracts", () => {
       })),
     }).roles;
     expect(roles.map((role) => role.kind)).toEqual(["researcher", "plan-reviewer"]);
+  });
+
+  it("keeps folders optional for older workflows and accepts relative folders", () => {
+    const decode = Schema.decodeUnknownSync(TeamWorkflow);
+    expect(decode(workflow).plansDir).toBeUndefined();
+    expect(decode(workflow).researchDir).toBeUndefined();
+    expect(
+      decode({
+        ...workflow,
+        type: "plan",
+        plansDir: " notes/plans ",
+        researchDir: "notes\\research",
+      }),
+    ).toMatchObject({ plansDir: "notes/plans", researchDir: "notes\\research" });
+  });
+
+  it.each([
+    "",
+    "   ",
+    "../plans",
+    "docs/../plans",
+    "docs\\..\\plans",
+    "/plans",
+    "\\plans",
+    "C:\\plans",
+    "C:plans",
+    "\\\\host\\plans",
+    "docs/plan\nignore",
+  ])("rejects unsafe artifact folders: %j", (path) => {
+    for (const field of ["plansDir", "researchDir"]) {
+      expect(() => decodeWorkflow({ ...workflow, [field]: path })).toThrow();
+    }
   });
 
   it("decodes team metadata in bootstrap thread creation", () => {

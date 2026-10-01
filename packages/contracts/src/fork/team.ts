@@ -31,11 +31,21 @@ export type TeamRole = typeof TeamRole.Type;
 export const TeamWorkflowType = Schema.Literals(["build", "plan"]);
 export type TeamWorkflowType = typeof TeamWorkflowType.Type;
 
+const ArtifactDirectory = TrimmedNonEmptyString.check(
+  Schema.makeFilter(
+    (path) =>
+      (!/^[\\/]/.test(path) && !/[:\p{Cc}]/u.test(path) && !path.split(/[\\/]/).includes("..")) ||
+      "Use a relative folder without '..', drive letters, or control characters.",
+  ),
+);
+
 export const TeamWorkflow = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
   builtIn: Schema.Boolean,
   type: TeamWorkflowType.pipe(Schema.withDecodingDefault(Effect.succeed("build" as const))),
+  plansDir: Schema.optional(ArtifactDirectory),
+  researchDir: Schema.optional(ArtifactDirectory),
   roles: Schema.Array(TeamRole),
   maxParallelWorkers: PositiveInt,
   maxReviewRounds: PositiveInt,

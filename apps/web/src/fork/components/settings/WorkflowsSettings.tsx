@@ -1,17 +1,23 @@
-import type {
-  ModelSelection,
-  RuntimeMode,
-  UnifiedSettings,
-  TeamRole,
+import {
+  type ModelSelection,
+  type RuntimeMode,
+  type UnifiedSettings,
+  type TeamRole,
   TeamWorkflow,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
   BUILT_IN_TEAM_WORKFLOW,
+  BUILT_IN_TEAM_WORKFLOWS,
+  DEFAULT_PLANS_DIR,
+  DEFAULT_RESEARCH_DIR,
   isReadOnlyTeamRoleKind,
+  resolveTeamWorkflows,
   teamReadOnlyLaunch,
 } from "@t3tools/shared/team";
 import { ChevronDownIcon, InfoIcon, RotateCcwIcon } from "lucide-react";
+import * as Schema from "effect/Schema";
+import { useId, useState } from "react";
 
 import { getCustomModelOptionsByInstance } from "../../../modelSelection";
 import {
@@ -26,6 +32,7 @@ import { ProviderModelPicker } from "../../../components/chat/ProviderModelPicke
 import { runtimeModeConfig, runtimeModeOptions } from "../../../components/chat/runtimeModeConfig";
 import { TraitsPicker } from "../../../components/chat/TraitsPicker";
 import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
 import {
   Collapsible,
   CollapsiblePanel,
@@ -60,7 +67,7 @@ import {
   useUpdateScopedSettings,
 } from "../../../components/settings/useScopedSettings";
 
-const WORKFLOW_ID = BUILT_IN_TEAM_WORKFLOW.id;
+const isArtifactDirectory = Schema.is(TeamWorkflow.fields.plansDir);
 const INHERIT_RUNTIME_MODE = "same-as-orchestrator";
 
 function isRuntimeMode(value: string): value is RuntimeMode {
@@ -188,7 +195,9 @@ function RoleRow({
   onChange: (workflow: TeamWorkflow) => void;
   showQaHint: boolean;
 }) {
-  const builtInRole = BUILT_IN_TEAM_WORKFLOW.roles.find(({ id }) => id === role.id);
+  const builtInRole = BUILT_IN_TEAM_WORKFLOWS.find(({ id }) => id === workflow.id)?.roles.find(
+    ({ id }) => id === role.id,
+  );
   const updateRole = (patch: Partial<TeamRole>) =>
     onChange({
       ...workflow,
@@ -299,10 +308,49 @@ function RoleRow({
   );
 }
 
+function ArtifactFolderInput({
+  label,
+  value,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  onSave: (value: string) => void;
+}) {
+  const [invalid, setInvalid] = useState(false);
+  const errorId = useId();
+  return (
+    <div className="w-64">
+      <Input
+        aria-label={label}
+        aria-invalid={invalid}
+        aria-describedby={invalid ? errorId : undefined}
+        defaultValue={value}
+        onChange={() => setInvalid(false)}
+        onBlur={(event) => {
+          const next = event.currentTarget.value.trim();
+          if (!isArtifactDirectory(next)) {
+            setInvalid(true);
+            return;
+          }
+          setInvalid(false);
+          if (next !== value) onSave(next);
+        }}
+      />
+      {invalid ? (
+        <p id={errorId} role="alert" className="mt-1 text-xs text-destructive">
+          Use a relative folder without &quot;..&quot;, drive letters, or control characters.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function WorkflowsSettingsPanel() {
   const { scope, environment } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
+  const [workflowId, setWorkflowId] = useState(BUILT_IN_TEAM_WORKFLOW.id);
 
   if (scope.kind !== "environment") {
     return (
@@ -312,8 +360,9 @@ export function WorkflowsSettingsPanel() {
     );
   }
 
-  const workflow =
-    settings.teamWorkflows.find(({ id }) => id === WORKFLOW_ID) ?? BUILT_IN_TEAM_WORKFLOW;
+  const workflows = resolveTeamWorkflows(settings.teamWorkflows);
+  const workflow = workflows.find(({ id }) => id === workflowId) ?? BUILT_IN_TEAM_WORKFLOW;
+  const builtIn = BUILT_IN_TEAM_WORKFLOWS.find(({ id }) => id === workflow.id);
   const providers = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
@@ -330,25 +379,45 @@ export function WorkflowsSettingsPanel() {
   const showQaHint = shouldSuggestIndependentQa(workflow, providerKey);
 
   return (
-    <SettingsPageContainer width="wide">
+    <SettingsPageContainer key={workflow.id} width="wide">
       <SettingsSection
         {...searchableSetting("team-workflows")}
         title="Presets"
         headerAction={
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            onClick={() => saveWorkflow(BUILT_IN_TEAM_WORKFLOW)}
-          >
-            <RotateCcwIcon />
-            Restore built-in preset
-          </Button>
+          builtIn ? (
+            <Button size="xs" variant="ghost-muted" onClick={() => saveWorkflow(builtIn)}>
+              <RotateCcwIcon />
+              Restore built-in preset
+            </Button>
+          ) : null
         }
       >
         <SettingsRow
-          title={workflow.name}
-          description="Built-in workflow for parallel implementation and independent review."
-          status="Selected"
+          title="Workflow preset"
+          description={
+            workflow.type === "plan"
+              ? "Research and independent plan review. Stops at an approved plan."
+              : "Parallel implementation and independent review."
+          }
+          control={
+            <Select
+              value={workflow.id}
+              onValueChange={(value) => {
+                if (value) setWorkflowId(value);
+              }}
+            >
+              <SelectTrigger aria-label="Workflow preset">
+                <SelectValue>{workflow.name}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                {workflows.map((preset) => (
+                  <SelectItem key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
         />
       </SettingsSection>
 
@@ -367,11 +436,36 @@ export function WorkflowsSettingsPanel() {
         ))}
       </SettingsSection>
 
+      {workflow.type === "plan" ? (
+        <SettingsSection title="Artifact folders">
+          {(
+            [
+              ["plansDir", "Plans folder", DEFAULT_PLANS_DIR],
+              ["researchDir", "Research folder", DEFAULT_RESEARCH_DIR],
+            ] as const
+          ).map(([field, label, fallback]) => (
+            <SettingsRow
+              key={field}
+              title={label}
+              description="Relative to the project's checkout. Applies to new threads."
+              control={
+                <ArtifactFolderInput
+                  key={workflow[field] ?? fallback}
+                  label={label}
+                  value={workflow[field] ?? fallback}
+                  onSave={(value) => saveWorkflow({ ...workflow, [field]: value })}
+                />
+              }
+            />
+          ))}
+        </SettingsSection>
+      ) : null}
+
       <SettingsSection title="Limits">
         {(
           [
             ["maxParallelWorkers", "Max parallel workers", "Workers that may run at once."],
-            ["maxReviewRounds", "Max review rounds", "QA passes before the team stops."],
+            ["maxReviewRounds", "Max review rounds", "Review passes before the team stops."],
             [
               "maxAutoReports",
               "Max automatic updates",

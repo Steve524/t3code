@@ -30,6 +30,11 @@ describe("resolveTeamWorkflows", () => {
   });
 
   it("marks Research & plan as a plan workflow with read-only roles", () => {
+    expect(BUILT_IN_RESEARCH_PLAN_WORKFLOW).toMatchObject({
+      plansDir: "docs/plans",
+      researchDir: "docs/research",
+    });
+    expect(BUILT_IN_TEAM_WORKFLOW.plansDir).toBeUndefined();
     expect(BUILT_IN_TEAM_WORKFLOWS.map(({ type }) => type)).toEqual(["build", "plan"]);
     expect(
       BUILT_IN_RESEARCH_PLAN_WORKFLOW.roles.map(({ kind, runtimeMode }) => [kind, runtimeMode]),

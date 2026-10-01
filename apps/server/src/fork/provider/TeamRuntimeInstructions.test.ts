@@ -151,6 +151,46 @@ describe("Team Workflow runtime instructions", () => {
     expect(instructions).toContain("2 parallel workers, 5 review rounds");
   });
 
+  it("uses configured artifact folders for the plan, review log and research briefs", () => {
+    const instructions = buildTeamInstructions({
+      role: "orchestrator",
+      workflow: {
+        ...BUILT_IN_RESEARCH_PLAN_WORKFLOW,
+        plansDir: "notes\\plans/",
+        researchDir: "notes/research",
+      },
+    });
+    expect(instructions).toContain("Write notes/plans/YYYY-MM-DD-<slug>.md:");
+    expect(instructions).toContain("Start notes/plans/YYYY-MM-DD-<slug>-review-log.md:");
+    expect(instructions).toContain("research briefs in notes/research");
+    expect(instructions).not.toContain("docs/plans");
+    expect(instructions).not.toContain("docs/research");
+  });
+
+  it("uses defaults for older thread snapshots independently of edited settings", () => {
+    const {
+      plansDir: _plansDir,
+      researchDir: _researchDir,
+      ...oldWorkflow
+    } = BUILT_IN_RESEARCH_PLAN_WORKFLOW;
+    const oldThread = { role: "orchestrator" as const, workflow: oldWorkflow };
+    const newThread = {
+      role: "orchestrator" as const,
+      workflow: { ...oldWorkflow, plansDir: "notes/plans", researchDir: "notes/research" },
+    };
+    expect(buildTeamInstructions(newThread)).toContain("Write notes/plans/");
+    expect(buildTeamInstructions(oldThread)).toContain("Write docs/plans/");
+    expect(buildTeamInstructions(oldThread)).toContain("research briefs in docs/research");
+  });
+
+  it("treats folder names literally when substituting the prompt", () => {
+    const instructions = buildTeamInstructions({
+      role: "orchestrator",
+      workflow: { ...BUILT_IN_RESEARCH_PLAN_WORKFLOW, plansDir: "notes/$&/{researchDir}" },
+    });
+    expect(instructions).toContain("Write notes/$&/{researchDir}/YYYY-MM-DD-<slug>.md:");
+  });
+
   it("gives read-only workers a prompt without a branch or commits", () => {
     for (const role of BUILT_IN_RESEARCH_PLAN_WORKFLOW.roles) {
       const instructions = buildTeamInstructions({

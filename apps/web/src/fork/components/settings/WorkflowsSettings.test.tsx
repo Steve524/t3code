@@ -3,7 +3,7 @@ import {
   ProviderInstanceId,
   type UnifiedSettings,
 } from "@t3tools/contracts";
-import { BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
+import { BUILT_IN_RESEARCH_PLAN_WORKFLOW, BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
 import { act, type ComponentProps, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -23,6 +23,7 @@ vi.mock("../../../providerInstances", () => ({
     {
       instanceId: "codex",
       driverKind: "codex",
+      displayName: "Codex",
       models: [],
     },
   ],
@@ -121,7 +122,24 @@ vi.mock("../../../components/ui/collapsible", () => ({
   CollapsiblePanel: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("../../../components/ui/number-field", () => ({
-  NumberField: ({ children }: { children: ReactNode }) => children,
+  NumberField: ({
+    children,
+    value,
+    onValueCommitted,
+  }: {
+    children: ReactNode;
+    value: number;
+    onValueCommitted: (value: number) => void;
+  }) => (
+    <div>
+      <input
+        aria-label="Limit"
+        value={value}
+        onChange={(event) => onValueCommitted(Number(event.target.value))}
+      />
+      {children}
+    </div>
+  ),
   NumberFieldGroup: ({ children }: { children: ReactNode }) => children,
   NumberFieldInput: () => <input />,
 }));
@@ -129,15 +147,24 @@ vi.mock("../../../components/ui/select", () => ({
   Select: ({
     children,
     onValueChange,
+    value,
   }: {
     children: ReactNode;
     onValueChange: (value: string) => void;
+    value: string;
   }) => (
     <div>
-      <button
-        aria-label="Use inherited permissions"
-        onClick={() => onValueChange("same-as-orchestrator")}
+      <select
+        aria-label="Select value"
+        value={value}
+        onChange={(event) => onValueChange(event.target.value)}
       />
+      {["same-as-orchestrator", "full-access", "approval-required"].includes(value) ? (
+        <button
+          aria-label="Use inherited permissions"
+          onClick={() => onValueChange("same-as-orchestrator")}
+        />
+      ) : null}
       {children}
     </div>
   ),
@@ -150,6 +177,7 @@ vi.mock("../../../components/ui/switch", () => ({
   Switch: () => <input type="checkbox" />,
 }));
 vi.mock("../../../components/ui/textarea", () => ({ Textarea: "textarea" }));
+vi.mock("../../../components/ui/input", () => ({ Input: "input" }));
 
 import {
   readOnlyPermissionLabel,
@@ -181,6 +209,20 @@ function frontendRole() {
   return state.settings.teamWorkflows[0]!.roles.find(({ id }) => id === "frontend")!;
 }
 
+function selectPreset(id: string) {
+  act(() => renderer!.root.findAllByType("select")[0]!.props.onChange({ target: { value: id } }));
+}
+
+function folderInput(label: string) {
+  return renderer!.root
+    .findAllByType("input")
+    .find((input) => input.props["aria-label"] === label)!;
+}
+
+function editFolder(label: string, value: string) {
+  act(() => folderInput(label).props.onBlur({ currentTarget: { value } }));
+}
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.settings = {
@@ -201,6 +243,82 @@ afterEach(async () => {
 });
 
 describe("workflow settings", () => {
+  it("selects Research & plan, shows read-only labels, and saves its roles and limits independently", () => {
+    selectPreset(BUILT_IN_RESEARCH_PLAN_WORKFLOW.id);
+    expect(
+      renderer!.root
+        .findAllByType("p")
+        .filter((p) =>
+          p.children.includes("Read-only: enforced on Claude, isolated worktree elsewhere"),
+        ),
+    ).toHaveLength(2);
+    expect(buttonByLabel("Use inherited permissions")).toBeUndefined();
+    expect(renderer!.root.findAllByType("select")).toHaveLength(1);
+    act(() => buttonByLabel("Researcher model").props.onClick());
+    rerenderPanel();
+    expect(
+      renderer!.root
+        .findAllByType("p")
+        .some((p) => p.children.includes("Read-only not enforced on Codex (isolated worktree)")),
+    ).toBe(true);
+    act(() =>
+      renderer!.root
+        .findAllByType("input")
+        .find((input) => input.props["aria-label"] === "Limit")!
+        .props.onChange({ target: { value: "3" } }),
+    );
+    const saved = state.settings.teamWorkflows.find(
+      ({ id }) => id === BUILT_IN_RESEARCH_PLAN_WORKFLOW.id,
+    )!;
+    expect(saved.roles[0]!.modelSelection).toEqual({ instanceId, model: "gpt-test" });
+    expect(saved.maxParallelWorkers).toBe(3);
+    expect(state.settings.teamWorkflows[0]).toEqual(BUILT_IN_TEAM_WORKFLOW);
+    selectPreset(BUILT_IN_TEAM_WORKFLOW.id);
+    expect(folderInput("Plans folder")).toBeUndefined();
+    expect(buttonByLabel("Frontend model")).toBeDefined();
+  });
+
+  it("persists both artifact folders across a reload and restores only the selected preset", async () => {
+    state.settings = {
+      ...state.settings,
+      teamWorkflows: [{ ...BUILT_IN_TEAM_WORKFLOW, maxParallelWorkers: 9 }],
+    };
+    rerenderPanel();
+    selectPreset(BUILT_IN_RESEARCH_PLAN_WORKFLOW.id);
+    expect(folderInput("Plans folder").props.defaultValue).toBe("docs/plans");
+    expect(folderInput("Research folder").props.defaultValue).toBe("docs/research");
+    editFolder("Plans folder", " notes/plans ");
+    rerenderPanel();
+    editFolder("Research folder", "notes/research");
+    await act(async () => renderer?.unmount());
+    renderPanel();
+    selectPreset(BUILT_IN_RESEARCH_PLAN_WORKFLOW.id);
+    expect(folderInput("Plans folder").props.defaultValue).toBe("notes/plans");
+    expect(folderInput("Research folder").props.defaultValue).toBe("notes/research");
+    act(() => buttonByText("Restore built-in preset").props.onClick());
+    rerenderPanel();
+    expect(folderInput("Plans folder").props.defaultValue).toBe("docs/plans");
+    expect(state.settings.teamWorkflows).toEqual([
+      { ...BUILT_IN_TEAM_WORKFLOW, maxParallelWorkers: 9 },
+      BUILT_IN_RESEARCH_PLAN_WORKFLOW,
+    ]);
+  });
+
+  it("rejects invalid folders without saving and lets the user correct them", () => {
+    selectPreset(BUILT_IN_RESEARCH_PLAN_WORKFLOW.id);
+    for (const invalid of ["", "../outside", "C:\\plans"]) {
+      editFolder("Plans folder", invalid);
+      expect(folderInput("Plans folder").props["aria-invalid"]).toBe(true);
+      expect(renderer!.root.findByProps({ role: "alert" }).children.join("")).toContain(
+        "relative folder",
+      );
+      expect(state.updateSettings).not.toHaveBeenCalled();
+    }
+    editFolder("Plans folder", "notes/plans");
+    expect(folderInput("Plans folder").props["aria-invalid"]).toBe(false);
+    expect(state.settings.teamWorkflows[1]!.plansDir).toBe("notes/plans");
+  });
+
   it("labels read-only roles by whether their provider enforces read-only", () => {
     expect(
       readOnlyPermissionLabel({ driverKind: "claudeAgent" as never, displayName: "Claude" }),

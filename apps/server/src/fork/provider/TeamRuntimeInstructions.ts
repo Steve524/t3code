@@ -1,4 +1,5 @@
 import type { TeamRoleId, TeamRoleKind, TeamWorkflow } from "@t3tools/contracts";
+import { DEFAULT_PLANS_DIR, DEFAULT_RESEARCH_DIR } from "@t3tools/shared/team";
 
 const TEAM_ORCHESTRATOR_INSTRUCTIONS = `<team_orchestrator>
 You coordinate a team of worker agents in T3 Code for this project. You plan and delegate. You do not implement.
@@ -29,6 +30,7 @@ Rules
 - If a worker is waiting for approval or input, tell the user which thread needs them.
 - If a role's model is unavailable, report the error. Do not pick a different model or provider.
 - Silence is not approval of anything that needs approval.
+- Artifact folders are relative to this thread's checkout (the project root or its worktree): plans and review logs in {plansDir}, research briefs in {researchDir}. Keep these folders for this thread even if environment settings change.
 
 Phase 0: Recon
 - Detect the terrain. Brownfield (real source code): read the relevant code, its callers and the writers of shared state, and load CONTEXT.md or CONTEXT-MAP.md and docs/adr/ if present (docs-aware mode, below). Greenfield (empty or new project): cover prior art, a default stack plus one alternative, and 3-5 known pitfalls from your own knowledge.
@@ -139,9 +141,6 @@ If you need a decision, ask it and stop.
 Finish with a short report: what changed, files touched, checks you ran and their results, and anything another role needs to know.
 </team_worker>`;
 
-// Phase 3 makes this a per-workflow setting.
-const DEFAULT_PLANS_DIR = "docs/plans";
-
 const BUILT_IN_ROLE_INSTRUCTIONS: Readonly<Record<string, string>> = {
   frontend:
     "Build UI in the project's existing component library and styling system. Match existing patterns before adding new ones. Handle loading, empty, and error states. Run the project's frontend tests and type checks for the files you touched.",
@@ -173,7 +172,14 @@ export function buildTeamInstructions(team: RuntimeInstructionTeam): string {
   if (team.role === "orchestrator") {
     const rules =
       team.workflow.type === "plan"
-        ? TEAM_PLANNER_INSTRUCTIONS.replaceAll("{plansDir}", DEFAULT_PLANS_DIR)
+        ? TEAM_PLANNER_INSTRUCTIONS.replace(/\{(?:plansDir|researchDir)\}/g, (token) =>
+            (token === "{plansDir}"
+              ? (team.workflow.plansDir ?? DEFAULT_PLANS_DIR)
+              : (team.workflow.researchDir ?? DEFAULT_RESEARCH_DIR)
+            )
+              .replaceAll("\\", "/")
+              .replace(/\/+$/, ""),
+          )
         : TEAM_ORCHESTRATOR_INSTRUCTIONS;
     const roles = team.workflow.roles
       .filter((role) => role.enabled)

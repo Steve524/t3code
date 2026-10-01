@@ -1,5 +1,8 @@
 import { TeamRoleId, type TeamRoleKind, type TeamWorkflow } from "@t3tools/contracts";
 
+export const DEFAULT_PLANS_DIR = "docs/plans";
+export const DEFAULT_RESEARCH_DIR = "docs/research";
+
 export const BUILT_IN_TEAM_WORKFLOW: TeamWorkflow = {
   id: "full-stack-team",
   name: "Full-stack team",
@@ -68,6 +71,8 @@ export const BUILT_IN_RESEARCH_PLAN_WORKFLOW: TeamWorkflow = {
   name: "Research & plan team",
   builtIn: true,
   type: "plan",
+  plansDir: DEFAULT_PLANS_DIR,
+  researchDir: DEFAULT_RESEARCH_DIR,
   roles: [
     {
       id: TeamRoleId.make("researcher"),

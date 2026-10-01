@@ -24,6 +24,7 @@ import * as OrchestrationEngine from "../../../orchestration/Services/Orchestrat
 import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProviderInstanceRegistry from "../../../provider/Services/ProviderInstanceRegistry.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
+import * as WorkspaceFileSystem from "../../../workspace/WorkspaceFileSystem.ts";
 
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
@@ -35,6 +36,7 @@ const dependencies = [
   ThreadBootstrap.ThreadBootstrap,
   FileSystem.FileSystem,
   Path.Path,
+  WorkspaceFileSystem.WorkspaceFileSystem,
 ];
 
 export class TeamThreadNotFoundError extends Schema.TaggedError<TeamThreadNotFoundError>()(
@@ -174,6 +176,27 @@ export class TeamPlanFileError extends Schema.TaggedError<TeamPlanFileError>()(
   }
 }
 
+export class TeamPlanWorkflowRequiredError extends Schema.TaggedError<TeamPlanWorkflowRequiredError>()(
+  "TeamPlanWorkflowRequiredError",
+  {},
+) {
+  override get message(): string {
+    return "Only a plan-type workflow can write plan artifacts.";
+  }
+}
+
+export class TeamPlanArtifactPathError extends Schema.TaggedError<TeamPlanArtifactPathError>()(
+  "TeamPlanArtifactPathError",
+  {
+    relativePath: Schema.String,
+    reason: Schema.Literals(["invalid-path", "outside-allowlist", "symlink"]),
+  },
+) {
+  override get message(): string {
+    return `Plan artifact path '${this.relativePath}' was rejected: ${this.reason}. Use a relative .md path under the workflow's plans or research folder, docs/adr/, or a file named CONTEXT.md or CONTEXT-MAP.md, without symlinks.`;
+  }
+}
+
 export class WorkerBusyError extends Schema.TaggedError<WorkerBusyError>()("WorkerBusyError", {
   workerThreadId: ThreadId,
 }) {
@@ -185,7 +208,7 @@ export class WorkerBusyError extends Schema.TaggedError<WorkerBusyError>()("Work
 export class TeamOperationFailedError extends Schema.TaggedError<TeamOperationFailedError>()(
   "TeamOperationFailedError",
   {
-    operation: Schema.Literals(["roster", "spawn", "get", "message", "stop", "integrate"]),
+    operation: Schema.Literals(["roster", "spawn", "get", "message", "stop", "integrate", "write"]),
     cause: Schema.Defect(),
   },
 ) {
@@ -197,6 +220,7 @@ export class TeamOperationFailedError extends Schema.TaggedError<TeamOperationFa
       message: "Could not message the team worker.",
       stop: "Could not stop the team worker.",
       integrate: "Could not integrate the team branches.",
+      write: "Could not write the plan artifact.",
     }[this.operation];
   }
 }
@@ -218,6 +242,8 @@ export const TeamToolError = Schema.Union([
   TeamIntegrationTargetError,
   TeamIntegrationUnsupportedError,
   TeamPlanFileError,
+  TeamPlanWorkflowRequiredError,
+  TeamPlanArtifactPathError,
   WorkerBusyError,
   TeamOperationFailedError,
 ]);
@@ -399,6 +425,20 @@ const IntegrateTool = Tool.make("team_integrate", {
   .annotate(Tool.Idempotent, false)
   .annotate(Tool.OpenWorld, false);
 
+const WritePlanArtifactTool = Tool.make("team_write_plan_artifact", {
+  description:
+    "Create or replace a Markdown plan artifact in this planner thread's checkout. Only plan-type orchestrators can use this. Pass relativePath and the full contents. Allowed paths: .md files under the workflow's plansDir, researchDir, or docs/adr/, and files named CONTEXT.md or CONTEXT-MAP.md. Paths must be relative, without '..' or symlinks. Creates parent directories as needed.",
+  parameters: Schema.Struct({ relativePath: TrimmedNonEmptyString, contents: Schema.String }),
+  success: Schema.Struct({ relativePath: TrimmedNonEmptyString }),
+  failure: TeamToolError,
+  dependencies,
+})
+  .annotate(Tool.Title, "Write plan artifact")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, true)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, false);
+
 export const TeamToolkit = Toolkit.make(
   RosterTool,
   SpawnWorkerTool,
@@ -406,4 +446,5 @@ export const TeamToolkit = Toolkit.make(
   MessageWorkerTool,
   StopWorkerTool,
   IntegrateTool,
+  WritePlanArtifactTool,
 );

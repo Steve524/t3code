@@ -138,7 +138,16 @@ describe("Team Workflow runtime instructions", () => {
     });
     expect(instructions).toContain("<team_planner>");
     expect(instructions).not.toContain("<team_orchestrator>");
-    expect(instructions).not.toContain("Never edit files");
+    expect(instructions).toContain(
+      "Write every plan artifact only through team_write_plan_artifact",
+    );
+    expect(instructions).toContain(
+      "Pass relativePath and the full contents for each creation or revision",
+    );
+    expect(instructions).toContain("including review-log updates");
+    expect(instructions).toContain(
+      "Never edit files directly or use shell commands or other tools to write them",
+    );
     expect(instructions).toContain("Write docs/plans/YYYY-MM-DD-<slug>.md:");
     expect(instructions).toContain("**If we guess wrong:** <the concrete failure>");
     expect(instructions).toContain(

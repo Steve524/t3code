@@ -11,6 +11,7 @@ import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderInstanceRegistry } from "../../../provider/Services/ProviderInstanceRegistry.ts";
+import { WorkspaceFileSystem } from "../../../workspace/WorkspaceFileSystem.ts";
 import { TeamBranchIntegration } from "../../git/TeamBranchIntegration.ts";
 import { ThreadBootstrap } from "../../orchestration/Services/ThreadBootstrap.ts";
 
@@ -24,6 +25,7 @@ const TestLayer = McpHttpServer.TeamToolkitRegistrationLive.pipe(
       Layer.mock(ProviderInstanceRegistry)({}),
       Layer.mock(GitWorkflowService.GitWorkflowService)({}),
       Layer.mock(TeamBranchIntegration)({}),
+      Layer.mock(WorkspaceFileSystem)({}),
       NodeServices.layer,
     ),
   ),
@@ -61,6 +63,7 @@ it.effect("registers Team Workflow tools and requires the team capability", () =
         "team_message_worker",
         "team_stop_worker",
         "team_integrate",
+        "team_write_plan_artifact",
       ]),
     );
     const denied = yield* server

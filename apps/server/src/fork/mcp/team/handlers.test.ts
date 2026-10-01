@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - junction fixtures work on Windows without symlink privileges.
+import * as NodeFSP from "node:fs/promises";
+
 import {
   EnvironmentId,
   CheckpointRef,
@@ -13,6 +16,7 @@ import {
   type TeamWorkflow,
 } from "@t3tools/contracts";
 import { BUILT_IN_RESEARCH_PLAN_WORKFLOW, BUILT_IN_TEAM_WORKFLOW } from "@t3tools/shared/team";
+import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
@@ -35,6 +39,9 @@ import { ProjectionSnapshotQuery } from "../../../orchestration/Services/Project
 import type { ProviderInstance } from "../../../provider/ProviderDriver.ts";
 import { ProviderInstanceRegistry } from "../../../provider/Services/ProviderInstanceRegistry.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
+import * as WorkspaceFileSystem from "../../../workspace/WorkspaceFileSystem.ts";
+import * as WorkspacePaths from "../../../workspace/WorkspacePaths.ts";
+import * as WorkspaceEntries from "../../../workspace/WorkspaceEntries.ts";
 import { TeamToolkitHandlersLive } from "./handlers.ts";
 import { TeamToolkit } from "./tools.ts";
 
@@ -169,6 +176,8 @@ const testCrypto = Crypto.make({
 });
 
 interface HarnessOptions {
+  readonly workspaceRoot?: string;
+  readonly invocationThreadId?: ThreadId;
   readonly threads?: ReadonlyArray<OrchestrationThreadShell>;
   readonly providerAvailable?: boolean;
   readonly driverKind?: string;
@@ -179,6 +188,7 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
   const threads = options.threads ?? [orchestrator()];
   const bootstrapCommands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
   const engineCommands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+  const refreshedRoots = yield* Ref.make<ReadonlyArray<string>>([]);
   const integrationInputs = yield* Ref.make<
     ReadonlyArray<TeamBranchIntegration.GitIntegrateBranchesInput>
   >([]);
@@ -192,6 +202,15 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
     );
   const dependencies = Layer.mergeAll(
     NodeServices.layer,
+    WorkspaceFileSystem.layer.pipe(
+      Layer.provide(WorkspacePaths.layer),
+      Layer.provide(
+        Layer.mock(WorkspaceEntries.WorkspaceEntries)({
+          refresh: (cwd) => Ref.update(refreshedRoots, (roots) => [...roots, cwd]),
+        }),
+      ),
+      Layer.provide(NodeServices.layer),
+    ),
     Layer.mock(ProjectionSnapshotQuery)({
       getThreadShellById: (threadId) =>
         Effect.succeed(Option.fromNullishOr(threads.find((thread) => thread.id === threadId))),
@@ -201,7 +220,7 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
             ? Option.some({
                 id: PROJECT_ID,
                 title: "Project",
-                workspaceRoot: "/workspace/project",
+                workspaceRoot: options.workspaceRoot ?? "/workspace/project",
                 defaultModelSelection: null,
                 scripts: [],
                 createdAt: "2026-09-15T10:00:00.000Z",
@@ -282,13 +301,308 @@ const makeHarness = Effect.fn("makeTeamToolkitHarness")(function* (options: Harn
       Stream.unwrap,
       Stream.runCollect,
       Effect.map((chunk) => chunk.at(-1)!.result as Tool.Success<(typeof TeamToolkit.tools)[Name]>),
-      Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(capabilities)),
+      Effect.provideService(McpInvocationContext.McpInvocationContext, {
+        ...invocation(capabilities),
+        threadId: options.invocationThreadId ?? ORCHESTRATOR_ID,
+      }),
       Effect.provide(dependencies),
     );
-  return { bootstrapCommands, engineCommands, integrationInputs, call };
+  return { bootstrapCommands, engineCommands, integrationInputs, refreshedRoots, call };
 });
 
 describe("team toolkit handlers", () => {
+  it.effect("writes a plan artifact in approval-required mode through the workspace writer", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "team-artifact-" });
+        const harness = yield* makeHarness({
+          workspaceRoot: cwd,
+          threads: [
+            { ...orchestrator(BUILT_IN_RESEARCH_PLAN_WORKFLOW), runtimeMode: "approval-required" },
+          ],
+        });
+        expect(
+          yield* harness.call("team_write_plan_artifact", {
+            relativePath: "docs/plans/plan.md",
+            contents: "# Plan\n",
+          }),
+        ).toEqual({ relativePath: "docs/plans/plan.md" });
+        expect(yield* fs.readFileString(`${cwd}/docs/plans/plan.md`)).toBe("# Plan\n");
+        expect(yield* Ref.get(harness.refreshedRoots)).toEqual([cwd]);
+        expect(yield* Ref.get(harness.bootstrapCommands)).toEqual([]);
+        expect(yield* Ref.get(harness.engineCommands)).toEqual([]);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "rejects traversal, absolute paths, Windows aliases and paths outside the artifact allowlist",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "team-artifact-" });
+          const harness = yield* makeHarness({
+            workspaceRoot: cwd,
+            threads: [orchestrator(BUILT_IN_RESEARCH_PLAN_WORKFLOW)],
+          });
+          for (const relativePath of [
+            "../outside.md",
+            "docs/plans/../../outside.md",
+            "docs\\plans\\..\\..\\outside.md",
+            "docs/plans/../plans/plan.md",
+            "docs/plans/.. /plan.md",
+            "docs/plans/.../plan.md",
+            "docs/plans/nested./plan.md",
+            "docs/plans/nested /plan.md",
+            "/docs/plans/plan.md",
+            "\\docs\\plans\\plan.md",
+            "C:\\temp\\plan.md",
+            "C:/temp/plan.md",
+            "C:docs/plans/plan.md",
+            "\\\\server\\share\\plan.md",
+            "docs/plans/plan.md:stream.md",
+            "docs/plans/plan\u0000.md",
+            "docs/plans/plan\n.md",
+            "docs/plans/plan\u007f.md",
+            "src/plan.md",
+            "docs/plans-other/plan.md",
+            "docs/research-other/brief.md",
+            "docs/adr-other/decision.md",
+            "docs/plans/plan.txt",
+            "docs/plans/plan.MD",
+            "docs/adr/script.ts",
+            "README.md",
+            "CONTEXT.md.backup",
+          ]) {
+            expect(
+              yield* harness
+                .call("team_write_plan_artifact", { relativePath, contents: "rejected" })
+                .pipe(Effect.flip),
+              relativePath,
+            ).toMatchObject({ _tag: "TeamPlanArtifactPathError" });
+          }
+          expect(yield* Ref.get(harness.refreshedRoots)).toEqual([]);
+          expect(yield* fs.readDirectory(cwd)).toEqual([]);
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "normalizes artifact paths, uses the workflow snapshot and writes in the planner worktree",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const project = yield* fs.makeTempDirectoryScoped({ prefix: "team-project-" });
+          const checkout = yield* fs.makeTempDirectoryScoped({ prefix: "team-artifact-" });
+          const harness = yield* makeHarness({
+            workspaceRoot: project,
+            threads: [
+              {
+                ...orchestrator({
+                  ...BUILT_IN_RESEARCH_PLAN_WORKFLOW,
+                  plansDir: "notes\\plans/",
+                  researchDir: "notes/./research/",
+                }),
+                worktreePath: checkout,
+              },
+            ],
+          });
+          const paths = [
+            ["notes\\plans\\nested\\plan.md", "notes/plans/nested/plan.md"],
+            ["notes//plans/./review-log.md", "notes/plans/review-log.md"],
+            ["./notes/research/brief.md", "notes/research/brief.md"],
+            ["docs/adr/0001-decision.md", "docs/adr/0001-decision.md"],
+            ["CONTEXT.md", "CONTEXT.md"],
+            ["CONTEXT-MAP.md", "CONTEXT-MAP.md"],
+            ["packages/domain/CONTEXT.md", "packages/domain/CONTEXT.md"],
+            ["contexts/domain/CONTEXT-MAP.md", "contexts/domain/CONTEXT-MAP.md"],
+          ];
+          for (const [relativePath, normalized] of paths) {
+            const contents = `# ${normalized}\n\nArtifact with Unicode: café.\n`;
+            expect(
+              yield* harness.call("team_write_plan_artifact", {
+                relativePath: relativePath!,
+                contents,
+              }),
+            ).toEqual({ relativePath: normalized });
+            expect(yield* fs.readFileString(`${checkout}/${normalized}`)).toBe(contents);
+          }
+          yield* harness.call("team_write_plan_artifact", {
+            relativePath: "notes/plans/review-log.md",
+            contents: "# Log\n\n## Round 2\n",
+          });
+          expect(yield* fs.readFileString(`${checkout}/notes/plans/review-log.md`)).toBe(
+            "# Log\n\n## Round 2\n",
+          );
+          for (const relativePath of ["docs/plans/plan.md", "docs/research/brief.md"]) {
+            expect(
+              yield* harness
+                .call("team_write_plan_artifact", { relativePath, contents: "rejected" })
+                .pipe(Effect.flip),
+            ).toMatchObject({ _tag: "TeamPlanArtifactPathError", reason: "outside-allowlist" });
+          }
+          expect(yield* fs.readDirectory(project)).toEqual([]);
+          expect(yield* Ref.get(harness.refreshedRoots)).toEqual(
+            Array.from({ length: paths.length + 1 }, () => checkout),
+          );
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("uses default artifact folders for an older workflow snapshot", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "team-artifact-" });
+        const {
+          plansDir: _plansDir,
+          researchDir: _researchDir,
+          ...oldWorkflow
+        } = BUILT_IN_RESEARCH_PLAN_WORKFLOW;
+        const harness = yield* makeHarness({
+          workspaceRoot: cwd,
+          threads: [orchestrator(oldWorkflow)],
+        });
+        for (const relativePath of ["docs/plans/plan.md", "docs/research/brief.md"]) {
+          yield* harness.call("team_write_plan_artifact", { relativePath, contents: "# Artifact" });
+          expect(yield* fs.readFileString(`${cwd}/${relativePath}`)).toBe("# Artifact");
+        }
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("requires a team credential and a plan-type orchestrator before accessing files", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "team-artifact-" });
+        const cases = [
+          {
+            threads: [orchestrator(BUILT_IN_RESEARCH_PLAN_WORKFLOW)],
+            capabilities: ["preview"] as const,
+            tag: "McpCapabilityUnavailableError",
+          },
+          { threads: [orchestrator()], tag: "TeamPlanWorkflowRequiredError" },
+          {
+            threads: [worker()],
+            invocationThreadId: WORKER_ID,
+            tag: "TeamOrchestratorRequiredError",
+          },
+          {
+            threads: [shell({ id: ORCHESTRATOR_ID, team: undefined })],
+            tag: "TeamOrchestratorRequiredError",
+          },
+          { threads: [], tag: "TeamThreadNotFoundError" },
+        ];
+        for (const { tag, capabilities, ...options } of cases) {
+          const harness = yield* makeHarness({ ...options, workspaceRoot: cwd });
+          expect(
+            yield* harness
+              .call(
+                "team_write_plan_artifact",
+                {
+                  relativePath: "docs/plans/plan.md",
+                  contents: "rejected",
+                },
+                capabilities,
+              )
+              .pipe(Effect.flip),
+          ).toMatchObject({ _tag: tag });
+          expect(yield* Ref.get(harness.refreshedRoots)).toEqual([]);
+        }
+        expect(yield* fs.readDirectory(cwd)).toEqual([]);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "rejects directory symlinks and Windows junctions before creating artifact parents",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "team-artifact-" });
+          const outside = yield* fs.makeTempDirectoryScoped({ prefix: "team-outside-" });
+          yield* fs.makeDirectory(`${cwd}/docs/research`, { recursive: true });
+          yield* fs.makeDirectory(`${cwd}/src`);
+          yield* fs.writeFileString(`${cwd}/src/source.md`, "original");
+          yield* Effect.tryPromise(() => NodeFSP.symlink(outside, `${cwd}/docs/plans`, "junction"));
+          yield* Effect.tryPromise(() =>
+            NodeFSP.symlink(`${cwd}/src`, `${cwd}/docs/research/linked`, "junction"),
+          );
+          const harness = yield* makeHarness({
+            workspaceRoot: cwd,
+            threads: [orchestrator(BUILT_IN_RESEARCH_PLAN_WORKFLOW)],
+          });
+          for (const relativePath of ["docs/plans/new/plan.md", "docs/research/linked/source.md"]) {
+            expect(
+              yield* harness
+                .call("team_write_plan_artifact", { relativePath, contents: "rejected" })
+                .pipe(Effect.flip),
+            ).toMatchObject({ _tag: "TeamPlanArtifactPathError", reason: "symlink" });
+          }
+          expect(yield* fs.readDirectory(outside)).toEqual([]);
+          expect(yield* fs.readFileString(`${cwd}/src/source.md`)).toBe("original");
+          expect(yield* Ref.get(harness.refreshedRoots)).toEqual([]);
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect.skipIf(!symlinksSupported)("rejects existing and dangling artifact file symlinks", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "team-artifact-" });
+        const outside = yield* fs.makeTempDirectoryScoped({ prefix: "team-outside-" });
+        yield* fs.makeDirectory(`${cwd}/docs/plans`, { recursive: true });
+        yield* fs.writeFileString(`${outside}/original.md`, "original");
+        yield* fs.symlink(`${outside}/original.md`, `${cwd}/docs/plans/linked.md`);
+        yield* fs.symlink(`${outside}/missing.md`, `${cwd}/docs/plans/dangling.md`);
+        const harness = yield* makeHarness({
+          workspaceRoot: cwd,
+          threads: [orchestrator(BUILT_IN_RESEARCH_PLAN_WORKFLOW)],
+        });
+        for (const relativePath of ["docs/plans/linked.md", "docs/plans/dangling.md"]) {
+          expect(
+            yield* harness
+              .call("team_write_plan_artifact", { relativePath, contents: "rejected" })
+              .pipe(Effect.flip),
+          ).toMatchObject({ _tag: "TeamPlanArtifactPathError", reason: "symlink" });
+        }
+        expect(yield* fs.readFileString(`${outside}/original.md`)).toBe("original");
+        expect(yield* fs.exists(`${outside}/missing.md`)).toBe(false);
+        expect(yield* Ref.get(harness.refreshedRoots)).toEqual([]);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("surfaces workspace write failures without refreshing the cache", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "team-artifact-" });
+        yield* fs.makeDirectory(`${cwd}/docs/plans/directory.md`, { recursive: true });
+        const harness = yield* makeHarness({
+          workspaceRoot: cwd,
+          threads: [orchestrator(BUILT_IN_RESEARCH_PLAN_WORKFLOW)],
+        });
+        expect(
+          yield* harness
+            .call("team_write_plan_artifact", {
+              relativePath: "docs/plans/directory.md",
+              contents: "rejected",
+            })
+            .pipe(Effect.flip),
+        ).toMatchObject({ _tag: "TeamOperationFailedError", operation: "write" });
+        expect(yield* fs.readDirectory(`${cwd}/docs/plans/directory.md`)).toEqual([]);
+        expect(yield* Ref.get(harness.refreshedRoots)).toEqual([]);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("spawns a worker with the resolved role settings and worktree bootstrap", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();

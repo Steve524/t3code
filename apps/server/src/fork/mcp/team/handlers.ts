@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - lstat detects dangling symlinks before workspace writes.
+import * as NodeFSP from "node:fs/promises";
+
 import {
   CommandId,
   MessageId,
@@ -7,7 +10,12 @@ import {
   type TeamWorkflow,
 } from "@t3tools/contracts";
 import { deriveLocalBranchNameFromRemoteRef, sanitizeBranchFragment } from "@t3tools/shared/git";
-import { isReadOnlyTeamRoleKind, teamReadOnlyLaunch } from "@t3tools/shared/team";
+import {
+  DEFAULT_PLANS_DIR,
+  DEFAULT_RESEARCH_DIR,
+  isReadOnlyTeamRoleKind,
+  teamReadOnlyLaunch,
+} from "@t3tools/shared/team";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -15,6 +23,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Predicate from "effect/Predicate";
 
 import * as GitWorkflowService from "../../../git/GitWorkflowService.ts";
 import * as TeamBranchIntegration from "../../git/TeamBranchIntegration.ts";
@@ -23,6 +32,7 @@ import * as OrchestrationEngine from "../../../orchestration/Services/Orchestrat
 import * as ProjectionSnapshotQuery from "../../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProviderInstanceRegistry from "../../../provider/Services/ProviderInstanceRegistry.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
+import * as WorkspaceFileSystem from "../../../workspace/WorkspaceFileSystem.ts";
 import { isolatedReadOnlyTask, withPlanText } from "../../provider/teamReadOnly.ts";
 import {
   TeamBaseBranchUnavailableError,
@@ -32,6 +42,8 @@ import {
   TeamOperationFailedError,
   TeamOrchestratorRequiredError,
   TeamPlanFileError,
+  TeamPlanArtifactPathError,
+  TeamPlanWorkflowRequiredError,
   TeamProjectNotFoundError,
   TeamProviderUnavailableError,
   TeamReviewRoundLimitError,
@@ -117,6 +129,7 @@ const make = Effect.gen(function* () {
   const integration = yield* TeamBranchIntegration.TeamBranchIntegration;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const workspaceFiles = yield* WorkspaceFileSystem.WorkspaceFileSystem;
 
   const randomId = <A>(makeId: (value: string) => A) =>
     crypto.randomUUIDv4.pipe(Effect.orDie, Effect.map(makeId));
@@ -210,6 +223,73 @@ const make = Effect.gen(function* () {
   });
 
   return TeamToolkit.of({
+    team_write_plan_artifact: (input) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* requireOrchestrator("write");
+        const workflow = orchestrator.team.workflow;
+        if (workflow.type !== "plan") return yield* new TeamPlanWorkflowRequiredError({});
+        const requested = input.relativePath.replaceAll("\\", "/");
+        if (
+          requested.startsWith("/") ||
+          /[:\p{Cc}]/u.test(requested) ||
+          requested
+            .split("/")
+            .some((segment) => segment === ".." || (segment !== "." && /[. ]$/.test(segment)))
+        ) {
+          return yield* new TeamPlanArtifactPathError({
+            relativePath: input.relativePath,
+            reason: "invalid-path",
+          });
+        }
+        const cwd = yield* plannerCwd(orchestrator, "write");
+        const normalize = (relative: string) =>
+          path
+            .relative(cwd, path.resolve(cwd, relative.replaceAll("\\", "/")))
+            .replaceAll("\\", "/");
+        const relativePath = normalize(requested);
+        const folders = [
+          workflow.plansDir ?? DEFAULT_PLANS_DIR,
+          workflow.researchDir ?? DEFAULT_RESEARCH_DIR,
+          "docs/adr",
+        ].map(normalize);
+        if (
+          !relativePath.endsWith(".md") ||
+          (!folders.some((folder) => folder === "" || relativePath.startsWith(`${folder}/`)) &&
+            !["CONTEXT.md", "CONTEXT-MAP.md"].includes(path.basename(relativePath)))
+        ) {
+          return yield* new TeamPlanArtifactPathError({
+            relativePath: input.relativePath,
+            reason: "outside-allowlist",
+          });
+        }
+
+        // Check every component, including a missing target's parents and dangling links.
+        let current = cwd;
+        for (const segment of relativePath.split("/")) {
+          current = path.join(current, segment);
+          const stat = yield* Effect.tryPromise({
+            try: async () => {
+              try {
+                return await NodeFSP.lstat(current);
+              } catch (cause) {
+                if (Predicate.hasProperty(cause, "code") && cause.code === "ENOENT") return null;
+                throw cause;
+              }
+            },
+            catch: (cause) => new TeamOperationFailedError({ operation: "write", cause }),
+          });
+          if (stat?.isSymbolicLink()) {
+            return yield* new TeamPlanArtifactPathError({
+              relativePath: input.relativePath,
+              reason: "symlink",
+            });
+          }
+        }
+        return yield* workspaceFiles
+          .writeFile({ cwd, relativePath, contents: input.contents })
+          .pipe(mapFailure("write"));
+      }),
+
     team_roster: () =>
       Effect.gen(function* () {
         const orchestrator = yield* requireOrchestrator("roster");

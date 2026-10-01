@@ -14,6 +14,12 @@
  * @module project/AgentSessionScanner
  */
 import * as NodeOS from "node:os";
+// FORK: Recover exact file identities when Windows metadata exceeds number precision.
+import {
+  sameWindowsFileIdentity,
+  windowsDirectoryIdentity,
+  withWindowsFileIdentity,
+} from "../fork/project/windowsFileIdentity.ts";
 
 import {
   AgentSessionScanError,
@@ -611,6 +617,7 @@ function sameTranscriptIdentity(
     left.mtimeMs === right.mtimeMs &&
     left.device === right.device &&
     left.inode === right.inode &&
+    sameWindowsFileIdentity(left, right) && // FORK: Do not trust missing or rounded Windows IDs.
     left.birthtimeMs === right.birthtimeMs
   );
 }
@@ -682,7 +689,10 @@ export const make = Effect.gen(function* () {
     const realPath = yield* fileSystem
       .realPath(resolved)
       .pipe(Effect.orElseSucceed(() => resolved));
-    return `path:${normalizeProjectPathForComparison(realPath)}`;
+    return yield* windowsDirectoryIdentity(
+      realPath,
+      `path:${normalizeProjectPathForComparison(realPath)}`,
+    ); // FORK: Preserve distinct case-sensitive Windows directories.
   });
 
   /**
@@ -826,7 +836,16 @@ export const make = Effect.gen(function* () {
       fileSystem.open(filePath, { flag: "r" }).pipe(
         Effect.flatMap((file) =>
           Effect.gen(function* () {
-            if (!sameTranscriptIdentity(expected, transcriptIdentity(filePath, yield* file.stat))) {
+            if (
+              !sameTranscriptIdentity(
+                expected,
+                yield* withWindowsFileIdentity(
+                  transcriptIdentity(filePath, yield* file.stat),
+                  file,
+                ),
+              )
+            ) {
+              // FORK: Validate the open file's exact ID.
               return null;
             }
             const records: Array<DecodedTranscriptRecord> = [];
@@ -888,7 +907,10 @@ export const make = Effect.gen(function* () {
             }
 
             if (recordStarted && !(yield* Effect.try(finishRecord))) return null;
-            return sameTranscriptIdentity(expected, transcriptIdentity(filePath, yield* file.stat))
+            return sameTranscriptIdentity(
+              expected,
+              yield* withWindowsFileIdentity(transcriptIdentity(filePath, yield* file.stat), file),
+            ) // FORK: Recheck the descriptor after reading.
               ? { records, recordCount }
               : null;
           }),
@@ -1395,7 +1417,9 @@ export const make = Effect.gen(function* () {
           if (Option.isNone(stats) || stats.value.type !== "File") {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
-          const identity = transcriptIdentity(transcript.filePath, stats.value);
+          const identity = yield* withWindowsFileIdentity(
+            transcriptIdentity(transcript.filePath, stats.value),
+          ); // FORK: Persist the exact Windows file ID.
           const completedSource = completed?.find(
             (source) =>
               source.provider === candidate.source && sameTranscriptIdentity(source, identity),

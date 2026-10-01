@@ -6,6 +6,8 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import compression from "compression";
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import "vite-plus/test/config";
+// FORK: Avoid reproduced Windows worker startup failures during concurrent imports.
+import { windowsTestWorkers } from "./src/fork/testing/workerOptions.ts";
 import { defineConfig, type Connect, type Plugin } from "vite-plus";
 import pkg from "./package.json" with { type: "json" };
 
@@ -284,6 +286,7 @@ export default defineConfig(() => {
       sourcemap: buildSourcemap,
     },
     test: {
+      ...windowsTestWorkers, // FORK: Leave upstream concurrency unchanged on other hosts.
       projects: [defineProject(unitTestProject)],
     },
   };

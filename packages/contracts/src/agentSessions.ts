@@ -1,4 +1,6 @@
 import * as Schema from "effect/Schema";
+// FORK: Preserve exact Windows identities without changing existing source fields.
+import { agentSessionFileIdFields } from "./fork/agentSessions.ts";
 import { IsoDateTime, NonNegativeInt, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
@@ -8,6 +10,7 @@ export type AgentSessionSource = typeof AgentSessionSource.Type;
 
 /** File identity saved with an imported session so bounded retries can skip unchanged history. */
 export const AgentSessionImportSource = Schema.Struct({
+  ...agentSessionFileIdFields, // FORK: Optional metadata keeps older persisted imports readable.
   provider: AgentSessionSource,
   providerInstanceId: ProviderInstanceId,
   providerSessionId: TrimmedNonEmptyString,

@@ -4,6 +4,9 @@ import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Schema from "effect/Schema";
 
 export const windowsHost = HostProcessPlatform.defaultValue() === "win32";
+// Match the server suite's existing budget for real Git subprocesses on Windows.
+export const gitIntegrationTimeout = (milliseconds: number) =>
+  windowsHost ? 120_000 : milliseconds;
 export const fixturePlatform = windowsHost ? "win32" : "linux";
 export const pathWithSlashes = (path: string) => path.replace(/\\+/g, "/");
 export const runtimeFixtureVersion = (command: string) =>

@@ -1,5 +1,5 @@
 // FORK: Keep simulated directory aliases valid when inode IDs are unsafe integers.
-import { filesystemAliases, replacementBaseline } from "../fork/testing/filesystemAliases.ts";
+import { filesystemAliases } from "../fork/testing/filesystemAliases.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
 import { describe, expect, it } from "@effect/vitest";
@@ -1951,7 +1951,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             mtimeMs: nowMs,
           });
           const replaced = yield* scanner
-            .recentThreads(workspace, [replacementBaseline(imported.source)]) // FORK: Simulate a distinct inode when Windows omits it.
+            .recentThreads(workspace, [imported.source])
             .pipe(Stream.runCollect);
           expect(replaced[0]).toMatchObject({
             _tag: "Importable",

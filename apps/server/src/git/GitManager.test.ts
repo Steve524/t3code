@@ -2,6 +2,8 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeChildProcess from "node:child_process";
+// FORK: Apply the server's Windows integration budget to explicit Git deadlines.
+import { gitIntegrationTimeout } from "../fork/testing/platformFixtures.ts";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
@@ -1981,7 +1983,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           "pr list --head statemachine --state all --limit 100 --json number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         );
       }),
-    20_000,
+    gitIntegrationTimeout(20_000), // FORK: Native Windows Git startup exceeds short deadlines.
   );
 
   it.effect(
@@ -2047,7 +2049,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           "pr list --head main --state all --limit 100 --json number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         );
       }),
-    20_000,
+    gitIntegrationTimeout(20_000), // FORK: Native Windows Git startup exceeds short deadlines.
   );
 
   it.effect(
@@ -2136,7 +2138,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           ),
         ).toBe(false);
       }),
-    20_000,
+    gitIntegrationTimeout(20_000), // FORK: Native Windows Git startup exceeds short deadlines.
   );
 
   it.effect("status returns merged PR state when latest PR was merged", () =>
@@ -3591,7 +3593,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         ).toBe(true);
         expect(ghCalls.some((call) => call.startsWith("pr create "))).toBe(false);
       }),
-    12_000,
+    gitIntegrationTimeout(12_000), // FORK: Native Windows Git startup exceeds short deadlines.
   );
 
   it.effect(
@@ -3667,7 +3669,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           false,
         );
       }),
-    20_000,
+    gitIntegrationTimeout(20_000), // FORK: Native Windows Git startup exceeds short deadlines.
   );
 
   it.effect(
@@ -3735,7 +3737,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         ).toBe(false);
         expect(ghCalls.some((call) => call.startsWith("pr create "))).toBe(false);
       }),
-    12_000,
+    gitIntegrationTimeout(12_000), // FORK: Native Windows Git startup exceeds short deadlines.
   );
 
   it.effect(
@@ -3798,7 +3800,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           "pr list --head statemachine --state open --limit 100",
         );
       }),
-    12_000,
+    gitIntegrationTimeout(12_000), // FORK: Native Windows Git startup exceeds short deadlines.
   );
 
   it.effect(
@@ -3837,7 +3839,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         expect(result.pr.number).toBe(142);
         expect(ghCalls.some((call) => call.startsWith("pr create "))).toBe(true);
       }),
-    20_000,
+    gitIntegrationTimeout(20_000), // FORK: Native Windows Git startup exceeds short deadlines.
   );
 
   it.effect("matches mounted Forgejo heads without confusing forks sharing a branch", () =>

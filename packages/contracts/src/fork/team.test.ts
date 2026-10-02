@@ -5,9 +5,12 @@ import { ExecutionEnvironmentDescriptor } from "../environment.ts";
 import { KeybindingRule } from "../keybindings.ts";
 import { ThreadCreatedPayload, ThreadTurnStartCommand } from "../orchestration.ts";
 import { ServerSettings, ServerSettingsPatch } from "../settings.ts";
-import { TeamRoleId, TeamWorkflow } from "./team.ts";
+import { EditableArtifactDirectory, TeamRoleId, TeamWorkflow, ThreadTeamInfo } from "./team.ts";
 
 const decodeWorkflow = Schema.decodeUnknownSync(TeamWorkflow);
+const decodeEditableDirectory = Schema.decodeSync(EditableArtifactDirectory);
+const decodeSavedSettings = Schema.decodeSync(ServerSettings);
+const decodeSavedTeam = Schema.decodeSync(Schema.fromJsonString(ThreadTeamInfo));
 
 const workflow = {
   id: "full-stack-team",
@@ -154,6 +157,45 @@ describe("Team Workflow contracts", () => {
       expect(() => decodeWorkflow({ ...workflow, [field]: path })).toThrow();
     }
   });
+
+  it.each([
+    "notes./plans",
+    "my plans /x",
+    "notes\\plans.\\",
+    "notes/ /plans",
+    ".",
+    "./",
+    ".\\",
+    "././",
+    ".//",
+    ".\\./",
+  ])("rejects unusable folder edits: %j", (path) => {
+    expect(() => decodeEditableDirectory(path)).toThrow();
+  });
+
+  it.each([
+    "notes/plans",
+    "notes/./plans",
+    "notes//research/",
+    "notes\\research",
+    "my plans/nested",
+  ])("accepts writable folder edits: %j", (path) => {
+    expect(decodeEditableDirectory(path)).toBe(path);
+  });
+
+  it.each([".", "././", "notes./plans", "my plans /x"])(
+    "preserves saved settings and thread snapshots with a legacy folder: %j",
+    (path) => {
+      const saved = { ...workflow, type: "plan" as const, plansDir: path, researchDir: path };
+      expect(decodeSavedSettings({ teamWorkflows: [saved] }).teamWorkflows[0]).toMatchObject({
+        plansDir: path,
+        researchDir: path,
+      });
+      const team = decodeSavedTeam(JSON.stringify({ role: "orchestrator", workflow: saved }));
+      if (team.role !== "orchestrator") throw new Error("Expected orchestrator");
+      expect(team.workflow).toMatchObject({ plansDir: path, researchDir: path });
+    },
+  );
 
   it("decodes team metadata in bootstrap thread creation", () => {
     const parsed = Schema.decodeUnknownSync(ThreadTurnStartCommand)({

@@ -3,7 +3,8 @@ import {
   type RuntimeMode,
   type UnifiedSettings,
   type TeamRole,
-  TeamWorkflow,
+  type TeamWorkflow,
+  EditableArtifactDirectory,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -67,7 +68,7 @@ import {
   useUpdateScopedSettings,
 } from "../../../components/settings/useScopedSettings";
 
-const isArtifactDirectory = Schema.is(TeamWorkflow.fields.plansDir);
+const isArtifactDirectory = Schema.is(EditableArtifactDirectory);
 const INHERIT_RUNTIME_MODE = "same-as-orchestrator";
 
 function isRuntimeMode(value: string): value is RuntimeMode {
@@ -317,7 +318,7 @@ function ArtifactFolderInput({
   value: string;
   onSave: (value: string) => void;
 }) {
-  const [invalid, setInvalid] = useState(false);
+  const [invalid, setInvalid] = useState(() => !isArtifactDirectory(value));
   const errorId = useId();
   return (
     <div className="w-64">
@@ -339,7 +340,8 @@ function ArtifactFolderInput({
       />
       {invalid ? (
         <p id={errorId} role="alert" className="mt-1 text-xs text-destructive">
-          Use a relative folder without &quot;..&quot;, drive letters, or control characters.
+          Use a relative folder below the checkout root, without &quot;..&quot;, drive letters,
+          control characters, or names ending in a dot or space.
         </p>
       ) : null}
     </div>

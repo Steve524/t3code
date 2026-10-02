@@ -452,6 +452,61 @@ describe("team toolkit handlers", () => {
       ).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("does not grant broad writes from legacy root artifact folders", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const cases = [
+          ...[".", "./", ".\\", "././", ".//", ".\\./"].map((plansDir) => ({
+            plansDir,
+            researchDir: "notes/research",
+            allowed: "notes/research/brief.md",
+          })),
+          { plansDir: "notes/plans", researchDir: ".", allowed: "notes/plans/plan.md" },
+          { plansDir: ".//", researchDir: ".\\./", allowed: null },
+        ];
+        for (const { plansDir, researchDir, allowed } of cases) {
+          const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "team-artifact-" });
+          yield* fs.writeFileString(`${cwd}/README.md`, "unchanged");
+          const harness = yield* makeHarness({
+            workspaceRoot: cwd,
+            threads: [orchestrator({ ...BUILT_IN_RESEARCH_PLAN_WORKFLOW, plansDir, researchDir })],
+          });
+          for (const relativePath of [
+            "CLAUDE.md",
+            "AGENTS.md",
+            "README.md",
+            "./2026-01-01-plan.md",
+            "src/plan.md",
+            ".claude/commands/probe.md",
+            "docs/plans/plan.md",
+          ]) {
+            expect(
+              yield* harness
+                .call("team_write_plan_artifact", { relativePath, contents: "rejected" })
+                .pipe(Effect.flip),
+            ).toMatchObject({ _tag: "TeamPlanArtifactPathError", reason: "outside-allowlist" });
+          }
+          expect(yield* fs.readFileString(`${cwd}/README.md`)).toBe("unchanged");
+          expect(yield* fs.readDirectory(cwd)).toEqual(["README.md"]);
+          expect(yield* Ref.get(harness.refreshedRoots)).toEqual([]);
+          for (const relativePath of [
+            "docs/adr/0001-decision.md",
+            "CONTEXT.md",
+            "CONTEXT-MAP.md",
+            ...(allowed ? [allowed] : []),
+          ]) {
+            yield* harness.call("team_write_plan_artifact", {
+              relativePath,
+              contents: "# Artifact",
+            });
+            expect(yield* fs.readFileString(`${cwd}/${relativePath}`)).toBe("# Artifact");
+          }
+        }
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("uses default artifact folders for an older workflow snapshot", () =>
     Effect.scoped(
       Effect.gen(function* () {

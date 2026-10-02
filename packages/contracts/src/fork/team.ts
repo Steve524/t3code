@@ -39,6 +39,18 @@ const ArtifactDirectory = TrimmedNonEmptyString.check(
   ),
 );
 
+/** Validate folder edits without rejecting previously saved workflows and thread snapshots. */
+export const EditableArtifactDirectory = ArtifactDirectory.check(
+  Schema.makeFilter((path) => {
+    const segments = path.split(/[\\/]/);
+    return (
+      (segments.some((segment) => segment !== "" && segment !== ".") &&
+        !segments.some((segment) => segment !== "." && /[. ]$/.test(segment))) ||
+      "Use a folder below the checkout root without names ending in a dot or space."
+    );
+  }),
+);
+
 export const TeamWorkflow = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,

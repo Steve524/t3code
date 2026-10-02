@@ -319,6 +319,66 @@ describe("workflow settings", () => {
     expect(state.settings.teamWorkflows[1]!.plansDir).toBe("notes/plans");
   });
 
+  it.each(["Plans folder", "Research folder"])(
+    "rejects unusable path segments in %s before saving",
+    (label) => {
+      selectPreset(BUILT_IN_RESEARCH_PLAN_WORKFLOW.id);
+      for (const invalid of ["notes./plans", "my plans /x", "notes\\plans.\\", "notes/ /plans"]) {
+        editFolder(label, invalid);
+        expect(folderInput(label).props["aria-invalid"]).toBe(true);
+        expect(renderer!.root.findByProps({ role: "alert" }).children.join("")).toContain(
+          "dot or space",
+        );
+        expect(state.updateSettings).not.toHaveBeenCalled();
+      }
+      editFolder(label, "my plans/./nested/");
+      expect(folderInput(label).props["aria-invalid"]).toBe(false);
+      const field = label === "Plans folder" ? "plansDir" : "researchDir";
+      expect(state.settings.teamWorkflows[1]![field]).toBe("my plans/./nested/");
+    },
+  );
+
+  it.each(["Plans folder", "Research folder"])(
+    "rejects checkout-root aliases in %s before saving",
+    (label) => {
+      selectPreset(BUILT_IN_RESEARCH_PLAN_WORKFLOW.id);
+      for (const invalid of [".", "./", ".\\", "././", ".//", ".\\./"]) {
+        editFolder(label, invalid);
+        expect(folderInput(label).props["aria-invalid"]).toBe(true);
+        expect(renderer!.root.findByProps({ role: "alert" }).children.join("")).toContain(
+          "below the checkout root",
+        );
+        expect(state.updateSettings).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("shows legacy root folders for correction and saves each field independently", () => {
+    state.settings = {
+      ...state.settings,
+      teamWorkflows: [{ ...BUILT_IN_RESEARCH_PLAN_WORKFLOW, plansDir: ".", researchDir: ".\\./" }],
+    };
+    rerenderPanel();
+    selectPreset(BUILT_IN_RESEARCH_PLAN_WORKFLOW.id);
+    expect(folderInput("Plans folder").props["aria-invalid"]).toBe(true);
+    expect(folderInput("Research folder").props["aria-invalid"]).toBe(true);
+    editFolder("Plans folder", "notes/plans");
+    expect(state.settings.teamWorkflows[0]).toMatchObject({
+      plansDir: "notes/plans",
+      researchDir: ".\\./",
+    });
+    rerenderPanel();
+    expect(folderInput("Plans folder").props["aria-invalid"]).toBe(false);
+    expect(folderInput("Research folder").props["aria-invalid"]).toBe(true);
+    editFolder("Research folder", "notes/research");
+    rerenderPanel();
+    expect(folderInput("Research folder").props["aria-invalid"]).toBe(false);
+    expect(state.settings.teamWorkflows[0]).toMatchObject({
+      plansDir: "notes/plans",
+      researchDir: "notes/research",
+    });
+  });
+
   it("labels read-only roles by whether their provider enforces read-only", () => {
     expect(
       readOnlyPermissionLabel({ driverKind: "claudeAgent" as never, displayName: "Claude" }),

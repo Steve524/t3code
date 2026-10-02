@@ -254,7 +254,7 @@ const make = Effect.gen(function* () {
         ].map(normalize);
         if (
           !relativePath.endsWith(".md") ||
-          (!folders.some((folder) => folder === "" || relativePath.startsWith(`${folder}/`)) &&
+          (!folders.some((folder) => relativePath.startsWith(`${folder}/`)) &&
             !["CONTEXT.md", "CONTEXT-MAP.md"].includes(path.basename(relativePath)))
         ) {
           return yield* new TeamPlanArtifactPathError({

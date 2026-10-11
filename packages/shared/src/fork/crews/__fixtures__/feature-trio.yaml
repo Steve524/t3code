@@ -1,0 +1,105 @@
+# ~/.t3/crews/feature-trio/crew.yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Steve524/t3code/main/docs/fork/schema/crew.json
+version: 1
+id: feature-trio
+name: Feature trio
+description: Plan, build in parallel, review with a fix loop.
+# no `home:` and no role named lead/orchestrator → first-step mode:
+# the planner runs in the thread you sent from
+
+inputs:
+  brief: { type: text, required: true, description: What to build }
+
+defaults:
+  onNoReport: retry-then-ask
+
+roles:
+  planner:
+    name: Planner
+    description: Specs, task breakdown
+    tags: [planner]
+    instructions: roles/planner.md
+    model: # hint; user settings override it
+      driver: claudeAgent
+      model: claude-opus-5-5
+      options: { effort: high } # legacy object form; decoder coerces it
+    interactionMode: plan
+    skills: [repo-conventions] # by name: library or repo (4.2)
+  implementer:
+    name: Implementer
+    description: UI, APIs, logic
+    tags: [worker]
+    # instructions omitted → roles/implementer/role.md; skills in
+    # roles/implementer/skills/ are granted to this role automatically
+    model: { driver: codex, model: gpt-5.6-terra, options: { effort: medium } }
+    runtimeMode: full-access
+    skills: [repo-conventions, testing]
+    mcp: [playwright] # home or repo mcp.yaml; warning if neither defines it
+    tools: [unit-tests] # granted when the repo's tools.yaml defines it
+  reviewer:
+    name: QA and review
+    description: Tests, code review
+    tags: [reviewer]
+    instructions: roles/reviewer.md
+    model: { driver: codex, model: gpt-5.6-luna }
+    runtimeMode: approval-required
+
+artifacts:
+  plan:
+    type: object
+    schema:
+      tasks:
+        type: list
+        item: { id: string, title: string, brief: string, owns: "string[]" }
+
+flow:
+  start: plan
+  steps:
+    plan:
+      role: planner
+      task: prompts/plan.md
+      produces: [plan]
+      next: build
+
+    build:
+      type: fanout
+      over: artifacts.plan.tasks
+      role: implementer
+      task: "Implement task {{item.id}}: {{item.title}}\n\n{{item.brief}}"
+      owns: "{{item.owns}}"
+      isolation: worktree
+      maxParallel: 3
+      next: integrate
+
+    integrate:
+      type: merge
+      onConflict: { role: implementer } # or `gate`
+      next: review
+
+    review:
+      role: reviewer
+      task: prompts/review.md
+      outcomes:
+        approve: approval
+        changes: { to: fix, max: 3, else: approval } # reviewer may send back 3 times
+
+    fix:
+      role: implementer
+      continue: same-thread # follow up in the last implementer thread
+      task: "Address the review findings:\n{{steps.review.summary}}"
+      next: review
+
+    approval:
+      type: gate # your decision: no limit needed on `reject`,
+      prompt: Approve the integrated changes? # and resolving it resets review's counter
+      outcomes: { approve: done, reject: fix }
+
+    done:
+      type: end
+
+board:
+  columns:
+    - { id: plan, label: Plan, steps: [plan] }
+    - { id: build, label: Build, steps: [build, integrate, fix] }
+    - { id: review, label: Review, steps: [review] }
+    - { id: ship, label: Ship, steps: [approval, done] }

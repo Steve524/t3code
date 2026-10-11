@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Steve524/t3code/main/docs/fork/schema/crews-toolbox.json
+version: 1
+
+tags: # match roles in any installed crew by tag (D14)
+  worker: { tools: [unit-tests], skills: [repo-conventions] }
+  frontend: { mcp: [storybook] }
+  backend: { tools: [db-reset] }
+  reviewer: { skills: [review-checklist] }
+
+crews:
+  feature-trio:
+    "*": { skills: [glossary] } # every role in feature-trio
+    implementer: { mcp: [storybook], tools: [e2e] }
+  "*":
+    "*": { tools: [lint] } # every role in every crew

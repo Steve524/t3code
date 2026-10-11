@@ -1,0 +1,67 @@
+version: 1
+id: full-stack
+name: Full-stack team
+home:
+  mode: lead
+  role: orchestrator
+  canEdit: false # default: lead reads everything, changes go through roles
+  updates: milestones # or `decisions` (cheaper: only woken to decide)
+  decisionTimeoutMinutes: 30 # optional: escalate an unanswered lead decision to you
+roles:
+  orchestrator: { name: Orchestrator, tags: [lead], instructions: roles/orchestrator.md }
+  architect: { name: Architect, tags: [planner], instructions: roles/architect.md }
+  frontend:
+    {
+      name: Frontend,
+      description: "UI, components",
+      tags: [worker, frontend],
+      instructions: roles/frontend.md,
+    }
+  backend:
+    {
+      name: Backend,
+      description: "APIs, logic",
+      tags: [worker, backend],
+      instructions: roles/backend.md,
+    }
+  qa: { name: QA and review, tags: [reviewer], instructions: roles/qa.md }
+flow:
+  start: design
+  steps:
+    design: { role: architect, task: prompts/design.md, produces: [plan], next: build }
+    build: { type: parallel, branches: [ui, api], next: integrate }
+    ui: { role: frontend, task: prompts/ui.md, isolation: worktree, owns: ["apps/web/**"] }
+    api: { role: backend, task: prompts/api.md, isolation: worktree, owns: ["apps/server/**"] }
+    integrate: { type: merge, onConflict: { role: backend }, next: review }
+    review:
+      {
+        role: qa,
+        task: prompts/review.md,
+        outcomes: { approve: ship, changes: { to: triage, max: 3, else: ship } },
+      }
+    triage:
+      type: gate
+      by: lead
+      prompt: Review asked for changes. Who fixes them?
+      outcomes: { frontend: fix_ui, backend: fix_api, accept: ship }
+    fix_ui:
+      {
+        role: frontend,
+        continue: same-thread,
+        task: "Fix:\n{{steps.review.summary}}",
+        next: integrate,
+      }
+    fix_api:
+      {
+        role: backend,
+        continue: same-thread,
+        task: "Fix:\n{{steps.review.summary}}",
+        next: integrate,
+      }
+    ship:
+      {
+        type: gate,
+        prompt: Approve the integrated changes?,
+        outcomes: { approve: done, reject: triage },
+      }
+    done: { type: end }

@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Steve524/t3code/main/docs/fork/schema/crews-toolbox.json",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "enum": [1]
+    },
+    "tags": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "mcp": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "crews": {
+      "type": "object",
+      "properties": {
+        "*": {
+          "type": "object",
+          "properties": {
+            "*": {
+              "type": "object",
+              "properties": {
+                "skills": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "mcp": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "tools": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "propertyNames": {
+        "anyOf": [
+          {
+            "enum": ["*"]
+          },
+          {
+            "type": "string",
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+            "maxLength": 64
+          }
+        ]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "*": {
+            "type": "object",
+            "properties": {
+              "skills": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "mcp": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "tools": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "propertyNames": {
+          "anyOf": [
+            {
+              "enum": ["*"]
+            },
+            {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+              "maxLength": 64
+            }
+          ]
+        },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "skills": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "mcp": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "tools": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  "required": ["version"],
+  "additionalProperties": false
+}

@@ -4,7 +4,7 @@ import type {
   CrewStep,
 } from "../../../../contracts/src/fork/crews/crewFile.ts";
 
-function isList(
+export function isCrewListShape(
   shape: CrewArtifactShape | undefined,
 ): shape is { readonly type: "list"; readonly item: CrewArtifactShape } {
   return typeof shape === "object" && shape.type === "list" && "item" in shape;
@@ -12,7 +12,7 @@ function isList(
 
 function listItem(shape: CrewArtifactShape | undefined): CrewArtifactShape | undefined {
   if (shape === "string[]") return "string";
-  if (isList(shape)) return shape.item;
+  if (isCrewListShape(shape)) return shape.item;
   return undefined;
 }
 
@@ -22,7 +22,7 @@ function field(shape: CrewArtifactShape | undefined, path: ReadonlyArray<string>
     if (item !== undefined) shape = /^(0|[1-9]\d*)$/u.test(key) ? item : undefined;
     else
       shape =
-        typeof shape === "object" && !isList(shape) && Object.hasOwn(shape, key)
+        typeof shape === "object" && !isCrewListShape(shape) && Object.hasOwn(shape, key)
           ? shape[key]
           : undefined;
   }

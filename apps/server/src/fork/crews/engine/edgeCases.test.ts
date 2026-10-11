@@ -116,4 +116,37 @@ describe("decision and join races", () => {
     expect(run.snapshot.routeCounters["work/next"]).toBe(0);
     expect(run.snapshot.groups[0]?.finished).toEqual([0]);
   });
+
+  it("a card that reported before its launch returned still takes its thread", () => {
+    const run = engine({
+      work: { ...task, next: "fix" },
+      fix: { ...task, continue: "same-thread" },
+    });
+    run.start();
+    const work = run.latest("work");
+    run.send({
+      type: "card.reported",
+      cardId: work.id,
+      attempt: 1,
+      outcome: "done",
+      summary: "Reported during launch.",
+      artifacts: {},
+    });
+    run.dispatched(work);
+    expect(run.latest("work")).toMatchObject({ state: "reported", threadId: "thread:work:1" });
+    const finished = run.send({
+      type: "card.turn_finished",
+      cardId: work.id,
+      attempt: 1,
+      status: "completed",
+    });
+    // The follow-up step can only reuse the thread if the card kept it.
+    expect(finished.effects).toContainEqual({
+      type: "send_follow_up",
+      cardId: "fix:1",
+      attempt: 1,
+      threadId: "thread:work:1",
+      reason: "continue",
+    });
+  });
 });

@@ -58,6 +58,7 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
+import * as ForkCrewMcp from "../fork/crews/mcp/handlers.ts"; // FORK: crew tools
 
 /** Where an MCP client discovers how to sign in (RFC 9728), at this request's own origin. */
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
@@ -878,4 +879,5 @@ export const layer = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  toolkitRegistration(ForkCrewMcp.CrewToolkit, ForkCrewMcp.layer), // FORK: crew tools
 ).pipe(Layer.provideMerge(layerMcpTransport));

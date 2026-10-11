@@ -6,10 +6,12 @@ import * as Layer from "effect/Layer";
 
 import * as OrchestratorMcpService from "../mcp/OrchestratorMcpService.ts";
 import * as CrewCatalog from "./crews/CrewCatalog.ts";
+import * as CrewRunService from "./crews/CrewRunService.ts";
 import * as CrewSettingsStore from "./crews/CrewSettingsStore.ts";
 import * as ForkMigrations from "./persistence/ForkMigrations.ts";
 
-export const layer = CrewCatalog.layer.pipe(
+export const layer = CrewRunService.layer.pipe(
+  Layer.provideMerge(CrewCatalog.layer),
   Layer.provide(CrewSettingsStore.layer),
   Layer.provide(OrchestratorMcpService.layer),
   // Fork tables exist before a fork service reads them; a failed migration stops startup.

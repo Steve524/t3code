@@ -518,12 +518,14 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       }
       break;
     case "card.dispatched":
-      if (currentAttempt && (card.state === "dispatching" || card.state === "stopping")) {
+      // An agent can report before the launch that started its turn returns, so a card that
+      // already reported still takes its thread.
+      if (currentAttempt && isActive(card)) {
         card.threadId = event.threadId;
         card.orchestrationRunId = event.orchestrationRunId;
         if (card.state === "stopping")
           effects.push({ type: "stop_thread", ...ref(card), threadId: card.threadId });
-        else card.state = "working";
+        else if (card.state === "dispatching") card.state = "working";
       }
       break;
     case "card.reported":

@@ -27,7 +27,8 @@ export interface CrewValidationContext {
   readonly toolboxMode?: ToolboxMode;
 }
 
-function normalizedPath(value: string) {
+/** A crew-relative path as the loader keys its files. */
+export function normalizedPath(value: string) {
   const parts: string[] = [];
   for (const part of value.replaceAll("\\", "/").split("/")) {
     if (part === "." || part === "") continue;

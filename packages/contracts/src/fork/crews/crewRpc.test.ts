@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { AuthSettingsWriteScope } from "../../auth.ts";
+import { AuthOrchestrationOperateScope, AuthSettingsWriteScope } from "../../auth.ts";
 import { clientRpcRequiredScopes } from "../../clientRpcPermissions.ts";
 import { WsRpcGroup } from "../../rpc.ts";
 import {
@@ -34,6 +34,13 @@ describe("crews rpc wiring", () => {
   ])("has the client check settings:write before sending %s", (method) => {
     expect(clientRpcRequiredScopes(method, undefined)).toEqual([AuthSettingsWriteScope]);
   });
+
+  it.each([FORK_CREWS_WS_METHODS.runsStart, FORK_CREWS_WS_METHODS.runsControl])(
+    "has the client check orchestration:operate before sending %s",
+    (method) => {
+      expect(clientRpcRequiredScopes(method, undefined)).toEqual([AuthOrchestrationOperateScope]);
+    },
+  );
 
   it.each(Object.keys(FORK_CREWS_READ_RPC_SCOPES))("leaves the read %s unguarded", (method) => {
     expect(clientRpcRequiredScopes(method, undefined)).toEqual([]);

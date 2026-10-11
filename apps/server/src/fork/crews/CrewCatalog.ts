@@ -7,7 +7,12 @@
  *
  * @module CrewCatalog
  */
-import { EnvironmentId, type ProjectId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type ModelSelection,
+  type ProjectId,
+  type RuntimeMode,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -23,7 +28,9 @@ import { parse as parseYaml } from "yaml";
 import type {
   CrewDiagnostic,
   CrewFile,
+  CrewMcpFile,
   CrewSummary,
+  CrewToolsFile,
 } from "../../../../../packages/contracts/src/fork/crews/crewFile.ts";
 import type { CrewRoleOverride } from "../../../../../packages/contracts/src/fork/crews/crewModel.ts";
 import {
@@ -79,6 +86,10 @@ export class CrewCatalog extends Context.Service<
     ) => Effect.Effect<ReadonlyArray<CrewSummary>, ForkCrewsError>;
     /** One crew with its diagnostics and each role's resolved model, runtime mode and toolbox. */
     readonly get: (input: CrewGetInput) => Effect.Effect<CrewDetail, ForkCrewsError>;
+    /** `get` as a run about to start sees it, with what the run freezes. */
+    readonly resolveRun: (
+      input: CrewRunResolveInput,
+    ) => Effect.Effect<CrewRunResolution, ForkCrewsError>;
     readonly getToolbox: (projectId: ProjectId) => Effect.Effect<ProjectToolbox, ForkCrewsError>;
     /** Changes who wins a name collision, and republishes to subscribers. */
     readonly setToolboxMode: (
@@ -106,6 +117,27 @@ export class CrewCatalog extends Context.Service<
     ) => Effect.Effect<void, ForkCrewsError>;
   }
 >()("t3/fork/crews/CrewCatalog") {}
+
+export interface CrewRunResolveInput {
+  readonly projectId: ProjectId;
+  readonly crewId: string;
+  readonly roleModelOverrides?: Readonly<Record<string, ModelSelection>> | undefined;
+  readonly composerSelection?: ModelSelection | undefined;
+  /** The mode the run starts in; a mode from the crew file is clamped to it. */
+  readonly startingRuntimeMode: RuntimeMode;
+}
+
+export interface CrewRunResolution {
+  readonly detail: CrewDetail;
+  readonly toolboxMode: ToolboxMode;
+  /** The crew folder's text files by relative path. */
+  readonly files: Readonly<Record<string, string>>;
+  /** The definitions a resolved toolbox item names, by where it came from. */
+  readonly mcp: { readonly home: CrewMcpFile; readonly repo: CrewMcpFile };
+  readonly tools: CrewToolsFile;
+  /** The driver of each usable provider instance. */
+  readonly drivers: Readonly<Record<string, string>>;
+}
 
 // Editors emit several events per save, and `fs.watch` can fire before the content is flushed.
 const WATCH_DEBOUNCE = Duration.millis(100);
@@ -325,7 +357,10 @@ const make = Effect.gen(function* () {
       .listRoleOverrides(scope)
       .pipe(Effect.mapError((cause) => new ForkCrewsError({ reason: "unavailable", cause })));
 
-  const get: CrewCatalog["Service"]["get"] = Effect.fn("CrewCatalog.get")(function* (input) {
+  const resolve = Effect.fn("CrewCatalog.resolve")(function* (
+    input: CrewGetInput,
+    run?: CrewRunResolveInput,
+  ) {
     const state = yield* load(input.projectId);
     const loaded = state.crews.find((crew) => crew.directoryName === input.crewId);
     if (loaded === undefined) {
@@ -343,7 +378,7 @@ const make = Effect.gen(function* () {
         : yield* overridesFor({ scope: "project", projectId: input.projectId });
     const override = (overrides: ReadonlyArray<CrewRoleOverride>, roleId: string) =>
       overrides.find((entry) => entry.crewId === input.crewId && entry.roleId === roleId);
-    return {
+    const detail: CrewDetail = {
       summary,
       definition: crew,
       diagnostics,
@@ -356,19 +391,42 @@ const make = Effect.gen(function* () {
               return {
                 id,
                 model: resolveRoleModel(crew, id, {
+                  runOverride: run?.roleModelOverrides?.[id],
                   projectOverride: project?.modelSelection,
                   environmentOverride: environment?.modelSelection,
+                  composerSelection: run?.composerSelection,
                   providers: state.providers,
                 }),
                 runtimeMode: resolveRoleRuntimeMode(crew, id, {
                   projectOverride: project?.runtimeMode,
                   environmentOverride: environment?.runtimeMode,
+                  startingRuntimeMode: run?.startingRuntimeMode,
                 }),
                 toolbox: resolveRoleToolbox(crew, id, toolbox, state.mode),
               };
             }),
     };
+    return { detail, loaded, state };
   });
+
+  const get: CrewCatalog["Service"]["get"] = (input) =>
+    resolve(input).pipe(Effect.map((resolved) => resolved.detail));
+
+  const resolveRun: CrewCatalog["Service"]["resolveRun"] = (input) =>
+    resolve(input, input).pipe(
+      Effect.map(({ detail, loaded, state }) => ({
+        detail,
+        toolboxMode: state.mode,
+        files: Object.fromEntries(
+          Object.entries(loaded.files).map(([name, file]) => [name, file.text]),
+        ),
+        mcp: { home: state.home.mcpFile, repo: state.project?.mcpFile ?? { servers: {} } },
+        tools: state.project?.toolsFile ?? { tools: {} },
+        drivers: Object.fromEntries(
+          state.providers.map((provider) => [provider.instanceId, provider.driver]),
+        ),
+      })),
+    );
 
   const getToolbox: CrewCatalog["Service"]["getToolbox"] = Effect.fn("CrewCatalog.getToolbox")(
     function* (projectId) {
@@ -464,6 +522,7 @@ const make = Effect.gen(function* () {
   return CrewCatalog.of({
     list,
     get,
+    resolveRun,
     getToolbox,
     validateText,
     subscribe,

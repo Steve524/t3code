@@ -8,6 +8,7 @@ import {
   CrewToolsFile,
 } from "../../../../shared/src/fork/crews/crewFileSchema.ts";
 import {
+  AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthSettingsWriteScope,
   EnvironmentAuthorizationError,
@@ -17,6 +18,16 @@ import { ModelSelection } from "../../modelSelection.ts";
 import { RuntimeMode } from "../../providerPolicy.ts";
 import { CrewDiagnostic, CrewSummary, ResolvedRoleToolbox } from "./crewFile.ts";
 import { CrewRoleOverride, ResolvedRoleModel, ResolvedRoleRuntimeMode } from "./crewModel.ts";
+import {
+  CrewRunControlInput,
+  CrewRunListInput,
+  CrewRunStartInput,
+  CrewRunStartResult,
+  CrewRunSubscribeInput,
+  CrewRunSummary,
+  CrewRunTarget,
+  CrewRunView,
+} from "./crewRun.ts";
 import { ToolboxMode } from "./crewToolbox.ts";
 
 export const FORK_CREWS_WS_METHODS = {
@@ -29,15 +40,34 @@ export const FORK_CREWS_WS_METHODS = {
   roleOverridesList: "forkCrews.roleOverrides.list",
   roleOverridesSet: "forkCrews.roleOverrides.set",
   roleOverridesReset: "forkCrews.roleOverrides.reset",
+  runsStart: "forkCrews.runs.start",
+  runsControl: "forkCrews.runs.control",
+  runsGet: "forkCrews.runs.get",
+  runsList: "forkCrews.runs.list",
+  runsSubscribe: "forkCrews.runs.subscribe",
 } as const;
 
 /** Stream RPCs the client keeps subscribed. A new crews stream is added here, not in upstream. */
-export type ForkCrewsSubscriptionRpcTag = typeof FORK_CREWS_WS_METHODS.subscribe;
+export type ForkCrewsSubscriptionRpcTag =
+  | typeof FORK_CREWS_WS_METHODS.subscribe
+  | typeof FORK_CREWS_WS_METHODS.runsSubscribe;
 
 export class ForkCrewsError extends Schema.TaggedError<ForkCrewsError>()("ForkCrewsError", {
-  reason: Schema.Literals(["project_not_found", "crew_not_found", "unavailable"]),
+  reason: Schema.Literals([
+    "project_not_found",
+    "crew_not_found",
+    "run_not_found",
+    "crew_invalid",
+    "unsupported",
+    "invalid_request",
+    "launch_failed",
+    "unavailable",
+  ]),
   projectId: Schema.optionalKey(ProjectId),
   crewId: Schema.optionalKey(Schema.String),
+  runId: Schema.optionalKey(Schema.String),
+  // What was wrong, for the reasons that have more than one cause.
+  detail: Schema.optionalKey(Schema.String),
   cause: Schema.optionalKey(Schema.Defect()),
 }) {
   override get message(): string {
@@ -46,6 +76,14 @@ export class ForkCrewsError extends Schema.TaggedError<ForkCrewsError>()("ForkCr
         return `Project ${this.projectId ?? ""} was not found.`;
       case "crew_not_found":
         return `Crew ${this.crewId ?? ""} is not installed.`;
+      case "run_not_found":
+        return `Crew run ${this.runId ?? ""} was not found.`;
+      case "crew_invalid":
+        return `Crew ${this.crewId ?? ""} has errors in this project and cannot run.`;
+      case "unsupported":
+      case "invalid_request":
+      case "launch_failed":
+        return this.detail ?? "The crew run request was refused.";
       case "unavailable":
         return "Crews could not be read.";
     }
@@ -130,7 +168,13 @@ export type CrewRoleOverrideResetInput = typeof CrewRoleOverrideResetInput.Type;
 
 const error = Schema.Union([ForkCrewsError, EnvironmentAuthorizationError]);
 
-/** Spread into `WsRpcGroup`, which adds scope authorization. */
+/**
+ * Spread into `WsRpcGroup`, which adds scope authorization.
+ *
+ * Do not add to this list. The server's handler types cost the square of the group's size, and
+ * `WsRpcGroup` is at TypeScript's limit: with one more RPC (203) the server layer is typed `any`
+ * and `apps/server` fails to typecheck in `server.ts`. Add an action to an existing payload instead.
+ */
 export const ForkCrewsRpcs = [
   Rpc.make(FORK_CREWS_WS_METHODS.list, {
     payload: ProjectTarget,
@@ -170,6 +214,26 @@ export const ForkCrewsRpcs = [
     payload: CrewRoleOverrideResetInput,
     error,
   }),
+  Rpc.make(FORK_CREWS_WS_METHODS.runsStart, {
+    payload: CrewRunStartInput,
+    success: CrewRunStartResult,
+    error,
+  }),
+  /** Pause, resume, cancel, or answer a gate. */
+  Rpc.make(FORK_CREWS_WS_METHODS.runsControl, { payload: CrewRunControlInput, error }),
+  Rpc.make(FORK_CREWS_WS_METHODS.runsGet, { payload: CrewRunTarget, success: CrewRunView, error }),
+  Rpc.make(FORK_CREWS_WS_METHODS.runsList, {
+    payload: CrewRunListInput,
+    success: Schema.Array(CrewRunSummary),
+    error,
+  }),
+  /** The board on subscribe, then again after every change. One null for a thread with no run. */
+  Rpc.make(FORK_CREWS_WS_METHODS.runsSubscribe, {
+    payload: CrewRunSubscribeInput,
+    success: Schema.NullOr(CrewRunView),
+    error,
+    stream: true,
+  }),
 ] as const;
 
 /** Writes the client checks before sending; spread into `CLIENT_GUARDED_RPC_SCOPES`. */
@@ -177,6 +241,8 @@ export const FORK_CREWS_GUARDED_RPC_SCOPES = {
   [FORK_CREWS_WS_METHODS.toolboxSetMode]: AuthSettingsWriteScope,
   [FORK_CREWS_WS_METHODS.roleOverridesSet]: AuthSettingsWriteScope,
   [FORK_CREWS_WS_METHODS.roleOverridesReset]: AuthSettingsWriteScope,
+  [FORK_CREWS_WS_METHODS.runsStart]: AuthOrchestrationOperateScope,
+  [FORK_CREWS_WS_METHODS.runsControl]: AuthOrchestrationOperateScope,
 } as const;
 
 export const FORK_CREWS_READ_RPC_SCOPES = {
@@ -186,6 +252,9 @@ export const FORK_CREWS_READ_RPC_SCOPES = {
   [FORK_CREWS_WS_METHODS.validate]: AuthOrchestrationReadScope,
   [FORK_CREWS_WS_METHODS.toolboxGet]: AuthOrchestrationReadScope,
   [FORK_CREWS_WS_METHODS.roleOverridesList]: AuthOrchestrationReadScope,
+  [FORK_CREWS_WS_METHODS.runsGet]: AuthOrchestrationReadScope,
+  [FORK_CREWS_WS_METHODS.runsList]: AuthOrchestrationReadScope,
+  [FORK_CREWS_WS_METHODS.runsSubscribe]: AuthOrchestrationReadScope,
 } as const;
 
 /** The `rpc.aggregate` span label of each crews RPC; spread into `RPC_AGGREGATES`. */
@@ -199,4 +268,9 @@ export const FORK_CREWS_RPC_AGGREGATES = {
   [FORK_CREWS_WS_METHODS.roleOverridesList]: "forkCrews",
   [FORK_CREWS_WS_METHODS.roleOverridesSet]: "forkCrews",
   [FORK_CREWS_WS_METHODS.roleOverridesReset]: "forkCrews",
+  [FORK_CREWS_WS_METHODS.runsStart]: "forkCrews",
+  [FORK_CREWS_WS_METHODS.runsControl]: "forkCrews",
+  [FORK_CREWS_WS_METHODS.runsGet]: "forkCrews",
+  [FORK_CREWS_WS_METHODS.runsList]: "forkCrews",
+  [FORK_CREWS_WS_METHODS.runsSubscribe]: "forkCrews",
 } as const;

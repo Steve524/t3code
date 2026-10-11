@@ -45,4 +45,23 @@ describe("fork migrations", () => {
       );
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
+
+  it.effect("creates the crew settings and run tables", () =>
+    Effect.gen(function* () {
+      yield* runForkMigrations();
+      for (const table of [
+        "fork_crew_role_overrides",
+        "fork_crew_project_settings",
+        "fork_crew_runs",
+        "fork_crew_cards",
+        "fork_crew_artifacts",
+        "fork_crew_notes",
+        "fork_crew_events",
+        "fork_crew_outbox",
+        "fork_crew_thread_index",
+      ]) {
+        assert.ok(yield* tableExists(table), table);
+      }
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
 });

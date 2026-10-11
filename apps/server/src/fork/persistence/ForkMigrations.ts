@@ -13,6 +13,7 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
 
 import CrewSettings from "./Migrations/001_CrewSettings.ts";
+import CrewRuns from "./Migrations/002_CrewRuns.ts";
 
 export const FORK_MIGRATIONS_TABLE = "fork_migrations";
 
@@ -26,7 +27,10 @@ export type ForkMigrationEntry = readonly [
  * Every fork migration, in order. Ids start at 1 and are never reused.
  * Migration files live in `./Migrations/`.
  */
-const forkMigrationEntries: ReadonlyArray<ForkMigrationEntry> = [[1, "CrewSettings", CrewSettings]];
+const forkMigrationEntries: ReadonlyArray<ForkMigrationEntry> = [
+  [1, "CrewSettings", CrewSettings],
+  [2, "CrewRuns", CrewRuns],
+];
 
 const run = Migrator.make({});
 

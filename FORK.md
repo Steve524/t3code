@@ -23,6 +23,8 @@ it extends, not mixed into upstream files:
 - `apps/desktop/src/fork/` for Electron-only additions
 - `packages/contracts/src/fork/` for new wire schemas
 - `packages/client-runtime/src/fork/` for client logic shared by web and mobile
+- `packages/shared/src/fork/` for pure runtime logic shared by server and clients
+- `scripts/fork/` for fork build and codegen scripts
 - `docs/fork/` for fork documentation (do not edit upstream docs to describe fork features)
 
 If a directory doesn't exist yet, create it.

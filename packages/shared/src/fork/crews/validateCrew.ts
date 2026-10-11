@@ -18,7 +18,11 @@ export interface CrewValidationContext {
   readonly source?: CrewSource;
   // Keys are crew-relative paths; realPath and text come from the loader.
   readonly files: Readonly<Record<string, { readonly realPath: string; readonly text: string }>>;
-  readonly providerSnapshot?: ReadonlyArray<Pick<ServerProvider, "driver" | "enabled" | "models">>;
+  readonly providerSnapshot?: ReadonlyArray<
+    Pick<ServerProvider, "driver" | "enabled"> & {
+      readonly models: ReadonlyArray<Pick<ServerProvider["models"][number], "slug">>;
+    }
+  >;
   readonly toolbox?: CrewToolbox;
   readonly toolboxMode?: ToolboxMode;
 }

@@ -1,0 +1,11 @@
+tools:
+  unit-tests:
+    description: Run unit tests for changed packages
+    run: vp test run
+    timeoutSeconds: 600
+  e2e:
+    description: Run the end-to-end suite
+    run: vp run e2e
+  lint:
+    description: Lint the changed files
+    run: vp lint

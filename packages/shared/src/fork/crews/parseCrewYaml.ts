@@ -4,7 +4,7 @@ import * as SchemaIssue from "effect/SchemaIssue";
 import { isNode, LineCounter, parseDocument } from "yaml";
 
 import type { CrewDiagnostic } from "../../../../contracts/src/fork/crews/crewFile.ts";
-import { CrewFile, CrewsToolboxFile } from "./crewFileSchema.ts";
+import { CrewFile, CrewMcpFile, CrewsToolboxFile, CrewToolsFile } from "./crewFileSchema.ts";
 
 export interface CrewYamlResult<T> {
   readonly value: T | null;
@@ -74,10 +74,19 @@ function parseFile<S extends Schema.ConstraintDecoder<unknown>>(
   return { value: null, diagnostics };
 }
 
-export function parseCrewYaml(text: string) {
-  return parseFile(text, CrewFile, "crew.yaml");
+// `file` labels the diagnostics; loaders pass the path on disk.
+export function parseCrewYaml(text: string, file = "crew.yaml") {
+  return parseFile(text, CrewFile, file);
 }
 
-export function parseCrewsToolboxYaml(text: string) {
-  return parseFile(text, CrewsToolboxFile, ".t3/crews.yaml");
+export function parseCrewsToolboxYaml(text: string, file = ".t3/crews.yaml") {
+  return parseFile(text, CrewsToolboxFile, file);
+}
+
+export function parseCrewMcpYaml(text: string, file = "mcp.yaml") {
+  return parseFile(text, CrewMcpFile, file);
+}
+
+export function parseCrewToolsYaml(text: string, file = ".t3/tools.yaml") {
+  return parseFile(text, CrewToolsFile, file);
 }

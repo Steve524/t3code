@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Steve524/t3code/main/docs/fork/schema/crew.json
+version: 1
+id: bugfix-duo
+name: Bugfix duo
+description: Fix a bug, then check the fix.
+
+inputs:
+  brief: { type: text, required: true, description: The bug to fix }
+
+roles:
+  fixer:
+    name: Fixer
+    description: Finds the cause and fixes it
+    tags: [worker]
+    instructions: roles/fixer.md
+  checker:
+    name: Checker
+    description: Verifies the fix
+    tags: [reviewer]
+    instructions: roles/checker.md
+
+flow:
+  start: fix
+  steps:
+    fix:
+      role: fixer
+      task: "Fix this bug:\n\n{{inputs.brief}}"
+      next: check
+
+    check:
+      role: checker
+      task: "Check the fix:\n\n{{steps.fix.summary}}"
+      outcomes:
+        approve: done
+        changes: { to: fix, max: 2, else: done }
+
+    done:
+      type: end

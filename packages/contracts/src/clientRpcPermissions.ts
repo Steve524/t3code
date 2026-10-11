@@ -7,9 +7,11 @@ import {
   type AuthEnvironmentScope,
 } from "./auth.ts";
 import { WS_METHODS } from "./rpc.ts";
+import { FORK_CREWS_GUARDED_RPC_SCOPES } from "./fork/crews/crewRpc.ts"; // FORK: crews writes
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
+  ...FORK_CREWS_GUARDED_RPC_SCOPES, // FORK: crews writes
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,
   [WS_METHODS.pullRequestsUpdate]: AuthSourceControlWriteScope,

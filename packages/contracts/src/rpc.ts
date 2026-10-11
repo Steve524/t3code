@@ -362,6 +362,7 @@ import {
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
+import { ForkCrewsRpcs } from "./fork/crews/crewRpc.ts"; // FORK: crews rpc
 
 export const WS_METHODS = {
   // Project registry methods
@@ -2024,4 +2025,5 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2SubscribeArchivedShellRpc,
   WsOrchestrationV2SubscribeShellRpc,
   WsOrchestrationV2SubscribeThreadRpc,
+  ...ForkCrewsRpcs, // FORK: crews rpc
 ).middleware(RpcScopeAuthorization);

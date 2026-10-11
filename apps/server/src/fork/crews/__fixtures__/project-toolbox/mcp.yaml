@@ -1,0 +1,4 @@
+servers:
+  storybook:
+    command: npx
+    args: ["storybook-mcp"]

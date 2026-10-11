@@ -16,7 +16,7 @@ const tableExists = (name: string) =>
 describe("fork migrations", () => {
   it.effect("creates its own ledger on an empty database without creating upstream's", () =>
     Effect.gen(function* () {
-      assert.deepStrictEqual(yield* runForkMigrations(), []);
+      assert.deepStrictEqual(yield* runForkMigrations([]), []);
       assert.ok(yield* tableExists(FORK_MIGRATIONS_TABLE));
       assert.ok(!(yield* tableExists("effect_sql_migrations")));
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),

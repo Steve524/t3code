@@ -50,6 +50,8 @@ import {
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 import { validateSettingsScopeSearch } from "./settingsScope";
+// FORK: crews settings icon.
+import { CrewSettingsIcon } from "../../fork/crews/settings/crewSettingsRegistration";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
   [
@@ -77,6 +79,7 @@ const T3ConnectSidebarAvatar = lazy(() =>
 const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
+  "/settings/crews": CrewSettingsIcon, // FORK: crews settings icon.
   "/settings/general": Settings2Icon,
   "/settings/appearance": PaletteIcon,
   "/settings/projects": PanelsTopLeftIcon,

@@ -31,3 +31,16 @@ Dependencies added to upstream `package.json` files (`FORK.md` rule 8).
 | Package file | Dependency | Why |
 | ------------ | ---------- | --- |
 |              |            |     |
+
+## Crews settings touch points
+
+| File                                                      | What changed                                                                                                                      | Why                                                                                                                    |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/components/settings/settingsSearch.ts`      | Imports fork settings registration; extends `SettingsPath`, section labels, search items, and category scope with marked entries. | Makes `/settings/crews` reachable through settings navigation and search at environment, project, and checkout scopes. |
+| `apps/web/src/components/settings/SettingsSidebarNav.tsx` | Imports the fork icon and registers it for `/settings/crews`, both marked.                                                        | Gives the Crews settings entry an icon.                                                                                |
+| `apps/web/src/routeTree.gen.ts`                           | Regenerated to register the new `routes/settings.crews.tsx` route.                                                                | TanStack Router owns this generated file. Regenerate it after a merge instead of adding manual fork markers.           |
+
+The settings route renders only `apps/web/src/fork/crews/settings/` code. It uses
+the existing crew catalog and guarded commands, with query atoms added to
+`packages/client-runtime/src/fork/crews/catalog.ts`. Web and desktop share this
+page; mobile UI is outside phase 9. No dependencies were added.

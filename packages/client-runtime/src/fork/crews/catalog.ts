@@ -4,6 +4,7 @@ import { FORK_CREWS_WS_METHODS } from "../../../../contracts/src/fork/crews/crew
 import type * as EnvironmentRegistry from "../../connection/registry.ts";
 import {
   createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "../../state/runtime.ts";
 
@@ -11,14 +12,35 @@ import {
 export function createCrewCatalogAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
 ) {
+  const crewsLive = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    label: "environment-data:fork:crews:live",
+    tag: FORK_CREWS_WS_METHODS.subscribe,
+  });
   return {
     /**
      * Live crew list for one project, or for T3 home alone without a `projectId`. Each emission
      * also means a crew's detail may have changed.
      */
-    crewsLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
-      label: "environment-data:fork:crews:live",
-      tag: FORK_CREWS_WS_METHODS.subscribe,
+    crewsLive,
+    detail: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:fork:crews:detail",
+      tag: FORK_CREWS_WS_METHODS.get,
+      refreshTrigger: ({ environmentId, input }) =>
+        crewsLive({ environmentId, input: input.projectId ? { projectId: input.projectId } : {} }),
+    }),
+    toolbox: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:fork:crews:toolbox",
+      tag: FORK_CREWS_WS_METHODS.toolboxGet,
+      refreshTrigger: (target) => crewsLive(target),
+    }),
+    overrides: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:fork:crews:overrides",
+      tag: FORK_CREWS_WS_METHODS.roleOverridesList,
+      refreshTrigger: ({ environmentId, input }) =>
+        crewsLive({
+          environmentId,
+          input: input.scope === "project" ? { projectId: input.projectId } : {},
+        }),
     }),
     setToolboxMode: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:fork:crews:toolbox:set-mode",

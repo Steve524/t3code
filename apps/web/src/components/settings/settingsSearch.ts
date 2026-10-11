@@ -5,6 +5,13 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { commandLabel } from "./KeybindingsSettings.logic";
+// FORK-BEGIN: crews settings registration.
+import {
+  CREW_SETTINGS_PATH,
+  CREW_SETTINGS_LABELS,
+  CREW_SETTINGS_SEARCH_ITEMS,
+} from "../../fork/crews/settings/crewSettingsRegistration";
+// FORK-END
 import {
   validateSettingsScopeSearch,
   type ResolvedSettingsScope,
@@ -12,6 +19,7 @@ import {
 } from "./settingsScope";
 
 export type SettingsPath =
+  | typeof CREW_SETTINGS_PATH // FORK: crews settings route.
   | "/settings/projects"
   | "/settings/general"
   | "/settings/appearance"
@@ -87,6 +95,7 @@ export interface SettingsSearchAvailability {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
+  ...CREW_SETTINGS_LABELS, // FORK: crews settings section.
   "/settings/projects": "Project",
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
@@ -134,6 +143,7 @@ const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right
  * that may not be mounted point at their nearest stable section instead.
  */
 export const SETTINGS_SEARCH_ITEMS = [
+  ...CREW_SETTINGS_SEARCH_ITEMS, // FORK: crews settings search.
   {
     id: "storage-worktree-keep-when",
     targetId: "storage-worktrees",
@@ -945,6 +955,7 @@ export type SettingsSearchItemId = (typeof SETTINGS_SEARCH_ITEMS)[number]["id"];
 const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id, item] as const));
 
 const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
+  [CREW_SETTINGS_PATH]: "project-defaults", // FORK: crews settings scope.
   "/settings/projects": "project",
   "/settings/general": null,
   "/settings/appearance": null,

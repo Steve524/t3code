@@ -1,7 +1,7 @@
 /**
- * Runs crews against the real V2 orchestrator, thread launch and SQL, with only
- * the provider faked: each turn is answered by a script the test supplies, which
- * can call crew tools as that turn's agent before it ends the turn.
+ * Runs crews against the real V2 orchestrator, thread launch, SQL and git, with
+ * only the provider faked: each turn is answered by a script the test supplies,
+ * which can call crew tools as that turn's agent before it ends the turn.
  */
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -23,6 +23,7 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -54,10 +55,13 @@ import * as ProjectCloneTracker from "../../project/ProjectCloneTracker.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../../project/WorktreeSetupTracker.ts";
+import * as ProcessRunner from "../../processRunner.ts";
 import * as ProviderRegistryMock from "../../provider/testUtils/providerRegistryMock.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
 import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
+import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import { runForkMigrations } from "../persistence/ForkMigrations.ts";
 import * as CrewCatalog from "./CrewCatalog.ts";
 import * as CrewRunService from "./CrewRunService.ts";
@@ -66,6 +70,8 @@ import * as CrewMcp from "./mcp/handlers.ts";
 
 export const projectId = ProjectId.make("project:crew-runs");
 export const codex = ProviderInstanceId.make("codex");
+/** A second Codex account, for roles that spread their cards over a pool. */
+export const codexB = ProviderInstanceId.make("codex-b");
 export const claude = ProviderInstanceId.make("claudeAgent");
 
 export interface AgentTurn {
@@ -75,8 +81,13 @@ export interface AgentTurn {
   readonly text: string;
 }
 
-/** The agent's final message for a turn. Null leaves the turn running until it is stopped. */
+/**
+ * The agent's final message for a turn. Null leaves the turn running until the test ends it
+ * with `finish` or the run stops it.
+ */
 export type AgentScript = (turn: AgentTurn) => Effect.Effect<string | null>;
+/** Ends a turn a script left running. */
+type EndTurn = (response: string) => Effect.Effect<void>;
 
 function makeScriptedAdapter(input: {
   readonly instanceId: ProviderInstanceId;
@@ -84,6 +95,8 @@ function makeScriptedAdapter(input: {
   readonly capabilities: OrchestrationV2ProviderCapabilities;
   readonly turns: Ref.Ref<ReadonlyArray<AgentTurn>>;
   readonly script: () => AgentScript;
+  /** Filled with how to end the thread's turn, once a script leaves that turn running. */
+  readonly open: (threadId: ThreadId) => Deferred.Deferred<EndTurn>;
 }): ProviderAdapter.ProviderAdapterV2["Service"] {
   const unsupported = (detail: string) =>
     Effect.fail(new ProviderAdapter.ProviderAdapterProtocolError({ driver: input.driver, detail }));
@@ -185,11 +198,17 @@ function makeScriptedAdapter(input: {
               );
               turnInputs.set(providerTurnId, turnInput);
               yield* publish([providerTurn(turnInput, providerTurnId, "running", startedAt)]);
-              const response = yield* input.script()(turn);
-              if (response === null) return;
-              const completedAt = yield* DateTime.now;
-              const ordinal = `${input.instanceId}:${turnInput.threadId}:${turnInput.runOrdinal}`;
-              yield* publish([
+              const complete = (response: string) =>
+                Effect.gen(function* () {
+                  const completedAt = yield* DateTime.now;
+                  const ordinal = `${input.instanceId}:${turnInput.threadId}:${turnInput.runOrdinal}`;
+                  yield* publish(completion(response, completedAt, ordinal));
+                });
+              const completion = (
+                response: string,
+                completedAt: DateTime.Utc,
+                ordinal: string,
+              ): ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event> => [
                 providerTurn(turnInput, providerTurnId, "completed", completedAt),
                 {
                   type: "turn_item.updated",
@@ -225,7 +244,11 @@ function makeScriptedAdapter(input: {
                   failure: null,
                   threadDisposition: "reusable",
                 },
-              ]);
+              ];
+              const response = yield* input.script()(turn);
+              if (response === null)
+                yield* Deferred.succeed(input.open(turnInput.threadId), complete);
+              else yield* complete(response);
             }),
           steerTurn: () => Effect.void,
           interruptTurn: ({ providerThread, providerTurnId }) =>
@@ -276,6 +299,7 @@ const capabilities: OrchestratorMcpCapabilitiesResult = {
   interactionMode: "default",
   providers: [
     provider(codex, "codex", "gpt-5.6-terra", "gpt-5.6-luna"),
+    provider(codexB, "codex", "gpt-5.6-terra", "gpt-5.6-luna"),
     provider(claude, "claudeAgent", "claude-opus-5-5"),
   ],
   features: {
@@ -306,8 +330,15 @@ const mcpClient = McpSchema.McpServerClient.of({
 export interface CrewRunHarness {
   /** T3 home, seeded with the fixture crews, skill library and `mcp.yaml`. */
   readonly home: string;
-  /** The project's checkout, a git repository with the fixture `.t3` toolbox. */
+  /** The project's checkout, a git repository on `main` with the fixture `.t3` toolbox committed. */
   readonly workspace: string;
+  /** Runs git in a checkout and returns what it printed. */
+  readonly git: (cwd: string, ...args: ReadonlyArray<string>) => Effect.Effect<string>;
+  /**
+   * Ends a turn its script left running, with the agent's final message. A card is `working`
+   * before its thread's turn starts, so this waits for that turn.
+   */
+  readonly finish: (threadId: ThreadId, text: string) => Effect.Effect<void>;
   /** Set this before starting a run: it answers every turn from then on. */
   readonly agent: { script: AgentScript };
   /** Every turn a fake provider was asked to run, in order. */
@@ -354,6 +385,12 @@ export const withCrewRuns = <A, E>(
     yield* fileSystem.copy(path.join(fixtures, "project-toolbox"), path.join(workspace, ".t3"));
 
     const turns = yield* Ref.make<ReadonlyArray<AgentTurn>>([]);
+    const running = new Map<ThreadId, Deferred.Deferred<EndTurn>>();
+    const open = (threadId: ThreadId) => {
+      const slot = running.get(threadId) ?? Deferred.makeUnsafe<EndTurn>();
+      running.set(threadId, slot);
+      return slot;
+    };
     const agent: CrewRunHarness["agent"] = { script: () => Effect.succeed("Done.") };
     const adapter = (
       instanceId: ProviderInstanceId,
@@ -366,6 +403,7 @@ export const withCrewRuns = <A, E>(
         capabilities: providerCapabilities,
         turns,
         script: () => agent.script,
+        open,
       });
 
     const project = {
@@ -397,11 +435,17 @@ export const withCrewRuns = <A, E>(
       },
       ProviderAdapterRegistry.layerFromAdapters([
         adapter(codex, "codex", CodexProviderCapabilitiesV2),
+        adapter(codexB, "codex", CodexProviderCapabilitiesV2),
         adapter(claude, "claudeAgent", ClaudeProviderCapabilitiesV2),
       ]),
       { databaseLayer: layerDatabase },
     );
     const layerThreads = ThreadManagementService.layer.pipe(Layer.provide(layerOrchestrator));
+    const layerConfig = ServerConfig.layerTest(process.cwd(), home);
+    const layerGit = GitVcsDriver.layer.pipe(
+      Layer.provide(VcsProcess.layer),
+      Layer.provide(layerConfig),
+    );
     const layerExternal = Layer.mergeAll(
       WorktreeSetupTracker.layer,
       Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
@@ -410,16 +454,18 @@ export const withCrewRuns = <A, E>(
         getById: (id) =>
           Effect.succeed(id === projectId ? Option.some(project as never) : Option.none()),
       }),
-      // No real worktree: the card's "worktree" is the project checkout itself.
-      Layer.mock(GitWorkflow.GitWorkflowService)({
-        createWorktree: (input) =>
-          Effect.succeed({
-            worktree: { path: workspace, refName: input.newRefName, headSha: "abc" },
-          } as never),
-        remoteExists: () => Effect.succeed(false),
-        hasCommit: () => Effect.succeed(false),
-        removeWorktree: () => Effect.void,
-      }),
+      // Real worktrees, under the temporary T3 home.
+      Layer.unwrap(
+        Effect.gen(function* () {
+          const git = yield* GitVcsDriver.GitVcsDriver;
+          return Layer.mock(GitWorkflow.GitWorkflowService)({
+            createWorktree: (input, options) => git.createWorktree(input, options),
+            removeWorktree: (input) => git.removeWorktree(input),
+            remoteExists: () => Effect.succeed(false),
+            hasCommit: () => Effect.succeed(false),
+          });
+        }),
+      ).pipe(Layer.provide(layerGit)),
       Layer.succeed(ProjectSetupScriptRunner.ProjectSetupScriptRunner, {
         runForThread: () => Effect.succeed({ status: "no-script" as const }),
       }),
@@ -452,16 +498,33 @@ export const withCrewRuns = <A, E>(
           capabilities: () => Effect.succeed(capabilities),
         }),
       ),
-      Layer.provide(ServerConfig.layerTest(process.cwd(), home)),
+      Layer.provide(layerConfig),
       Layer.provide(layerLaunch),
       Layer.provideMerge(layerThreads),
       Layer.provide(layerExternal),
+      Layer.provide(ProcessRunner.layer),
+      Layer.provideMerge(layerGit),
       Layer.provideMerge(layerDatabase),
     );
 
     return yield* Effect.gen(function* () {
       const server = yield* mcpServer;
       const runs = yield* CrewRunService.CrewRunService;
+      const vcs = yield* GitVcsDriver.GitVcsDriver;
+      const git: CrewRunHarness["git"] = (cwd, ...args) =>
+        vcs.execute({ operation: "CrewRunHarness.git", cwd, args }).pipe(
+          Effect.map((result) => result.stdout.trim()),
+          Effect.orDie,
+        );
+      // Runs branch from `main`, and the toolbox is part of the checkout they branch from.
+      yield* git(workspace, "branch", "-M", "main");
+      yield* git(workspace, "add", "-A");
+      yield* git(workspace, "commit", "-m", "toolbox");
+      const finish: CrewRunHarness["finish"] = (threadId, text) =>
+        Effect.suspend(() => Deferred.await(open(threadId))).pipe(
+          Effect.tap(() => Effect.sync(() => running.delete(threadId))),
+          Effect.flatMap((complete) => complete(text)),
+        );
       const tool: CrewRunHarness["tool"] = (turn, name, args = {}) =>
         server.callTool({ name, arguments: args }).pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, {
@@ -495,6 +558,6 @@ export const withCrewRuns = <A, E>(
             Effect.map(Option.getOrThrow),
             Effect.orDie,
           );
-      return yield* body({ home, workspace, agent, turns, tool, until });
+      return yield* body({ home, workspace, agent, turns, tool, until, git, finish });
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));

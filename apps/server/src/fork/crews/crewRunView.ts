@@ -14,7 +14,7 @@ import type { CrewCardRow, CrewRunRecord } from "./CrewRunStore.ts";
 
 /** Whose turn a card is waiting on. A finished run has nothing left running. */
 export function crewCardLane(
-  card: { readonly state: string; readonly outcome: string | null },
+  card: { readonly state: string; readonly outcome: string | null; readonly stepType?: string },
   runOver: boolean,
 ): CrewRunLane {
   switch (card.state) {
@@ -29,8 +29,9 @@ export function crewCardLane(
       return "waiting_lead";
     case "needs_you":
       return "needs_you";
-    // The card's own outcome is waiting on a decision card.
+    // The card's own outcome is waiting on a decision card. A merge waits on its conflict resolver.
     case "blocked":
+      if (card.stepType === "merge") return runOver ? "skipped" : "working";
       return card.outcome === "failed" ? "failed" : "needs_you";
     case "done":
       return "done";
@@ -87,7 +88,8 @@ export function buildCrewRunView(
       return {
         id,
         name: role.name,
-        modelSelection: role.modelSelection,
+        // A model the user picked mid-run is what the role's next cards run on.
+        modelSelection: snapshot.roleModels[id] ?? role.modelSelection,
         runtimeMode: role.runtimeMode,
         ...(options.toolbox && toolbox !== undefined ? { toolbox } : {}),
       };

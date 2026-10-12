@@ -8,6 +8,9 @@ import {
   CrewNoteInput,
   CrewReportInput,
   CrewSkillResult,
+  CrewToolList,
+  CrewToolRunInput,
+  CrewToolRunResult,
   CrewValidateResult,
 } from "../../../../../../packages/contracts/src/fork/crews/crewRun.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
@@ -22,8 +25,9 @@ const dependencies = [
 // A refusal is either the caller check's or the crew's own.
 const failure = Schema.Union([OrchestratorMcpFailure, CrewMcpFailure]);
 
-// Every tool here touches crew state only, so each is annotated read-only: that is what lets a
-// role in a read-only sandbox report. Keep `readOnlyTools.ts` in step with this list.
+// A tool that touches crew state only is annotated read-only: that is what lets a role in a
+// read-only sandbox report. `crew_tool_run` runs a command, so it is not. Keep `readOnlyTools.ts`
+// in step with the read-only ones.
 
 const CrewContextTool = Tool.make("crew_context", {
   description:
@@ -122,6 +126,32 @@ const CrewValidateTool = Tool.make("crew_validate", {
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true);
 
+const CrewToolListTool = Tool.make("crew_tool_list", {
+  description:
+    "Needs an agent working for a crew run. Lists the tools in your role's toolbox: project commands such as its tests or linter, with the command each runs and its timeout.",
+  success: CrewToolList,
+  failure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "List this role's crew tools")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
+
+const CrewToolRunTool = Tool.make("crew_tool_run", {
+  description:
+    "Needs an agent working for a crew run. Runs a tool from your role's toolbox in your checkout and returns its exit code and the end of its output. `args` are appended to the tool's command and may hold only plain words such as paths, flags and test names. A tool outside your toolbox is refused.",
+  parameters: CrewToolRunInput,
+  success: CrewToolRunResult,
+  failure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Run a crew tool")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false);
+
 export const CrewToolkit = Toolkit.make(
   CrewContextTool,
   CrewReportTool,
@@ -130,4 +160,6 @@ export const CrewToolkit = Toolkit.make(
   CrewSkillGetTool,
   CrewNoteTool,
   CrewValidateTool,
+  CrewToolListTool,
+  CrewToolRunTool,
 );

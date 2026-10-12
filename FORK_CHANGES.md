@@ -37,6 +37,12 @@ merge brings new upstream RPCs, expect that failure: it is this limit, not a los
 back under it by folding fork RPCs together in `packages/contracts/src/fork/crews/crewRpc.ts`, or by
 moving them to their own `RpcGroup`.
 
+Crew run controls (retry, skip, force outcome, role model, route reset, budget answers) are actions
+on `forkCrews.runs.control`, so they added no RPC. `crew_tool_list` joined the read-only allowlist
+through the constant already spread into `ClaudeAdapterV2.ts`; `crew_tool_run` runs a command and
+stays off it. Parallel work and git (worktrees, auto-commit, merge, script steps) touched no
+upstream file and added no dependency: ownership globs use Node's `path.matchesGlob`.
+
 ## Added dependencies
 
 Dependencies added to upstream `package.json` files (`FORK.md` rule 8).

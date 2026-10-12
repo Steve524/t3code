@@ -8,7 +8,13 @@
  *
  * @module CrewRunStore
  */
-import type { ModelSelection, ProjectId, RuntimeMode, ThreadId } from "@t3tools/contracts";
+import {
+  type ModelSelection,
+  type ProjectId,
+  ProviderInstanceId,
+  type RuntimeMode,
+  type ThreadId,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import type * as SqlClient from "effect/sql/SqlClient";
@@ -39,6 +45,8 @@ export interface CrewRunRecord {
   readonly crewId: string;
   readonly crew: CrewFile;
   readonly files: Readonly<Record<string, string>>;
+  /** The tools the crew's script steps run, as the repo defined them at start. */
+  readonly scriptTools: Readonly<Record<string, CrewRunToolbox["tools"][number]>>;
   readonly start: CrewRunStartInput;
   readonly inputs: Readonly<Record<string, string | boolean>>;
   readonly roles: Readonly<Record<string, CrewRunRole>>;
@@ -61,6 +69,30 @@ export interface CrewThreadEntry {
   readonly cardId: string;
   readonly attempt: number;
   readonly orchestrationRunId: string | null;
+}
+
+/** Where a card with its own worktree works, and what it may change there. */
+export interface CrewCardWorkspace {
+  /** The engine's run-local card id. */
+  readonly cardId: string;
+  readonly worktreePath: string;
+  readonly branch: string;
+  /** The integration head the branch started from. Null for a follow-up in an earlier card's worktree. */
+  readonly baseSha: string | null;
+  readonly owns: ReadonlyArray<string>;
+  readonly ownershipViolations: ReadonlyArray<string>;
+}
+
+/** The model a card runs on: the user's mid-run pick, else the role's, on the card's own instance. */
+export function crewCardModel(run: CrewRunRecord, card: CrewCard): ModelSelection | null {
+  const role = card.roleId === null ? undefined : run.roles[card.roleId];
+  if (card.roleId === null || role === undefined) return null;
+  const picked = run.snapshot.roleModels[card.roleId];
+  if (picked !== undefined) return picked;
+  const instanceId = card.instanceId ?? role.modelSelection.instanceId;
+  return instanceId === role.modelSelection.instanceId
+    ? role.modelSelection
+    : { ...role.modelSelection, instanceId: ProviderInstanceId.make(instanceId) };
 }
 
 /** A card row without the board's derived lane and column. */
@@ -95,13 +127,16 @@ const iso = (millis: number | null) =>
 const runtime = ({ crew: _crew, flow: _flow, ...state }: CrewSnapshot) => state;
 
 function toRecord(row: RunRow): CrewRunRecord {
-  const { crew, files } = parse<Pick<CrewRunRecord, "crew" | "files">>(row.crew_snapshot_json);
+  const { crew, files, scriptTools } = parse<Pick<CrewRunRecord, "crew" | "files" | "scriptTools">>(
+    row.crew_snapshot_json,
+  );
   return {
     runId: row.run_id,
     projectId: row.project_id,
     crewId: row.crew_id,
     crew,
     files,
+    scriptTools,
     start: parse(row.start_json),
     inputs: parse(row.inputs_json),
     roles: parse(row.resolved_models_json),
@@ -141,7 +176,8 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
       )
       VALUES (
         ${run.runId}, ${run.projectId}, ${run.crewId},
-        ${json({ crew: run.crew, files: run.files })}, ${run.crewHash}, ${json(run.start)},
+        ${json({ crew: run.crew, files: run.files, scriptTools: run.scriptTools })},
+        ${run.crewHash}, ${json(run.start)},
         ${json(run.inputs)}, ${json(run.roles)}, ${run.toolboxMode}, ${json(run.toolboxes)},
         ${run.snapshot.homeMode}, ${null}, ${json(run.snapshot.routeCounters)},
         ${budgetJson(run.snapshot)}, ${run.integrationBranch}, ${run.snapshot.status},
@@ -153,7 +189,9 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
   const upsertCard = (run: CrewRunRecord, card: CrewCard, at: string) => {
     const started = card.state === "working" || card.state === "reported" ? at : null;
     const finished = ["done", "skipped", "cancelled"].includes(card.state) ? at : null;
-    const model = card.roleId === null ? undefined : run.roles[card.roleId]?.modelSelection;
+    // Stored only while an attempt waits to be dispatched: a model the user picks later is for
+    // later attempts, not the one already running.
+    const model = crewCardModel(run, card);
     return sql`
       INSERT INTO fork_crew_cards (
         card_id, run_id, step_id, step_type, visit, item_index, item_json, role_id,
@@ -164,7 +202,7 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
       VALUES (
         ${cardKey(run.runId, card.id)}, ${run.runId}, ${card.stepId}, ${card.type},
         ${card.visit}, ${card.itemIndex}, ${card.item === null ? null : json(card.item)},
-        ${card.roleId}, ${model === undefined ? null : json(model)}, ${card.threadId},
+        ${card.roleId}, ${model === null ? null : json(model)}, ${card.threadId},
         ${card.orchestrationRunId}, ${card.isolation}, ${card.decidedBy},
         ${card.sourceCardId === null ? null : cardKey(run.runId, card.sourceCardId)},
         ${card.attempt}, ${card.reminderSent ? 1 : 0}, ${card.state}, ${card.outcome},
@@ -172,7 +210,10 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
         ${started}, ${finished}, ${at}
       )
       ON CONFLICT (card_id) DO UPDATE SET
-        model_selection_json = excluded.model_selection_json,
+        model_selection_json = CASE
+          WHEN excluded.state IN ('queued', 'dispatching') THEN excluded.model_selection_json
+          ELSE fork_crew_cards.model_selection_json
+        END,
         thread_id = excluded.thread_id,
         orchestration_run_id = excluded.orchestration_run_id,
         workspace_mode = excluded.workspace_mode,
@@ -311,6 +352,9 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
         readonly gate: string | null;
         readonly decidedBy: CrewRunCard["decidedBy"];
         readonly sourceCardId: string | null;
+        readonly branch: string | null;
+        readonly worktreePath: string | null;
+        readonly ownershipViolations: string | null;
         readonly startedAt: string | null;
         readonly finishedAt: string | null;
         readonly updatedAt: string;
@@ -331,6 +375,9 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
           gate_json AS "gate",
           decided_by AS "decidedBy",
           source_card_id AS "sourceCardId",
+          branch AS "branch",
+          worktree_path AS "worktreePath",
+          ownership_violations_json AS "ownershipViolations",
           started_at AS "startedAt",
           finished_at AS "finishedAt",
           updated_at AS "updatedAt"
@@ -343,6 +390,63 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
             ...row,
             modelSelection: orNull(row.modelSelection),
             gate: orNull(row.gate),
+            ownershipViolations: orNull<Array<string>>(row.ownershipViolations) ?? [],
+          })),
+        ),
+      ),
+
+    /** Records the worktree a card's thread works in. A follow-up there keeps the base. */
+    setCardWorkspace: (runId: string, workspace: Omit<CrewCardWorkspace, "ownershipViolations">) =>
+      sql`
+        UPDATE fork_crew_cards SET
+          worktree_path = ${workspace.worktreePath},
+          branch = ${workspace.branch},
+          base_sha = COALESCE(${workspace.baseSha}, base_sha),
+          owns_json = ${json(workspace.owns)}
+        WHERE card_id = ${cardKey(runId, workspace.cardId)}
+      `.pipe(Effect.asVoid),
+
+    /** What a merge found a card's branch changed, and which of it the card does not own. */
+    setCardOwnership: (
+      runId: string,
+      cardId: string,
+      changedPaths: ReadonlyArray<string>,
+      violations: ReadonlyArray<string>,
+    ) =>
+      sql`
+        UPDATE fork_crew_cards SET
+          changed_paths_json = ${json(changedPaths)},
+          ownership_violations_json = ${json(violations)}
+        WHERE card_id = ${cardKey(runId, cardId)}
+      `.pipe(Effect.asVoid),
+
+    /** Every card that works in a worktree of its own, in the order the cards finished. */
+    listCardWorkspaces: (runId: string) =>
+      sql<{
+        readonly cardId: string;
+        readonly worktreePath: string;
+        readonly branch: string;
+        readonly baseSha: string | null;
+        readonly owns: string | null;
+        readonly ownershipViolations: string | null;
+      }>`
+        SELECT
+          card_id AS "cardId",
+          worktree_path AS "worktreePath",
+          branch AS "branch",
+          base_sha AS "baseSha",
+          owns_json AS "owns",
+          ownership_violations_json AS "ownershipViolations"
+        FROM fork_crew_cards
+        WHERE run_id = ${runId} AND worktree_path IS NOT NULL AND branch IS NOT NULL
+        ORDER BY finished_at IS NULL, finished_at, rowid
+      `.pipe(
+        Effect.map((rows) =>
+          rows.map((row): CrewCardWorkspace => ({
+            ...row,
+            cardId: row.cardId.slice(runId.length + 1),
+            owns: orNull<Array<string>>(row.owns) ?? [],
+            ownershipViolations: orNull<Array<string>>(row.ownershipViolations) ?? [],
           })),
         ),
       ),

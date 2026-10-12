@@ -89,8 +89,13 @@ export const CrewRunCard = Schema.Struct({
     }),
   ),
   decidedBy: Schema.NullOr(Schema.Literals(["user", "lead"])),
-  // A decision card names the card whose outcome it settles.
+  // A decision card names the card whose outcome it settles; a conflict resolver, its merge.
   sourceCardId: Schema.NullOr(Schema.String),
+  // Where a card with its own worktree works. Null for cards in the run's shared checkout.
+  branch: Schema.NullOr(Schema.String),
+  worktreePath: Schema.NullOr(Schema.String),
+  // Changed paths outside the card's `owns`, found when its branch came up for merging.
+  ownershipViolations: Schema.Array(Schema.String),
   startedAt: Schema.NullOr(Schema.String),
   finishedAt: Schema.NullOr(Schema.String),
   updatedAt: Schema.String,
@@ -206,6 +211,32 @@ export const CrewRunControlInput = Schema.Struct({
       outcome: Schema.String,
       note: Schema.optionalKey(Schema.String),
     }),
+    // A new attempt of a card that is not running, or its step carrying on without it.
+    Schema.Struct({ type: Schema.Literals(["retryCard", "skipCard"]), cardId: Schema.String }),
+    Schema.Struct({
+      type: Schema.Literal("forceOutcome"),
+      cardId: Schema.String,
+      outcome: Schema.String,
+    }),
+    // Applies to the role's cards dispatched from now on.
+    Schema.Struct({
+      type: Schema.Literal("setRoleModel"),
+      roleId: Schema.String,
+      selection: ModelSelection,
+    }),
+    Schema.Struct({ type: Schema.Literal("resetRoute"), routeId: Schema.String }),
+    // Raises one of this run's budgets, which also answers that budget's gate.
+    Schema.Struct({
+      type: Schema.Literal("extendBudget"),
+      kind: Schema.Literals(["maxCards", "maxHours", "maxFanoutItems"]),
+      by: Schema.Number,
+    }),
+    // Answers the gate of a fan-out with more items than the run allows.
+    Schema.Struct({
+      type: Schema.Literal("selectFanout"),
+      choice: Schema.Literals(["all", "first", "stop"]),
+      count: Schema.optionalKey(Schema.Number),
+    }),
   ]),
 });
 export type CrewRunControlInput = typeof CrewRunControlInput.Type;
@@ -277,6 +308,34 @@ export const CrewSkillResult = Schema.Struct({
   warning: Schema.optionalKey(Schema.String),
 });
 export type CrewSkillResult = typeof CrewSkillResult.Type;
+
+export const CrewToolList = Schema.Struct({
+  tools: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      source: Source,
+      description: Schema.optionalKey(Schema.String),
+      run: Schema.String,
+      timeoutSeconds: Schema.optionalKey(Schema.Number),
+    }),
+  ),
+});
+
+export const CrewToolRunInput = Schema.Struct({
+  name: Schema.String,
+  // Appended to the tool's command. Plain words only: paths, flags, test names.
+  args: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+export type CrewToolRunInput = typeof CrewToolRunInput.Type;
+
+export const CrewToolRunResult = Schema.Struct({
+  // Null when the command was stopped at its timeout.
+  exitCode: Schema.NullOr(Schema.Number),
+  timedOut: Schema.Boolean,
+  // The end of the command's output.
+  output: Schema.String,
+});
+export type CrewToolRunResult = typeof CrewToolRunResult.Type;
 
 export const CrewNoteInput = Schema.Struct({
   toRole: Schema.optionalKey(Schema.String),

@@ -25,6 +25,15 @@ describe("board lanes", () => {
     expect(crewCardLane({ state, outcome }, false)).toBe(lane);
   });
 
+  it("shows a merge that waits on its conflict resolver as working, not as the user's turn", () => {
+    expect(crewCardLane({ state: "blocked", outcome: null, stepType: "merge" }, false)).toBe(
+      "working",
+    );
+    expect(crewCardLane({ state: "blocked", outcome: null, stepType: "merge" }, true)).toBe(
+      "skipped",
+    );
+  });
+
   it.each(["queued", "working", "stopping"])(
     "shows a %s card as skipped once the run is over",
     (state) => {

@@ -55,6 +55,12 @@ const handlers = {
   crew_validate: McpToolAccess.readsAsCaller((input) =>
     asCard((runs, threadId) => runs.validate(threadId, input)),
   ),
+  crew_tool_list: McpToolAccess.readsAsCaller(() =>
+    asCard((runs, threadId) => runs.listTools(threadId)),
+  ),
+  crew_tool_run: McpToolAccess.actsAsCaller((input) =>
+    asCard((runs, threadId) => runs.runTool(threadId, input)),
+  ),
 } satisfies McpToolAccess.Handlers<typeof CrewToolkit.tools>;
 
 export const layer = McpToolAccess.toLayer(CrewToolkit, handlers);

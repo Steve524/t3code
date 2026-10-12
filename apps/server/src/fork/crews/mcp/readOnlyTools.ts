@@ -14,6 +14,7 @@ export const CREW_STATE_MCP_TOOL_NAMES = [
   "crew_skill_get",
   "crew_note",
   "crew_validate",
+  "crew_tool_list",
 ] as const;
 
 /** Spread into `CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS`. */

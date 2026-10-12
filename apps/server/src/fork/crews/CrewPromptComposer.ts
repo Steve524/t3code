@@ -83,7 +83,7 @@ export function renderCrewTemplate(text: string, context: Readonly<Record<string
   });
 }
 
-function roleSection(input: CrewPromptInput, roleId: string) {
+function roleSection(input: Pick<CrewPromptInput, "crew" | "files" | "driver">, roleId: string) {
   const { crew, files } = input;
   const role = crew.roles[roleId];
   if (role === undefined) return "";
@@ -179,6 +179,20 @@ function compose(input: CrewPromptInput, inlineArtifacts: boolean) {
           ],
     ],
     [
+      "Tools",
+      input.toolbox.tools.length === 0
+        ? []
+        : [
+            input.toolbox.tools
+              .map(
+                (tool) =>
+                  `- ${tool.name}${tool.description === undefined ? "" : `: ${tool.description}`}`,
+              )
+              .join("\n"),
+            "Run one with `crew_tool_run`. It runs in your checkout and returns its exit code and the end of its output.",
+          ],
+    ],
+    [
       "Protocol",
       [
         `Allowed outcomes: ${outcomes.join(", ")}. Report \`failed\` if you cannot do the work.`,
@@ -208,6 +222,38 @@ export function composeCrewCardPrompt(input: CrewPromptInput): string {
   return (
     prompt.length <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS ? prompt : compose(input, false)
   ).slice(0, PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
+}
+
+/** The prompt for the role a merge step names to resolve a conflict left in the shared checkout. */
+export function composeCrewConflictPrompt(
+  input: Pick<CrewPromptInput, "crew" | "files" | "driver" | "branch"> & {
+    readonly roleId: string;
+    readonly paths: ReadonlyArray<string>;
+  },
+): string {
+  const sections = [
+    [
+      "Task",
+      [
+        `Merging the crew's work${input.branch === null ? "" : ` into \`${input.branch}\``} stopped on conflicts in:`,
+        input.paths.map((file) => `- ${file}`).join("\n"),
+        "Resolve every conflict in these files so that both sides' intent is kept, and remove the conflict markers.",
+      ].join("\n\n"),
+    ],
+    ["Your role", roleSection(input, input.roleId)],
+    [
+      "Workspace rules",
+      "Edit the files in place. Do not commit, abort the merge, switch branches or push. The crew checks the files and commits the merge when your turn ends.",
+    ],
+    [
+      "Protocol",
+      "Call `crew_report` once with outcome `done` and a summary of how you resolved each file before you end your turn.",
+    ],
+  ];
+  return sections
+    .map(([title, body]) => `## ${title}\n\n${body}`)
+    .join("\n\n")
+    .slice(0, PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
 }
 
 /** Sent once to a role that ended its turn without reporting. */

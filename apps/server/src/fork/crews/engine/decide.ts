@@ -20,6 +20,7 @@ export function createCrewSnapshot(
   options: {
     artifacts?: Record<string, unknown>;
     roleInstances?: Record<string, string>;
+    rolePools?: Record<string, string[]>;
     providerCaps?: Record<string, number>;
   } = {},
 ): CrewSnapshot {
@@ -41,6 +42,7 @@ export function createCrewSnapshot(
       flow.edges.filter((e) => e.limit && e.kind !== "join").map((e) => [e.id, 0]),
     ),
     roleInstances: options.roleInstances ?? {},
+    rolePools: options.rolePools ?? {},
     roleModels: {},
     providerCaps: options.providerCaps ?? {},
     budget: {
@@ -145,6 +147,16 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     for (const card of snapshot.cards) stopCard(card);
     for (const group of snapshot.groups) group.state = "done";
     snapshot.budgetGate = null;
+    // A failed run keeps its card worktrees for whoever looks into it.
+    if (status !== "failed") {
+      const threads = new Set<string>();
+      for (const card of snapshot.cards) {
+        if (card.isolation !== "worktree" || card.threadId === null || threads.has(card.threadId))
+          continue;
+        threads.add(card.threadId);
+        effects.push({ type: "remove_worktree", cardId: card.id });
+      }
+    }
     if (status === "completed") emit({ type: "run.completed" });
     else if (status === "failed")
       emit({ type: "run.failed", reason: "Flow ended with failed status." });
@@ -464,6 +476,13 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       if (card.state !== "queued") continue;
       const step = getStep(card.stepId);
       card.instanceId = card.roleId ? (snapshot.roleInstances[card.roleId] ?? null) : null;
+      // Fan-out items take a pooled role's instances in turn, unless the user picked its model.
+      const pool =
+        card.roleId === null || snapshot.roleModels[card.roleId]
+          ? undefined
+          : snapshot.rolePools[card.roleId];
+      if (pool?.length && card.itemIndex !== null)
+        card.instanceId = pool[card.itemIndex % pool.length]!;
       if (
         card.followUp === null &&
         "continue" in step &&
@@ -542,8 +561,23 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     case "card.completed":
     case "card.failed":
       if (currentAttempt && isActive(card)) {
+        const merge =
+          card.sourceCardId !== null && card.type === "task"
+            ? getCard(card.sourceCardId)
+            : undefined;
+        // Why a card failed is all the board has to show for it.
+        if (event.type === "card.failed") card.note = event.reason;
         if (card.state === "stopping") card.state = "cancelled";
-        else
+        else if (merge) {
+          // A conflict resolver routes nothing: its merge checks the checkout and carries on.
+          card.state = "done";
+          card.outcome = card.report?.outcome ?? "done";
+          emit({ type: "card.completed", ...ref(card), outcome: card.outcome });
+          if (merge.state === "blocked") {
+            merge.state = "working";
+            effects.push({ type: "merge_branch", cardId: merge.id });
+          }
+        } else
           finish(
             card,
             event.type === "card.completed"
@@ -661,7 +695,14 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       endRun("failed");
       break;
     case "user.card_action":
-      if (!card || card.type === "gate" || card.type === "decision" || isActive(card)) break;
+      if (
+        !card ||
+        card.type === "gate" ||
+        card.type === "decision" ||
+        card.sourceCardId !== null ||
+        isActive(card)
+      )
+        break;
       if (
         event.action === "force_outcome" &&
         (!event.outcome ||
@@ -672,8 +713,8 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
             !(event.outcome === "done" && !routes.some((edge) => edge.from === card.stepId))))
       )
         throw new Error("Force outcome requires an available route.");
-      for (const decision of snapshot.cards)
-        if (decision.sourceCardId === card.id && !isClosed(decision)) decision.state = "skipped";
+      for (const dependent of snapshot.cards)
+        if (dependent.sourceCardId === card.id) stopCard(dependent);
       if (event.action === "retry") {
         if (isClosed(card))
           throw new Error("A routed card cannot be retried after its successors have started.");
@@ -707,8 +748,37 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       }
       break;
     case "merge.conflict":
-      if (card?.type === "merge" && isActive(card))
-        openGate(card, "user", `Merge conflict: ${event.paths.join(", ")}`, ["done"]);
+      if (card?.type === "merge" && isActive(card)) {
+        const step = getStep(card.stepId);
+        const role =
+          step.type === "merge" && typeof step.onConflict === "object"
+            ? step.onConflict.role
+            : null;
+        if (role === null)
+          openGate(card, "user", `Merge conflict: ${event.paths.join(", ")}`, ["done"]);
+        else {
+          // The merge gives up the shared checkout while a role resolves the conflict in it.
+          card.state = "blocked";
+          const resolver: CrewCard = {
+            ...card,
+            id: `${card.id}:resolve:${event.seq}`,
+            type: "task",
+            roleId: role,
+            isolation: "shared",
+            item: { paths: event.paths },
+            state: "queued",
+            attempt: 1,
+            reminderSent: false,
+            followUp: null,
+            sourceCardId: card.id,
+          };
+          snapshot.cards.push(resolver);
+          emit({ type: "card.created", card: resolver });
+        }
+      }
+      break;
+    case "merge.blocked":
+      if (card?.type === "merge" && isActive(card)) openGate(card, "user", event.reason, ["done"]);
       break;
     case "merge.resolved":
       if (card?.type === "merge" && !isClosed(card)) finish(card, "done");

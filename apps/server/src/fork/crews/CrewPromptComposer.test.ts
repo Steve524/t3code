@@ -9,6 +9,7 @@ import {
 } from "../../../../../packages/shared/src/fork/crews/crewTestFixtures.ts";
 import {
   composeCrewCardPrompt,
+  composeCrewConflictPrompt,
   crewPromptFiles,
   crewReminderPrompt,
   renderCrewTemplate,
@@ -147,6 +148,37 @@ describe("crew prompt", () => {
       '[\n  "a",\n  "b"\n]',
     );
     expect(renderCrewTemplate("{{item.owns.1}}", { item: { owns: ["a", "b"] } })).toBe("b");
+  });
+
+  it("lists the role's tools and how to run one", () => {
+    const tools = [
+      { name: "unit-tests", source: "repo" as const, description: "Run the tests", run: "vp test" },
+      { name: "lint", source: "repo" as const, run: "vp lint" },
+    ];
+    const prompt = composeCrewCardPrompt(
+      input("plan", { toolbox: { skills: [], mcp: [], tools } }),
+    );
+    expect(prompt).toContain("## Tools\n\n- unit-tests: Run the tests\n- lint\n\nRun one with");
+    expect(prompt.indexOf("## Tools")).toBeLessThan(prompt.indexOf("## Protocol"));
+    expect(composeCrewCardPrompt(input("plan"))).not.toContain("## Tools");
+  });
+
+  it("tells a conflict resolver which files to fix and to leave the commit to the crew", () => {
+    const prompt = composeCrewConflictPrompt({
+      crew: definition,
+      files,
+      roleId: "reviewer",
+      driver: "codex",
+      branch: "crew/example/abc12345",
+      paths: ["src/a.ts", "README.md"],
+    });
+    expect(prompt).toContain(
+      "into `crew/example/abc12345` stopped on conflicts in:\n\n- src/a.ts\n- README.md",
+    );
+    expect(prompt).toContain("## Your role\n\nYou are the Reviewer");
+    expect(prompt).toContain("Prefer short answers.");
+    expect(prompt).toContain("Do not commit, abort the merge");
+    expect(prompt).toContain("outcome `done`");
   });
 
   it("freezes only the files a prompt can read", () => {

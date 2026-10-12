@@ -35,6 +35,20 @@ export const handlers = Effect.gen(function* () {
           return runs.cancel(runId);
         case "resolveGate":
           return runs.resolveGate({ runId, ...action });
+        case "retryCard":
+          return runs.retryCard({ runId, ...action });
+        case "skipCard":
+          return runs.skipCard({ runId, ...action });
+        case "forceOutcome":
+          return runs.forceOutcome({ runId, ...action });
+        case "setRoleModel":
+          return runs.setRoleModel({ runId, ...action });
+        case "resetRoute":
+          return runs.resetRoute({ runId, ...action });
+        case "extendBudget":
+          return runs.extendBudget({ runId, ...action });
+        case "selectFanout":
+          return runs.selectFanout({ runId, ...action });
       }
     },
     [FORK_CREWS_WS_METHODS.runsGet]: (input) => runs.get(input.runId),

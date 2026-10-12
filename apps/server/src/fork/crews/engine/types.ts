@@ -70,6 +70,8 @@ export interface CrewSnapshot {
   artifacts: Record<string, unknown>;
   routeCounters: Record<string, number>;
   roleInstances: Record<string, string>;
+  // The instances a role's fan-out cards are spread over, when it has more than one.
+  rolePools: Record<string, string[]>;
   roleModels: Record<string, ModelSelection>;
   providerCaps: Record<string, number>;
   budget: {
@@ -105,6 +107,7 @@ export type CrewFact =
   | { type: "merge.card_merged"; cardId: string; sourceCardId: string }
   | { type: "merge.conflict"; cardId: string; paths: string[] }
   | { type: "merge.resolved"; cardId: string }
+  | { type: "merge.blocked"; cardId: string; reason: string }
   | ({ type: "script.finished"; exitCode: number; outputTail: string } & CardRef)
   | { type: "gate.opened"; cardId: string; prompt: string; outcomes: string[]; by: "user" | "lead" }
   | { type: "gate.resolved"; cardId: string; outcome: string; note: string; by: "user" | "lead" }

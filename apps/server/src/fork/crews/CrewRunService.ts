@@ -11,6 +11,7 @@
 import {
   CommandId,
   MessageId,
+  type ModelSelection,
   type ProviderInteractionMode,
   type RunId,
   ThreadId,
@@ -19,10 +20,12 @@ import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
@@ -32,6 +35,8 @@ import * as Hex from "effect/encoding/Hex";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { makeDrainableWorker, type DrainableWorker } from "@t3tools/shared/DrainableWorker";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { resolveProjectSettings, resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 
 import type {
   CrewDiagnostic,
@@ -50,13 +55,28 @@ import {
   type CrewRunToolbox,
   type CrewRunView,
   type CrewSkillResult,
+  type CrewToolRunInput,
+  type CrewToolRunResult,
 } from "../../../../../packages/contracts/src/fork/crews/crewRun.ts";
 import { compileCrewFlow } from "../../../../../packages/shared/src/fork/crews/compileCrewFlow.ts";
 import * as ThreadLaunchService from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
+import * as ProcessRunner from "../../processRunner.ts";
+import * as ProjectService from "../../project/ProjectService.ts";
+import * as ServerSettings from "../../serverSettings.ts";
+import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
+import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import * as CrewCatalog from "./CrewCatalog.ts";
 import {
+  crewCardBranch,
+  crewCardOwns,
+  crewCommitMessage,
+  crewOwnershipViolations,
+  isPlainToolArgument,
+} from "./crewGit.ts";
+import {
   composeCrewCardPrompt,
+  composeCrewConflictPrompt,
   crewPromptFiles,
   crewReminderPrompt,
 } from "./CrewPromptComposer.ts";
@@ -67,10 +87,16 @@ import {
   crewStepProduces,
   parseCrewReportBlock,
 } from "./crewReport.ts";
-import { makeCrewRunStore, type CrewRunRecord, type CrewRunRole } from "./CrewRunStore.ts";
+import {
+  crewCardModel,
+  makeCrewRunStore,
+  type CrewCardWorkspace,
+  type CrewRunRecord,
+  type CrewRunRole,
+} from "./CrewRunStore.ts";
 import { buildCrewRunView } from "./crewRunView.ts";
 import { createCrewSnapshot, decide } from "./engine/decide.ts";
-import type { CrewCard, CrewEffect, CrewEvent } from "./engine/types.ts";
+import type { BudgetKind, CrewCard, CrewEffect, CrewEvent } from "./engine/types.ts";
 
 export class CrewRunService extends Context.Service<
   CrewRunService,
@@ -99,6 +125,37 @@ export class CrewRunService extends Context.Service<
       readonly cardId: string;
       readonly outcome: string;
       readonly note?: string | undefined;
+    }) => Effect.Effect<void, ForkCrewsError>;
+    /** A new attempt of a card that is waiting, in its own thread when it has one. */
+    readonly retryCard: (input: CardTarget) => Effect.Effect<void, ForkCrewsError>;
+    /** The card's step carries on as if it had reported `skipped`. */
+    readonly skipCard: (input: CardTarget) => Effect.Effect<void, ForkCrewsError>;
+    /** Treats a waiting card as having reported `outcome`. */
+    readonly forceOutcome: (
+      input: CardTarget & { readonly outcome: string },
+    ) => Effect.Effect<void, ForkCrewsError>;
+    /** The model for the role's cards dispatched from now on. Running cards keep theirs. */
+    readonly setRoleModel: (input: {
+      readonly runId: string;
+      readonly roleId: string;
+      readonly selection: ModelSelection;
+    }) => Effect.Effect<void, ForkCrewsError>;
+    /** Gives a limited route its send-backs back. */
+    readonly resetRoute: (input: {
+      readonly runId: string;
+      readonly routeId: string;
+    }) => Effect.Effect<void, ForkCrewsError>;
+    /** Raises a budget for this run only. Dispatch resumes if that budget's gate was open. */
+    readonly extendBudget: (input: {
+      readonly runId: string;
+      readonly kind: BudgetKind;
+      readonly by: number;
+    }) => Effect.Effect<void, ForkCrewsError>;
+    /** Answers the gate of a fan-out larger than the run allows: every item, the first few, or stop. */
+    readonly selectFanout: (input: {
+      readonly runId: string;
+      readonly choice: "all" | "first" | "stop";
+      readonly count?: number | undefined;
     }) => Effect.Effect<void, ForkCrewsError>;
 
     // What a role's thread may do, keyed by the calling thread. A thread that is not working
@@ -132,11 +189,26 @@ export class CrewRunService extends Context.Service<
       threadId: ThreadId,
       input: { readonly text: string; readonly kind?: "crew" | "toolbox" | undefined },
     ) => Effect.Effect<{ readonly diagnostics: ReadonlyArray<CrewDiagnostic> }, CrewMcpFailure>;
+    /** The tools in the role's frozen toolbox. */
+    readonly listTools: (
+      threadId: ThreadId,
+    ) => Effect.Effect<{ readonly tools: CrewRunToolbox["tools"] }, CrewMcpFailure>;
+    /** Runs one of those tools in the card's checkout, up to the tool's timeout. */
+    readonly runTool: (
+      threadId: ThreadId,
+      input: CrewToolRunInput,
+    ) => Effect.Effect<CrewToolRunResult, CrewMcpFailure>;
 
     /** Resolves once every queued effect and finished turn has been handled. For tests. */
     readonly drain: Effect.Effect<void>;
   }
 >()("t3/fork/crews/CrewRunService") {}
+
+/** A card as the board names it, or by the engine's run-local id. */
+interface CardTarget {
+  readonly runId: string;
+  readonly cardId: string;
+}
 
 /** An engine input as callers give it; the service numbers and times it. */
 type CrewInput = CrewEvent extends infer Event
@@ -155,7 +227,13 @@ type Work =
 
 /** A card whose turn can still report. */
 const LIVE_STATES: ReadonlySet<CrewCard["state"]> = new Set(["dispatching", "working", "reported"]);
+/** A card the user may retry, skip or force: not running, and not yet routed on. */
+const WAITING_STATES: ReadonlySet<CrewCard["state"]> = new Set(["queued", "blocked", "needs_you"]);
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/u;
+/** A script or tool with no timeout of its own is stopped after this long. */
+const DEFAULT_COMMAND_TIMEOUT_SECONDS = 600;
+/** How much of a command's output a card keeps. */
+const COMMAND_OUTPUT_TAIL = 8192;
 
 const isForkCrewsError = Schema.is(ForkCrewsError);
 /** What a run's crew hash covers: the crew and every file its prompts read. */
@@ -166,6 +244,24 @@ const refused = (code: CrewMcpFailure["code"], message: string) =>
   new CrewMcpFailure({ code, message });
 const toolUnavailable = () => refused("unavailable", "The crew run could not be read.");
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+/** Git or a command failed; the detail says how, since the card shows it. */
+const failed = (runId: string, cause: unknown) =>
+  new ForkCrewsError({ reason: "unavailable", runId, detail: message(cause), cause });
+const lines = (text: string) =>
+  text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+const localCardId = (runId: string, cardId: string) =>
+  cardId.startsWith(`${runId}:`) ? cardId.slice(runId.length + 1) : cardId;
+
+/** The conflicted paths a resolver card was created for. */
+function conflictPaths(card: CrewCard | undefined): ReadonlyArray<string> {
+  const item: unknown = card?.item;
+  return typeof item === "object" && item !== null && "paths" in item && Array.isArray(item.paths)
+    ? item.paths.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
 
 // shortcut: reads a one-line `description:` only; parse the frontmatter as YAML if skills start folding it.
 const skillDescription = (text: string) =>
@@ -210,6 +306,11 @@ const make = Effect.gen(function* () {
   const catalog = yield* CrewCatalog.CrewCatalog;
   const launches = yield* ThreadLaunchService.ThreadLaunchService;
   const threads = yield* ThreadManagementService.ThreadManagementService;
+  const vcs = yield* GitVcsDriver.GitVcsDriver;
+  const processes = yield* ProcessRunner.ProcessRunner;
+  const projects = yield* ProjectService.ProjectService;
+  const settings = yield* ServerSettings.ServerSettingsService;
+  const platform = yield* HostProcess.Platform;
   const store = makeCrewRunStore(sql);
   // shortcut: one lock for every run; give each run its own when concurrent runs wait on each other.
   const lock = yield* Semaphore.make(1);
@@ -291,6 +392,121 @@ const make = Effect.gen(function* () {
         card.state === "dispatching",
     );
 
+  const git = (runId: string, cwd: string, args: ReadonlyArray<string>, allowNonZeroExit = false) =>
+    vcs
+      .execute({ operation: "CrewRunService.git", cwd, args, allowNonZeroExit })
+      .pipe(Effect.mapError((cause) => failed(runId, cause)));
+
+  const projectRoot = (run: CrewRunRecord) =>
+    projects.getById(run.projectId).pipe(
+      Effect.mapError(unavailable),
+      Effect.flatMap(
+        Option.match({
+          onNone: () =>
+            Effect.fail(
+              new ForkCrewsError({ reason: "project_not_found", projectId: run.projectId }),
+            ),
+          onSome: (project) => Effect.succeed(project.workspaceRoot),
+        }),
+      ),
+    );
+
+  /** The checkout every shared card works in: the home thread's worktree, else the project's own. */
+  const integrationCwd = Effect.fn("CrewRunService.integrationCwd")(function* (run: CrewRunRecord) {
+    if (run.integrationWorktree !== null) return run.integrationWorktree;
+    // A home worktree is made after its launch returns, so the thread knows it before the run does.
+    const home =
+      run.homeThreadId === null
+        ? null
+        : yield* threads.getThreadShell(run.homeThreadId).pipe(Effect.mapError(unavailable));
+    return home?.worktreePath ?? (yield* projectRoot(run));
+  });
+
+  /** Where a card works: its own worktree when it has one. */
+  const cardCwd = (run: CrewRunRecord, cardId: string) =>
+    store.listCardWorkspaces(run.runId).pipe(
+      Effect.mapError(unavailable),
+      Effect.flatMap((workspaces) => {
+        const own = workspaces.find((workspace) => workspace.cardId === cardId);
+        return own === undefined ? integrationCwd(run) : Effect.succeed(own.worktreePath);
+      }),
+    );
+
+  /** Commits whatever the checkout holds under the card's name. A clean checkout is left alone. */
+  const commitWorkspace = Effect.fn("CrewRunService.commitWorkspace")(function* (
+    run: CrewRunRecord,
+    card: CrewCard,
+    cwd: string,
+    summary: string | null,
+  ) {
+    const step = run.crew.flow.steps[card.stepId];
+    if ((step?.autoCommit ?? run.crew.defaults?.autoCommit) === false) return;
+    // A project that is not a repository still runs crews whose cards share its folder.
+    const status = yield* git(run.runId, cwd, ["status", "--porcelain"], true);
+    if (status.exitCode !== 0 || status.stdout.trim().length === 0) return;
+    yield* git(run.runId, cwd, ["add", "-A"]);
+    const [subject, trailers] = crewCommitMessage({
+      runId: run.runId,
+      card,
+      model: crewCardModel(run, card),
+      summary,
+    });
+    // Hooks are skipped: a failing lint hook must not strand a card's work outside its branch.
+    yield* git(run.runId, cwd, ["commit", "--no-verify", "-m", subject, "-m", trailers]);
+  });
+
+  /** Card branches holding finished work the integration branch lacks, in the order they finished. */
+  const pendingBranches = Effect.fn("CrewRunService.pendingBranches")(function* (
+    run: CrewRunRecord,
+    cwd: string,
+  ) {
+    const workspaces = yield* store
+      .listCardWorkspaces(run.runId)
+      .pipe(Effect.mapError(unavailable));
+    const done = new Set(
+      run.snapshot.cards.filter((card) => card.state === "done").map((card) => card.id),
+    );
+    const pending: Array<CrewCardWorkspace & { readonly baseSha: string }> = [];
+    for (const workspace of workspaces) {
+      // The card that created a worktree stands for every card that later worked in it.
+      const { baseSha, branch } = workspace;
+      if (
+        baseSha === null ||
+        !workspaces.some((other) => other.branch === branch && done.has(other.cardId))
+      ) {
+        continue;
+      }
+      const merged = yield* git(
+        run.runId,
+        cwd,
+        ["merge-base", "--is-ancestor", branch, "HEAD"],
+        true,
+      );
+      if (merged.exitCode !== 0) pending.push({ ...workspace, baseSha });
+    }
+    return pending;
+  });
+
+  /** Runs a shell command line in a checkout and keeps the end of what it printed. */
+  // shortcut: on Windows the line reaches cmd.exe through Node's argument quoting, so a command with double quotes in it may not parse; spawn with `shell: true` when a tool needs them.
+  const shell = (cwd: string, command: string, timeoutSeconds: number) =>
+    processes
+      .run({
+        command: platform === "win32" ? "cmd.exe" : "sh",
+        args: platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command],
+        cwd,
+        timeout: Duration.seconds(timeoutSeconds),
+        outputMode: "truncate",
+        timeoutBehavior: "timedOutResult",
+      })
+      .pipe(
+        Effect.map((result) => ({
+          exitCode: result.timedOut || result.code === null ? null : Number(result.code),
+          timedOut: result.timedOut,
+          output: `${result.stdout}${result.stderr}`.slice(-COMMAND_OUTPUT_TAIL),
+        })),
+      );
+
   const promptFor = Effect.fn("CrewRunService.promptFor")(function* (
     run: CrewRunRecord,
     card: CrewCard,
@@ -353,6 +569,7 @@ const make = Effect.gen(function* () {
     ) {
       return;
     }
+    let summary = card.report?.summary ?? null;
     if (card.report === null && card.state !== "stopping") {
       const { messages, turnItems } = yield* threads
         .getThreadRecords(work.threadId, ["messages", "turnItems"], {
@@ -374,6 +591,7 @@ const make = Effect.gen(function* () {
         const report = { ...block, artifacts: { ...written, ...block.artifacts } };
         // A block that does not validate is no report; the reminder says what is allowed.
         if (crewReportErrors(run.crew, card.stepId, report).length === 0) {
+          summary = report.summary;
           yield* apply(run.runId, {
             type: "card.reported",
             cardId: card.id,
@@ -381,6 +599,27 @@ const make = Effect.gen(function* () {
             ...report,
           });
         }
+      }
+    }
+    // The turn's work is committed before the card moves, so what follows starts from it. A
+    // conflict resolver's work is the merge's to check and commit.
+    if (
+      card.state !== "stopping" &&
+      card.roleId !== null &&
+      card.isolation !== "read-only" &&
+      card.sourceCardId === null
+    ) {
+      const kept = yield* Effect.exit(
+        Effect.flatMap(cardCwd(run, card.id), (cwd) => commitWorkspace(run, card, cwd, summary)),
+      );
+      if (Exit.isFailure(kept)) {
+        yield* apply(run.runId, {
+          type: "card.failed",
+          cardId: card.id,
+          attempt: card.attempt,
+          reason: `The card's work could not be committed. ${message(Cause.squash(kept.cause))}`,
+        });
+        return;
       }
     }
     yield* apply(run.runId, {
@@ -423,14 +662,8 @@ const make = Effect.gen(function* () {
     const run = yield* loadRun(runId);
     const card = dispatchingCard(run, effect);
     const role = card === undefined || card.roleId === null ? undefined : run.roles[card.roleId];
-    if (card === undefined || role === undefined) return;
-    if (card.isolation !== "shared") {
-      return yield* new ForkCrewsError({
-        reason: "unsupported",
-        runId,
-        detail: `Step "${card.stepId}" needs ${card.isolation} isolation, which is not available yet.`,
-      });
-    }
+    const modelSelection = card === undefined ? null : crewCardModel(run, card);
+    if (card === undefined || role === undefined || modelSelection === null) return;
     const threadId = ThreadId.make(`thread:${runId}:${card.id}:${card.attempt}`);
     // The first thread a first-step run launches is the one the user sent from.
     const { homeThreadId } = run;
@@ -448,8 +681,8 @@ const make = Effect.gen(function* () {
     }
     const brief = Object.values(run.inputs).find((value) => typeof value === "string");
     const workspace = run.start.workspace;
-    const branch = home === null ? run.integrationBranch : home.branch;
-    const workspaceStrategy: ThreadLaunchService.ThreadLaunchWorkspaceStrategy =
+    let branch = home === null ? run.integrationBranch : home.branch;
+    let workspaceStrategy: ThreadLaunchService.ThreadLaunchWorkspaceStrategy =
       home === null
         ? workspace.mode === "new-worktree" && branch !== null
           ? { type: "worktree", baseRef: workspace.baseRef, branch, startFromOrigin: false }
@@ -461,7 +694,54 @@ const make = Effect.gen(function* () {
               worktreePath: home.worktreePath,
               branch: home.branch ?? undefined,
             };
-    const text = yield* promptFor(run, card, branch);
+    if (card.isolation === "worktree" && !isHome) {
+      const cwd = yield* integrationCwd(run);
+      // The card branches from committed state, so it starts with all the earlier steps left.
+      yield* commitWorkspace(run, card, cwd, null);
+      const baseSha = (yield* git(runId, cwd, ["rev-parse", "HEAD"])).stdout.trim();
+      branch = crewCardBranch(runId, card);
+      const made = (yield* store.listCardWorkspaces(runId).pipe(Effect.mapError(unavailable))).find(
+        (workspace) => workspace.cardId === card.id && workspace.branch === branch,
+      );
+      // Made here, not by the launch: a launch returns before its worktree exists, and the card's
+      // tools and commit need the path.
+      // shortcut: a retried card's earlier worktree is not tracked, so it is never removed; list them per attempt when retries of worktree cards are common.
+      const worktreePath =
+        made?.worktreePath ??
+        (yield* vcs
+          .createWorktree({
+            cwd: yield* projectRoot(run),
+            refName: baseSha,
+            newRefName: branch,
+            baseRefName: baseSha,
+            path: null,
+          })
+          .pipe(Effect.mapError((cause) => failed(runId, cause)))).worktree.path;
+      yield* store
+        .setCardWorkspace(runId, {
+          cardId: card.id,
+          worktreePath,
+          branch,
+          baseSha,
+          owns: crewCardOwns(run.crew, card),
+        })
+        .pipe(Effect.mapError(unavailable));
+      workspaceStrategy = { type: "existing_worktree", worktreePath, branch };
+    }
+    // A read-only card reads the shared checkout. Providers differ in how far plan mode holds.
+    const readOnly = card.isolation === "read-only";
+    const text =
+      card.sourceCardId === null
+        ? yield* promptFor(run, card, branch)
+        : composeCrewConflictPrompt({
+            crew: run.crew,
+            files: run.files,
+            roleId: card.roleId ?? "",
+            driver: role.driver,
+            branch,
+            paths: conflictPaths(card),
+          });
+    const item = card.itemIndex === null ? "" : ` #${card.itemIndex + 1}`;
     // The thread's turn can call a crew tool before `launch` returns, so it is known first.
     yield* store.indexThread(threadId, { runId, cardId: card.id, attempt: card.attempt }).pipe(
       Effect.andThen(
@@ -480,12 +760,12 @@ const make = Effect.gen(function* () {
         commandId: CommandId.make(`crew:${runId}:${card.id}:${card.attempt}:launch`),
         threadId,
         projectId: run.projectId,
-        title: `${run.crew.name}: ${isHome && brief !== undefined ? brief : role.name}`
+        title: `${run.crew.name}: ${isHome && brief !== undefined ? brief : `${role.name}${item}`}`
           .replaceAll(/\s+/gu, " ")
           .slice(0, 80),
-        modelSelection: role.modelSelection,
-        runtimeMode: role.runtimeMode,
-        interactionMode: interactionMode(run.crew, card),
+        modelSelection,
+        runtimeMode: readOnly ? "approval-required" : role.runtimeMode,
+        interactionMode: readOnly ? "plan" : interactionMode(run.crew, card),
         workspaceStrategy,
         initialMessage: { messageId, text, attachments: isHome ? run.start.attachments : [] },
         createdBy: isHome ? "user" : "system",
@@ -507,6 +787,12 @@ const make = Effect.gen(function* () {
         detail: "The thread was created without a turn for the card's prompt.",
       });
     }
+    const { thread } = launched.projection;
+    if (isHome) {
+      yield* store
+        .setHome(runId, { threadId, worktree: thread.worktreePath, branch: thread.branch })
+        .pipe(Effect.mapError(unavailable));
+    }
     yield* dispatched(run, card, threadId, turn.id);
   });
 
@@ -519,13 +805,26 @@ const make = Effect.gen(function* () {
     const card = dispatchingCard(run, effect);
     if (card === undefined) return;
     const threadId = ThreadId.make(effect.threadId);
+    const thread = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(unavailable));
     const text =
       effect.reason === "reminder"
         ? crewReminderPrompt(run.crew, card.stepId)
-        : yield* promptFor(run, card, run.integrationBranch);
+        : yield* promptFor(run, card, thread?.branch ?? run.integrationBranch);
     yield* store
       .indexThread(threadId, { runId, cardId: card.id, attempt: card.attempt })
       .pipe(Effect.mapError(unavailable));
+    // A follow-up in a card's own worktree commits there, and the next merge takes its commits.
+    if (card.isolation === "worktree" && thread?.worktreePath != null && thread.branch !== null) {
+      yield* store
+        .setCardWorkspace(runId, {
+          cardId: card.id,
+          worktreePath: thread.worktreePath,
+          branch: thread.branch,
+          baseSha: null,
+          owns: crewCardOwns(run.crew, card),
+        })
+        .pipe(Effect.mapError(unavailable));
+    }
     const sent = yield* threads
       .sendToThread({
         projectId: run.projectId,
@@ -547,6 +846,211 @@ const make = Effect.gen(function* () {
     yield* dispatched(run, card, threadId, sent.run.id);
   });
 
+  /** Records what each waiting branch changed outside its card's paths, then starts the merge. */
+  const checkOwnership = Effect.fn("CrewRunService.checkOwnership")(function* (
+    runId: string,
+    cardId: string,
+  ) {
+    const run = yield* loadRun(runId);
+    const merge = run.snapshot.cards.find((card) => card.id === cardId);
+    if (merge === undefined) return;
+    const cwd = yield* integrationCwd(run);
+    yield* commitWorkspace(run, merge, cwd, null);
+    for (const pending of yield* pendingBranches(run, cwd)) {
+      const diff = yield* git(runId, cwd, [
+        "-c",
+        "core.quotePath=false",
+        "diff",
+        "--name-only",
+        `${pending.baseSha}...${pending.branch}`,
+      ]);
+      const changed = lines(diff.stdout);
+      yield* store
+        .setCardOwnership(
+          runId,
+          pending.cardId,
+          changed,
+          crewOwnershipViolations(changed, pending.owns),
+        )
+        .pipe(Effect.mapError(unavailable));
+    }
+    yield* apply(runId, { type: "merge.started", cardId });
+  });
+
+  /**
+   * Merges every waiting card branch into the shared checkout. A conflict goes to the step's
+   * resolver role with the merge left in place, and this runs again when that role's turn ends.
+   */
+  const mergeInto = Effect.fn("CrewRunService.mergeInto")(function* (
+    run: CrewRunRecord,
+    cardId: string,
+    cwd: string,
+  ) {
+    const { runId } = run;
+    const merge = run.snapshot.cards.find(
+      (card) => card.id === cardId && card.type === "merge" && card.state === "working",
+    );
+    const step = merge === undefined ? undefined : run.crew.flow.steps[merge.stepId];
+    if (merge === undefined || step?.type !== "merge") return;
+    const unmerged = () =>
+      Effect.map(
+        git(runId, cwd, ["-c", "core.quotePath=false", "diff", "--name-only", "--diff-filter=U"]),
+        (result) => lines(result.stdout),
+      );
+    const merging = yield* git(runId, cwd, ["rev-parse", "-q", "--verify", "MERGE_HEAD"], true);
+    if (merging.exitCode === 0) {
+      const resolver = run.snapshot.cards.findLast(
+        (card) => card.sourceCardId === cardId && card.type === "task",
+      );
+      const paths = conflictPaths(resolver);
+      // A file the resolver left a marker in is not resolved, whatever it staged.
+      const unresolved =
+        paths.length === 0
+          ? yield* unmerged()
+          : lines(
+              (yield* git(
+                runId,
+                cwd,
+                ["grep", "-l", "-E", "^(<<<<<<<|>>>>>>>) ", "--", ...paths],
+                true,
+              )).stdout,
+            );
+      if (unresolved.length > 0) {
+        yield* git(runId, cwd, ["merge", "--abort"], true);
+        yield* apply(runId, {
+          type: "merge.blocked",
+          cardId,
+          reason: `The conflict in ${unresolved.join(", ")} was not resolved, so that merge was undone.`,
+        });
+        return;
+      }
+      yield* git(runId, cwd, ["add", "-A"]);
+      const [subject, trailers] = crewCommitMessage({
+        runId,
+        card: { ...merge, roleId: resolver?.roleId ?? null },
+        model: resolver === undefined ? null : crewCardModel(run, resolver),
+        summary: resolver?.report?.summary ?? "resolve merge conflicts",
+      });
+      yield* git(runId, cwd, ["commit", "--no-verify", "-m", subject, "-m", trailers]);
+    }
+    const notMerged: Array<string> = [];
+    for (const pending of yield* pendingBranches(run, cwd)) {
+      if (step.checkOwnership === "block" && pending.ownershipViolations.length > 0) {
+        notMerged.push(
+          `${pending.branch} changed paths it does not own (${pending.ownershipViolations.join(", ")})`,
+        );
+        continue;
+      }
+      const merged = yield* git(
+        runId,
+        cwd,
+        ["merge", "--no-ff", "--no-edit", "--no-verify", pending.branch],
+        true,
+      );
+      if (merged.exitCode === 0) continue;
+      const paths = yield* unmerged();
+      if (paths.length > 0 && typeof step.onConflict === "object") {
+        yield* apply(runId, { type: "merge.conflict", cardId, paths });
+        return;
+      }
+      yield* git(runId, cwd, ["merge", "--abort"], true);
+      notMerged.push(
+        paths.length > 0
+          ? `${pending.branch} conflicts in ${paths.join(", ")}`
+          : `${pending.branch} could not be merged (${merged.stderr.trim()})`,
+      );
+    }
+    yield* apply(
+      runId,
+      notMerged.length === 0
+        ? { type: "merge.resolved", cardId }
+        : { type: "merge.blocked", cardId, reason: `Not merged: ${notMerged.join("; ")}.` },
+    );
+  });
+
+  const mergeBranches = Effect.fn("CrewRunService.mergeBranches")(function* (
+    runId: string,
+    cardId: string,
+  ) {
+    const run = yield* loadRun(runId);
+    const cwd = yield* integrationCwd(run);
+    yield* withWorkspaceLease(cwd, mergeInto(run, cardId, cwd));
+  });
+
+  // shortcut: the script runs on the one effect worker, so other cards wait for it; fork it and report back when a slow script holds a run up.
+  const runScript = Effect.fn("CrewRunService.runScript")(function* (
+    runId: string,
+    effect: Extract<CrewEffect, { readonly type: "run_script" }>,
+  ) {
+    const run = yield* loadRun(runId);
+    const card = dispatchingCard(run, effect);
+    const step = card === undefined ? undefined : run.crew.flow.steps[card.stepId];
+    if (card === undefined || step?.type !== "script") return;
+    const tool = "tool" in step ? run.scriptTools[step.tool] : { run: step.run };
+    if (tool === undefined) {
+      return yield* new ForkCrewsError({
+        reason: "unsupported",
+        runId,
+        detail: `Step "${card.stepId}" runs a tool the project did not define when the run started.`,
+      });
+    }
+    const timeoutSeconds =
+      step.timeoutMinutes === undefined
+        ? "timeoutSeconds" in tool
+          ? tool.timeoutSeconds
+          : undefined
+        : step.timeoutMinutes * 60;
+    const result = yield* shell(
+      yield* integrationCwd(run),
+      tool.run,
+      timeoutSeconds ?? DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    ).pipe(Effect.mapError((cause) => failed(runId, cause)));
+    yield* apply(runId, {
+      type: "script.finished",
+      cardId: card.id,
+      attempt: card.attempt,
+      // 124 is what `timeout` exits with.
+      exitCode: result.exitCode ?? 124,
+      outputTail: result.timedOut ? `${result.output}\nStopped at its timeout.` : result.output,
+    });
+  });
+
+  /** Removes a finished run's card worktree, as far as the user's worktree rules allow. */
+  const removeCardWorktree = Effect.fn("CrewRunService.removeCardWorktree")(function* (
+    runId: string,
+    cardId: string,
+  ) {
+    const run = yield* loadRun(runId);
+    const workspace = (yield* store
+      .listCardWorkspaces(runId)
+      .pipe(Effect.mapError(unavailable))).find((candidate) => candidate.cardId === cardId);
+    if (
+      workspace === undefined ||
+      !(yield* fileSystem.exists(workspace.worktreePath).pipe(Effect.orElseSucceed(() => false)))
+    ) {
+      return;
+    }
+    const current = yield* settings.getSettings.pipe(Effect.mapError(unavailable));
+    if (resolveProjectSettings(current, run.projectId).settings.worktreeCleanup?.mode === "off") {
+      return;
+    }
+    if (resolveWorktreeCleanup(current, run.projectId).worktreeKeepWhen === "any-local-files") {
+      const ignored = yield* git(runId, workspace.worktreePath, [
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
+      ]);
+      if (ignored.stdout.trim().length > 0) return;
+    }
+    // Not forced, so git keeps a worktree with uncommitted work. The branch stays either way,
+    // and a thread resumed later gets its checkout back from it.
+    yield* vcs
+      .removeWorktree({ cwd: yield* projectRoot(run), path: workspace.worktreePath })
+      .pipe(Effect.mapError((cause) => failed(runId, cause)));
+  });
+
   const runEffect = (runId: string, effect: CrewEffect): Effect.Effect<void, ForkCrewsError> => {
     switch (effect.type) {
       case "launch_card":
@@ -565,10 +1069,20 @@ const make = Effect.gen(function* () {
                 reason: "The crew run stopped this card.",
               })
               .pipe(Effect.mapError(unavailable), Effect.asVoid);
-      // The board shows what waits on the user; nothing is pushed to them yet.
+      case "check_ownership":
+        return checkOwnership(runId, effect.cardId);
+      case "merge_branch":
+        return mergeBranches(runId, effect.cardId);
+      case "run_script":
+        return runScript(runId, effect);
+      case "remove_worktree":
+        return removeCardWorktree(runId, effect.cardId);
+      // The board shows what waits on the user; nothing is pushed to them yet. The service commits
+      // at turn end and before a branch or merge, so the engine asks for no commit of its own.
       case "notify":
+      case "commit_workspace":
         return Effect.void;
-      // Git, scripts and lead delivery belong to later phases.
+      // Lead delivery belongs to a later phase.
       default:
         return Effect.fail(
           new ForkCrewsError({
@@ -730,9 +1244,26 @@ const make = Effect.gen(function* () {
       const files = crewPromptFiles(crew, resolution.files);
       const crewHash = yield* sha256(crewHashInput(crew, files));
       const now = yield* timestamp;
+      const scriptTools: Record<string, CrewRunToolbox["tools"][number]> = {};
+      for (const step of Object.values(crew.flow.steps)) {
+        if (step.type !== "script" || !("tool" in step)) continue;
+        const tool = resolution.tools.tools[step.tool];
+        if (tool !== undefined)
+          scriptTools[step.tool] = { name: step.tool, source: "repo", ...tool };
+      }
       const snapshot = createCrewSnapshot(crew, compileCrewFlow(crew), {
         roleInstances: Object.fromEntries(
           Object.entries(roles).map(([id, role]) => [id, role.modelSelection.instanceId]),
+        ),
+        // A pool spreads fan-out cards over the listed accounts of the role's own provider.
+        rolePools: Object.fromEntries(
+          Object.entries(roles).flatMap(([id, role]) => {
+            const pool = (crew.roles[id]?.pool ?? []).filter(
+              (instanceId) =>
+                role.driver !== null && resolution.drivers[instanceId] === role.driver,
+            );
+            return pool.length > 1 ? [[id, pool] as const] : [];
+          }),
         ),
       });
       const effectIds = yield* transact(
@@ -745,6 +1276,7 @@ const make = Effect.gen(function* () {
             crewId: input.crewId,
             crew,
             files,
+            scriptTools,
             crewHash,
             start: input,
             inputs,
@@ -819,6 +1351,36 @@ const make = Effect.gen(function* () {
       },
     };
   });
+
+  const cardAction = (action: "retry" | "skip" | "force_outcome") =>
+    Effect.fn(`CrewRunService.${action}`)(function* (
+      input: CardTarget & { readonly outcome?: string },
+    ) {
+      const run = yield* loadRun(input.runId);
+      const cardId = localCardId(input.runId, input.cardId);
+      const card = run.snapshot.cards.find((candidate) => candidate.id === cardId);
+      // The engine ignores an action a card cannot take; the user is told instead.
+      if (
+        card === undefined ||
+        card.type === "gate" ||
+        card.type === "decision" ||
+        card.sourceCardId !== null ||
+        !WAITING_STATES.has(card.state)
+      ) {
+        return yield* new ForkCrewsError({
+          reason: "invalid_request",
+          runId: input.runId,
+          detail:
+            "Only a card that is queued or waiting on a decision can be retried, skipped or forced.",
+        });
+      }
+      yield* apply(input.runId, {
+        type: "user.card_action",
+        cardId,
+        action,
+        ...(input.outcome === undefined ? {} : { outcome: input.outcome }),
+      });
+    });
 
   const requireLive = (card: CrewCard) =>
     LIVE_STATES.has(card.state)
@@ -950,10 +1512,7 @@ const make = Effect.gen(function* () {
     cancel: (runId) => apply(runId, { type: "run.cancel_requested" }),
     resolveGate: Effect.fn("CrewRunService.resolveGate")(function* (input) {
       const run = yield* loadRun(input.runId);
-      const prefix = `${input.runId}:`;
-      const cardId = input.cardId.startsWith(prefix)
-        ? input.cardId.slice(prefix.length)
-        : input.cardId;
+      const cardId = localCardId(input.runId, input.cardId);
       const card = run.snapshot.cards.find((candidate) => candidate.id === cardId);
       if (card === undefined || (card.state !== "needs_you" && card.state !== "waiting_lead")) {
         return yield* new ForkCrewsError({
@@ -968,6 +1527,45 @@ const make = Effect.gen(function* () {
         outcome: input.outcome,
         note: input.note ?? "",
         by: "user",
+      });
+    }),
+    retryCard: cardAction("retry"),
+    skipCard: cardAction("skip"),
+    forceOutcome: cardAction("force_outcome"),
+    setRoleModel: (input) =>
+      apply(input.runId, {
+        type: "user.role_model_changed",
+        roleId: input.roleId,
+        selection: input.selection,
+      }),
+    resetRoute: Effect.fn("CrewRunService.resetRoute")(function* (input) {
+      const { flow } = (yield* loadRun(input.runId)).snapshot;
+      const region = flow.loopRegions.find((candidate) =>
+        candidate.routeIds.includes(input.routeId),
+      );
+      yield* apply(input.runId, {
+        type: "route.counters_reset",
+        regionId: region?.id ?? input.routeId,
+        routeIds: [input.routeId],
+        cause: "user",
+      });
+    }),
+    extendBudget: (input) =>
+      apply(input.runId, { type: "budget.extended", kind: input.kind, by: input.by }),
+    selectFanout: Effect.fn("CrewRunService.selectFanout")(function* (input) {
+      const groupId = (yield* loadRun(input.runId)).snapshot.budgetGate?.groupId;
+      if (groupId === null || groupId === undefined) {
+        return yield* new ForkCrewsError({
+          reason: "invalid_request",
+          runId: input.runId,
+          detail: "The run is not waiting on a fan-out choice.",
+        });
+      }
+      yield* apply(input.runId, {
+        type: "budget.fanout_selected",
+        groupId,
+        choice: input.choice,
+        ...(input.count === undefined ? {} : { count: input.count }),
       });
     }),
 
@@ -1005,13 +1603,7 @@ const make = Effect.gen(function* () {
     }),
     note: Effect.fn("CrewRunService.note")(function* (threadId, input) {
       const { run, card } = yield* caller(threadId);
-      const prefix = `${run.runId}:`;
-      const toCardId =
-        input.toCard === undefined
-          ? null
-          : input.toCard.startsWith(prefix)
-            ? input.toCard.slice(prefix.length)
-            : input.toCard;
+      const toCardId = input.toCard === undefined ? null : localCardId(run.runId, input.toCard);
       if (
         (input.toRole === undefined && toCardId === null) ||
         (input.toRole !== undefined && !Object.hasOwn(run.crew.roles, input.toRole)) ||
@@ -1042,6 +1634,37 @@ const make = Effect.gen(function* () {
         .validateText({ projectId: run.projectId, text: input.text, kind: input.kind ?? "crew" })
         .pipe(Effect.mapError(toolUnavailable));
       return { diagnostics };
+    }),
+    listTools: (threadId) =>
+      Effect.map(caller(threadId), ({ toolbox }) => ({ tools: toolbox.tools })),
+    runTool: Effect.fn("CrewRunService.runTool")(function* (threadId, input) {
+      const { run, card, toolbox } = yield* caller(threadId);
+      yield* requireLive(card);
+      const tool = toolbox.tools.find((candidate) => candidate.name === input.name);
+      if (tool === undefined) {
+        return yield* refused(
+          "not_allowed",
+          `Tool "${input.name}" is not in this role's toolbox. It has: ${toolbox.tools.map((candidate) => candidate.name).join(", ") || "none"}.`,
+        );
+      }
+      const args = input.args ?? [];
+      // The arguments join a shell command line, so nothing a shell would read is let through.
+      if (!args.every(isPlainToolArgument)) {
+        return yield* refused(
+          "not_allowed",
+          "A tool argument may hold only letters, digits and . / \\ : = @ , + - _ with no spaces or quotes.",
+        );
+      }
+      const cwd = yield* cardCwd(run, card.id).pipe(Effect.mapError(toolUnavailable));
+      return yield* shell(
+        cwd,
+        [tool.run, ...args].join(" "),
+        tool.timeoutSeconds ?? DEFAULT_COMMAND_TIMEOUT_SECONDS,
+      ).pipe(
+        Effect.mapError((cause) =>
+          refused("unavailable", `The tool could not be run. ${message(cause)}`),
+        ),
+      );
     }),
 
     drain: worker.drain,

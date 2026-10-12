@@ -85,7 +85,7 @@ export class ForkCrewsError extends Schema.TaggedError<ForkCrewsError>()("ForkCr
       case "launch_failed":
         return this.detail ?? "The crew run request was refused.";
       case "unavailable":
-        return "Crews could not be read.";
+        return this.detail ?? "Crews could not be read.";
     }
   }
 }
@@ -219,7 +219,7 @@ export const ForkCrewsRpcs = [
     success: CrewRunStartResult,
     error,
   }),
-  /** Pause, resume, cancel, or answer a gate. */
+  /** Every change the user makes to a run: one tagged action each. */
   Rpc.make(FORK_CREWS_WS_METHODS.runsControl, { payload: CrewRunControlInput, error }),
   Rpc.make(FORK_CREWS_WS_METHODS.runsGet, { payload: CrewRunTarget, success: CrewRunView, error }),
   Rpc.make(FORK_CREWS_WS_METHODS.runsList, {

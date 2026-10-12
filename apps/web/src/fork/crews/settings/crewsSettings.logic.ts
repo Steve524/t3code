@@ -6,14 +6,14 @@ import type {
   CrewDetail,
   CrewRoleOverrideScope,
   ProjectToolbox,
-} from "../../../../../../packages/contracts/src/fork/crews/crewRpc";
+} from "@t3tools/contracts/fork/crews/crewRpc";
 import type {
   CrewDiagnostic,
   CrewRole,
   CrewSummary,
   ResolvedRoleToolbox,
-} from "../../../../../../packages/contracts/src/fork/crews/crewFile";
-import type { ResolvedRoleModel } from "../../../../../../packages/contracts/src/fork/crews/crewModel";
+} from "@t3tools/contracts/fork/crews/crewFile";
+import type { ResolvedRoleModel } from "@t3tools/contracts/fork/crews/crewModel";
 import type { ResolvedSettingsScope } from "../../../components/settings/settingsScope";
 import type { ProviderInstanceEntry } from "../../../providerInstances";
 import type { ModelEsque } from "../../../components/chat/providerIconUtils";

@@ -7,13 +7,10 @@ import {
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { CrewSummary } from "../../../../../../packages/contracts/src/fork/crews/crewFile";
-import {
-  CrewFile,
-  CrewsToolboxFile,
-} from "../../../../../../packages/shared/src/fork/crews/crewFileSchema";
-import { resolveRoleToolbox } from "../../../../../../packages/shared/src/fork/crews/resolveRoleToolbox";
-import { parseCrewsToolboxYaml } from "../../../../../../packages/shared/src/fork/crews/parseCrewYaml";
+import type { CrewSummary } from "@t3tools/contracts/fork/crews/crewFile";
+import { CrewFile, CrewsToolboxFile } from "@t3tools/shared/fork/crews/crewFileSchema";
+import { resolveRoleToolbox } from "@t3tools/shared/fork/crews/resolveRoleToolbox";
+import { parseCrewsToolboxYaml } from "@t3tools/shared/fork/crews/parseCrewYaml";
 import { deriveProviderInstanceEntries } from "../../../providerInstances";
 import {
   CREWS_TOOLBOX_EXAMPLE,

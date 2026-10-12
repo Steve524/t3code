@@ -3,6 +3,22 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./fork/crews/crewFileSchema": {
+      "types": "./src/fork/crews/crewFileSchema.ts",
+      "import": "./src/fork/crews/crewFileSchema.ts"
+    },
+    "./fork/crews/parseCrewYaml": {
+      "types": "./src/fork/crews/parseCrewYaml.ts",
+      "import": "./src/fork/crews/parseCrewYaml.ts"
+    },
+    "./fork/crews/resolveRoleToolbox": {
+      "types": "./src/fork/crews/resolveRoleToolbox.ts",
+      "import": "./src/fork/crews/resolveRoleToolbox.ts"
+    },
+    "./githubMarkdownLinks": {
+      "types": "./src/githubMarkdownLinks.ts",
+      "import": "./src/githubMarkdownLinks.ts"
+    },
     "./authScopeOptions": {
       "types": "./src/authScopeOptions.ts",
       "import": "./src/authScopeOptions.ts"
@@ -481,7 +497,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc-rs --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {

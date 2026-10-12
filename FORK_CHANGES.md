@@ -29,14 +29,6 @@ Files that only exist in the fork (`FORK.md`, this file, anything under a
 merge. `ClaudeAdapterV2.test.ts` fails when the allowlist spread is lost, and the server typecheck
 fails when the MCP registration or the `layerThreadLaunchProvided` line is.
 
-**`WsRpcGroup` cannot take another RPC.** The server's handler types cost the square of the group's
-size. At 202 RPCs (upstream's 188 plus the fork's 14) `apps/server` typechecks. At 203 TypeScript
-types the server layer as `any`, and the typecheck fails with about 34 "any in the requirements
-channel" errors in `server.ts`, `binCli.ts` and `cli/project.test.ts`, far from the cause. When a
-merge brings new upstream RPCs, expect that failure: it is this limit, not a lost touch point. Get
-back under it by folding fork RPCs together in `packages/contracts/src/fork/crews/crewRpc.ts`, or by
-moving them to their own `RpcGroup`.
-
 Crew run controls (retry, skip, force outcome, role model, route reset, budget answers) are actions
 on `forkCrews.runs.control`, so they added no RPC. `crew_tool_list` joined the read-only allowlist
 through the constant already spread into `ClaudeAdapterV2.ts`; `crew_tool_run` runs a command and
@@ -63,6 +55,9 @@ Dependencies added to upstream `package.json` files (`FORK.md` rule 8).
 | `apps/web/src/components/settings/settingsSearch.ts`      | Imports fork settings registration; extends `SettingsPath`, section labels, search items, and category scope with marked entries. | Makes `/settings/crews` reachable through settings navigation and search at environment, project, and checkout scopes. |
 | `apps/web/src/components/settings/SettingsSidebarNav.tsx` | Imports the fork icon and registers it for `/settings/crews`, both marked.                                                        | Gives the Crews settings entry an icon.                                                                                |
 | `apps/web/src/routeTree.gen.ts`                           | Regenerated to register the new `routes/settings.crews.tsx` route.                                                                | TanStack Router owns this generated file. Regenerate it after a merge instead of adding manual fork markers.           |
+| `packages/contracts/package.json`                         | Exports `fork/crews/crewFile`, `fork/crews/crewModel`, and `fork/crews/crewRpc`.                                                  | Web imports crew contracts through the package so its composite typecheck does not treat their source as web files.    |
+| `packages/shared/package.json`                            | Exports `fork/crews/crewFileSchema`, `fork/crews/parseCrewYaml`, and `fork/crews/resolveRoleToolbox`.                             | Crew settings tests import shared fork logic through the package boundary.                                             |
+| `packages/client-runtime/package.json`                    | Exports `fork/crews/catalog`.                                                                                                     | Crew settings import shared query atoms through the package boundary.                                                  |
 
 The settings route renders only `apps/web/src/fork/crews/settings/` code. It uses
 the existing crew catalog and guarded commands, with query atoms added to

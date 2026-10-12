@@ -7,6 +7,18 @@
   ],
   "type": "module",
   "exports": {
+    "./fork/crews/crewFile": {
+      "types": "./src/fork/crews/crewFile.ts",
+      "import": "./src/fork/crews/crewFile.ts"
+    },
+    "./fork/crews/crewModel": {
+      "types": "./src/fork/crews/crewModel.ts",
+      "import": "./src/fork/crews/crewModel.ts"
+    },
+    "./fork/crews/crewRpc": {
+      "types": "./src/fork/crews/crewRpc.ts",
+      "import": "./src/fork/crews/crewRpc.ts"
+    },
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
@@ -21,7 +33,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc-rs --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {

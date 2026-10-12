@@ -4,7 +4,7 @@ import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 
-import type { CrewRoleOverrideSetInput } from "../../../../../../packages/contracts/src/fork/crews/crewRpc";
+import type { CrewRoleOverrideSetInput } from "@t3tools/contracts/fork/crews/crewRpc";
 import { useSettingsScope } from "../../../components/settings/SettingsScopeContext";
 import type { ScopedSettingsTarget } from "../../../components/settings/scopedSettings";
 import {

@@ -3,11 +3,9 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
+import { mergeEnvironmentSettings } from "../../../hooks/useSettings";
 
-import type {
-  CrewDetail,
-  CrewRoleOverrideSetInput,
-} from "../../../../../../packages/contracts/src/fork/crews/crewRpc";
+import type { CrewDetail, CrewRoleOverrideSetInput } from "@t3tools/contracts/fork/crews/crewRpc";
 import { getCustomModelOptionsByInstance } from "../../../modelSelection";
 import {
   applyProviderInstanceSettings,
@@ -73,7 +71,11 @@ export function CrewRoleCard({
   );
   const providers = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
   const entries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+    applyProviderInstanceSettings(
+      deriveProviderInstanceEntries(providers),
+      settings,
+      target.projectId,
+    ),
   );
   const selection =
     resolved?.model.selection ??
@@ -119,8 +121,12 @@ export function CrewRoleCard({
       entries: applyProviderInstanceSettings(
         deriveProviderInstanceEntries(providers),
         target.settings,
+        target.projectId,
       ),
-      options: getCustomModelOptionsByInstance({ ...settings, ...target.settings }, providers),
+      options: getCustomModelOptionsByInstance(
+        mergeEnvironmentSettings(target.settings, settings),
+        providers,
+      ),
     };
   });
   const disabledReason = (instanceId: ModelSelection["instanceId"], model: string) =>
@@ -172,6 +178,7 @@ export function CrewRoleCard({
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm">Model</span>
         <ProviderModelPicker
+          environmentId={target.environmentId}
           activeInstanceId={selection.instanceId}
           model={selection.model}
           lockedProvider={null}

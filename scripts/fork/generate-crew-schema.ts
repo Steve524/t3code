@@ -1,8 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - standalone file generator, outside an Effect runtime.
 import * as NodeFSP from "node:fs/promises";
 
-// Fork subpath exports are not wired in phase 1; a URL import also avoids pulling
-// shared sources into the scripts package's composite TypeScript project.
+// A URL import keeps shared sources out of the scripts package's composite TypeScript project.
 const { buildCrewFileJsonSchema, buildCrewsToolboxJsonSchema } = (await import(
   new URL("../../packages/shared/src/fork/crews/crewFileSchema.ts", import.meta.url).href
 )) as {

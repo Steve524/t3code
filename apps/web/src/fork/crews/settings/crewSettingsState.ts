@@ -3,7 +3,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { useContext, useMemo } from "react";
 
-import { createCrewCatalogAtoms } from "../../../../../../packages/client-runtime/src/fork/crews/catalog";
+import { createCrewCatalogAtoms } from "@t3tools/client-runtime/fork/crews/catalog";
 import { connectionAtomRuntime } from "../../../connection/runtime";
 import type { ScopedSettingsTarget } from "../../../components/settings/scopedSettings";
 import { crewOverrideScope } from "./crewsSettings.logic";

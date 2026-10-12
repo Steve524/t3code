@@ -440,7 +440,10 @@ export const withCrewRuns = <A, E>(
       ]),
       { databaseLayer: layerDatabase },
     );
-    const layerThreads = ThreadManagementService.layer.pipe(Layer.provide(layerOrchestrator));
+    const layerThreads = ThreadManagementService.layer.pipe(
+      Layer.provide(layerOrchestrator),
+      Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase))),
+    );
     const layerConfig = ServerConfig.layerTest(process.cwd(), home);
     const layerGit = GitVcsDriver.layer.pipe(
       Layer.provide(VcsProcess.layer),
@@ -470,7 +473,9 @@ export const withCrewRuns = <A, E>(
         runForThread: () => Effect.succeed({ status: "no-script" as const }),
       }),
       Layer.mock(TextGeneration.TextGeneration)({}),
-      ServerSettings.layerTest(),
+      ServerSettings.layerTest({
+        providerInstances: { [codexB]: { driver: "codex", enabled: true } },
+      }),
       ProviderRegistryMock.layer(),
       Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
         namedProjectsRoot: "/projects",
@@ -480,12 +485,12 @@ export const withCrewRuns = <A, E>(
     const layerLaunch = ThreadLaunchService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          layerExternal,
           layerThreads,
           CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase)),
           IdAllocator.layer,
         ),
       ),
+      Layer.provide(layerExternal),
     );
     const layer = McpHttpServer.toolkitRegistration(CrewMcp.CrewToolkit, CrewMcp.layer).pipe(
       Layer.provideMerge(mcpServer.layer),

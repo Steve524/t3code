@@ -4,10 +4,7 @@ import * as Cause from "effect/Cause";
 import { ChevronDownIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import type {
-  CrewDiagnostic,
-  CrewRole,
-} from "../../../../../../packages/contracts/src/fork/crews/crewFile";
+import type { CrewDiagnostic, CrewRole } from "@t3tools/contracts/fork/crews/crewFile";
 import { usePreferredEditor } from "../../../editorPreferences";
 import {
   openRemoteEditorUrl,

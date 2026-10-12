@@ -24,10 +24,22 @@ export function createCrewSnapshot(
     providerCaps?: Record<string, number>;
   } = {},
 ): CrewSnapshot {
+  const home = detectCrewHome(crew).home;
+  const declared = crew.home?.mode === "lead" ? crew.home : undefined;
   return {
     crew,
     flow,
-    homeMode: detectCrewHome(crew).home?.mode ?? "first-step",
+    homeMode: home?.mode ?? "first-step",
+    lead:
+      home?.mode === "lead"
+        ? {
+            roleId: home.roleId,
+            canEdit: declared?.canEdit === true,
+            updates: declared?.updates ?? "milestones",
+            turn: null,
+            digest: [],
+          }
+        : null,
     status: "pending",
     paused: false,
     lastEventSeq: 0,
@@ -64,6 +76,33 @@ const isActive = (card: CrewCard) =>
 const isTerminal = (snapshot: CrewSnapshot) =>
   ["completed", "failed", "cancelled"].includes(snapshot.status);
 const isClosed = (card: CrewCard) => ["done", "skipped", "cancelled"].includes(card.state);
+/** How much of a card's summary a milestone carries; the lead reads the rest in the thread. */
+const MILESTONE_SUMMARY_CHARS = 400;
+
+/** The outcomes a gate or decision on `stepId` may be answered with. */
+export function crewDecisionOutcomes(flow: CompiledCrewFlow, stepId: string): string[] {
+  const routes = flow.edges.filter(
+    (edge) => edge.from === stepId && (edge.kind === "next" || edge.kind === "outcome"),
+  );
+  const outcomes = routes.flatMap((edge) => (edge.outcome ? [edge.outcome] : []));
+  if (outcomes.length === 0 || routes.some((edge) => edge.kind === "next")) outcomes.push("done");
+  return outcomes;
+}
+
+/** One line telling the lead how a card ended, with a link to its thread. */
+export function crewCardLine(crew: CrewFile, card: CrewCard): string {
+  const role = card.roleId === null ? null : (crew.roles[card.roleId]?.name ?? card.roleId);
+  const summary = (card.report?.summary ?? card.note ?? "").trim();
+  return [
+    `\`${card.stepId}\`${card.itemIndex === null ? "" : ` #${card.itemIndex + 1}`}`,
+    ...(role === null ? [] : [`(${role})`]),
+    `finished with \`${card.outcome ?? "done"}\`${summary.length === 0 ? "." : ":"}`,
+    ...(summary.length === 0 ? [] : [summary.slice(0, MILESTONE_SUMMARY_CHARS)]),
+    ...(card.threadId === null || role === null
+      ? []
+      : [`[${role}](t3-thread://v1/${card.threadId})`]),
+  ].join(" ");
+}
 
 /** Step one ordered input. Persist emitted facts with the result; do not feed them back as inputs. */
 export function decide(previous: CrewSnapshot, event: CrewEvent) {
@@ -100,6 +139,14 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
   const getGroup = (id: string) => snapshot.groups.find((group) => group.id === id)!;
   const ref = (card: CrewCard) => ({ cardId: card.id, attempt: card.attempt });
   const emit = (fact: CrewFact) => events.push(structuredClone(fact));
+  const lead = snapshot.lead ?? null;
+  const isLeadCard = (card: CrewCard) => lead !== null && card.roleId === lead.roleId;
+  /** Queues a milestone for the lead. It goes out with the others once the lead is idle. */
+  const tell = (milestone: string) => {
+    if (lead?.updates !== "milestones") return;
+    lead.digest.push(milestone);
+    emit({ type: "lead.update_queued", milestone });
+  };
 
   function resetCounters(stepId: string, userGate: boolean, stepFinished = true) {
     const region = flow.loopRegions.find((candidate) => candidate.steps.includes(stepId));
@@ -131,6 +178,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     };
     emit({ type: "budget.exhausted", kind });
     effects.push({ type: "notify", message: `Crew budget exhausted: ${kind}` });
+    tell(`The run reached its ${kind} budget and waits for the user to extend it or stop.`);
   }
 
   function stopCard(card: CrewCard) {
@@ -160,6 +208,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     if (status === "completed") emit({ type: "run.completed" });
     else if (status === "failed")
       emit({ type: "run.failed", reason: "Flow ended with failed status." });
+    if (status !== "cancelled") tell(`The run ${status}.`);
   }
 
   function belongsTo(parent: CrewCard["parent"], groupId: string): boolean {
@@ -186,6 +235,16 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       const budgetGroupId = snapshot.budgetGate?.groupId;
       if (budgetGroupId && getGroup(budgetGroupId).state === "done") snapshot.budgetGate = null;
     }
+    // One milestone for the whole group; an inner group's cards are in its outer group's.
+    if (group.parent === null)
+      tell(
+        [
+          `\`${group.stepId}\` joined:`,
+          ...snapshot.cards
+            .filter((card) => card.type !== "decision" && belongsTo(card.parent, group.id))
+            .map((card) => `  - ${crewCardLine(crew, card)}`),
+        ].join("\n"),
+      );
     resetCounters(group.stepId, false);
     route(group.stepId, outcome, group.parent);
   }
@@ -206,6 +265,9 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       else {
         target = edge.limit.else;
         emit({ type: "route.limit_reached", routeId: edge.id });
+        tell(
+          `\`${stepId}\` reported \`${outcome}\` more than ${edge.limit.max} times, so the flow goes to \`${target}\` instead of \`${edge.to}\`.`,
+        );
       }
     }
     if (parent) {
@@ -246,7 +308,11 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       item: structuredClone(item),
       roleId,
       instanceId: null,
-      isolation: crewStepIsolation(crew, step, parent !== null),
+      // A lead that may not edit reads the checkout in its own steps too.
+      isolation:
+        lead !== null && roleId === lead.roleId && !lead.canEdit
+          ? "read-only"
+          : crewStepIsolation(crew, step, parent !== null),
       state: "queued",
       attempt: 1,
       reminderSent: false,
@@ -267,8 +333,17 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
   function openGate(card: CrewCard, by: "user" | "lead", prompt: string, outcomes: string[]) {
     card.state = by === "user" ? "needs_you" : "waiting_lead";
     emit({ type: "gate.opened", cardId: card.id, by, prompt, outcomes });
-    if (by === "lead") effects.push({ type: "send_decision_request", cardId: card.id, outcomes });
-    else effects.push({ type: "notify", cardId: card.id, message: prompt });
+    // A lead's decision is requested by `sendToLead`, once the lead is idle.
+    if (by === "user") {
+      effects.push({ type: "notify", cardId: card.id, message: prompt });
+      tell(`The user is being asked at \`${card.stepId}\`: ${prompt}`);
+    }
+  }
+
+  function escalate(card: CrewCard, reason: string) {
+    card.state = "needs_you";
+    card.note = reason;
+    effects.push({ type: "notify", cardId: card.id, message: reason });
   }
 
   function ask(card: CrewCard, outcome: string) {
@@ -284,22 +359,17 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       roleId: null,
       report: null,
       outcome: null,
+      // The decision gets a reminder of its own, whatever its card was already reminded of.
+      reminderSent: false,
+      followUp: null,
     };
     snapshot.cards.push(decision);
     emit({ type: "card.created", card: decision });
-    const outcomes = routes
-      .filter((edge) => edge.from === card.stepId && edge.outcome)
-      .map((edge) => edge.outcome!);
-    if (
-      routes.some((edge) => edge.from === card.stepId && edge.kind === "next") ||
-      outcomes.length === 0
-    )
-      outcomes.push("done");
     openGate(
       decision,
       snapshot.homeMode === "lead" ? "lead" : "user",
       `Choose an outcome for ${card.stepId}: ${outcome}`,
-      outcomes,
+      crewDecisionOutcomes(flow, card.stepId),
     );
   }
 
@@ -341,6 +411,10 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     card.outcome = outcome;
     if (card.report) Object.assign(snapshot.artifacts, structuredClone(card.report.artifacts));
     emit({ type: "card.completed", ...ref(card), outcome });
+    // Cards of a group are told about together when it joins, and the lead knows its own work.
+    if (card.type === "merge") tell(`Merge \`${card.stepId}\` finished.`);
+    else if (card.type === "task" && card.parent === null && !isLeadCard(card))
+      tell(crewCardLine(crew, card));
     if (card.type === "fanout") {
       if (userGate) resetCounters(card.stepId, true, false);
       if (card.parent) finishBranch(card.parent, outcome);
@@ -426,6 +500,10 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
 
   function canDispatch(card: CrewCard, active: CrewCard[]) {
     const step = getStep(card.stepId);
+    // The lead's own step runs in the home thread, one turn at a time.
+    if (isLeadCard(card) && (lead?.turn || active.some(isLeadCard))) return false;
+    // A lead that may edit shares the checkout, so its turn holds the shared writer's place.
+    if (card.isolation === "shared" && lead?.canEdit && lead.turn) return false;
     if (active.length >= (crew.defaults?.maxParallel ?? Number.MAX_SAFE_INTEGER)) return false;
     if (
       active.filter((other) => other.stepId === card.stepId).length >=
@@ -466,6 +544,9 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       const entry = snapshot.pendingSteps.shift()!;
       enter(entry.stepId, entry.parent);
     }
+    // Before any card is dispatched: an editing lead hears of a step's end before the next
+    // shared card takes the checkout, so a run of shared steps cannot keep it waiting.
+    sendToLead();
     if (snapshot.paused || snapshot.budgetGate || isTerminal(snapshot)) return;
     const blocked = snapshot.groups.find((group) => group.state === "blocked");
     if (blocked) {
@@ -527,15 +608,84 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     }
   }
 
+  /** Starts the lead's next turn when it is idle: an open decision first, else the digest. */
+  function sendToLead() {
+    if (lead === null) return;
+    // A finished run takes no more input, so its last milestones queue behind the lead's turn.
+    if (!isTerminal(snapshot)) {
+      if (lead.turn || snapshot.paused) return;
+      // An editing lead waits for the shared checkout, as a shared card would.
+      if (
+        snapshot.cards.some(
+          (other) =>
+            isActive(other) &&
+            (isLeadCard(other) || (lead.canEdit && other.isolation === "shared")),
+        )
+      )
+        return;
+      const decision = snapshot.cards.find((other) => other.state === "waiting_lead");
+      if (decision) {
+        lead.turn = { id: event.seq, kind: "decision", cardId: decision.id };
+        effects.push({
+          type: "send_decision_request",
+          cardId: decision.id,
+          outcomes: crewDecisionOutcomes(flow, decision.stepId),
+          turnId: event.seq,
+          reminder: false,
+        });
+        return;
+      }
+    }
+    if (lead.digest.length === 0) return;
+    lead.turn = { id: event.seq, kind: "update", cardId: null };
+    effects.push({ type: "deliver_lead_update", turnId: event.seq, milestones: lead.digest });
+    lead.digest = [];
+  }
+
   const card = "cardId" in event ? getCard(event.cardId) : undefined;
   const currentAttempt = card && (!("attempt" in event) || event.attempt === card.attempt);
   switch (event.type) {
     case "run.created":
       if (snapshot.status === "pending") {
         snapshot.status = "running";
-        snapshot.pendingSteps.push({ stepId: flow.start, parent: null });
+        // In lead mode the flow starts when the lead's kickoff turn ends.
+        if (lead === null) snapshot.pendingSteps.push({ stepId: flow.start, parent: null });
+        else {
+          lead.turn = { id: event.seq, kind: "kickoff", cardId: null };
+          effects.push({ type: "launch_lead", turnId: event.seq });
+        }
       }
       break;
+    case "lead.turn_finished": {
+      const turn = lead?.turn;
+      if (!lead || !turn || turn.id !== event.turnId) break;
+      lead.turn = null;
+      if (turn.kind === "kickoff") {
+        emit({ type: "lead.kickoff_finished" });
+        snapshot.pendingSteps.push({ stepId: flow.start, parent: null });
+      } else if (turn.kind === "update") emit({ type: "lead.update_delivered" });
+      else {
+        const decision = turn.cardId === null ? undefined : getCard(turn.cardId);
+        if (decision?.state !== "waiting_lead") break;
+        // The lead ended its turn without deciding: one reminder, then the user is asked.
+        if (turn.kind === "decision") {
+          decision.reminderSent = true;
+          lead.turn = { id: event.seq, kind: "reminder", cardId: decision.id };
+          effects.push({
+            type: "send_decision_request",
+            cardId: decision.id,
+            outcomes: crewDecisionOutcomes(flow, decision.stepId),
+            turnId: event.seq,
+            reminder: true,
+          });
+        } else {
+          const reason = "The lead ended its turn twice without deciding.";
+          escalate(decision, reason);
+          emit({ type: "gate.escalated", cardId: decision.id, reason });
+        }
+      }
+      break;
+    }
     case "card.dispatched":
       // An agent can report before the launch that started its turn returns, so a card that
       // already reported still takes its thread.
@@ -621,6 +771,10 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
         throw new Error("The gate outcome is not one of its routes.");
       card.decidedBy = event.by;
       card.note = event.note;
+      if (event.by === "user")
+        tell(
+          `The user answered \`${event.outcome}\` at \`${source.stepId}\`${event.note.length === 0 ? "." : `: ${event.note}`}`,
+        );
       if (source !== card) {
         card.state = "done";
         card.outcome = event.outcome;
@@ -629,11 +783,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       break;
     }
     case "gate.escalated":
-      if (card?.state === "waiting_lead") {
-        card.state = "needs_you";
-        card.note = event.reason;
-        effects.push({ type: "notify", cardId: card.id, message: event.reason });
-      }
+      if (card?.state === "waiting_lead") escalate(card, event.reason);
       break;
     case "budget.extended":
       if (
@@ -754,6 +904,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
           step.type === "merge" && typeof step.onConflict === "object"
             ? step.onConflict.role
             : null;
+        tell(`Merge \`${card.stepId}\` hit conflicts in ${event.paths.join(", ")}.`);
         if (role === null)
           openGate(card, "user", `Merge conflict: ${event.paths.join(", ")}`, ["done"]);
         else {
@@ -786,10 +937,8 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     case "budget.exhausted":
       openBudget(event.kind);
       break;
-    case "lead.update_queued":
-      effects.push({ type: "deliver_lead_update", milestone: event.milestone });
-      break;
     // These facts describe work already recorded by decide or owned by later workers.
+    case "lead.update_queued":
     case "step.entered":
     case "card.created":
     case "gate.opened":
@@ -806,8 +955,11 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
   )
     openBudget("maxHours");
   pump();
+  // Again, for what dispatching itself had to tell the lead.
+  sendToLead();
   if (!isTerminal(snapshot)) {
-    const active = snapshot.cards.some(isActive);
+    // A turn of the lead's is work the run waits on, like a card's.
+    const active = snapshot.cards.some(isActive) || Boolean(lead?.turn);
     snapshot.status = snapshot.paused
       ? "paused"
       : snapshot.budgetGate || !active

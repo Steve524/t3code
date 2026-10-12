@@ -54,10 +54,28 @@ export interface CrewGroup {
   items: unknown[];
 }
 
+/** The role that runs in the home thread for the whole run, in lead mode. */
+export interface CrewLead {
+  roleId: string;
+  canEdit: boolean;
+  updates: "milestones" | "decisions";
+  // The turn the crew started in the home thread and waits on. Nothing else is sent there
+  // until it ends, which is what batches the digest.
+  turn: {
+    id: number;
+    kind: "kickoff" | "update" | "decision" | "reminder";
+    cardId: string | null;
+  } | null;
+  // Milestones the lead has not been sent yet.
+  digest: string[];
+}
+
 export interface CrewSnapshot {
   crew: CrewFile;
   flow: CompiledCrewFlow;
   homeMode: "first-step" | "lead";
+  // Absent in runs started before lead mode existed, which are all first-step.
+  lead?: CrewLead | null;
   status: "pending" | "running" | "paused" | "waiting" | "completed" | "failed" | "cancelled";
   paused: boolean;
   lastEventSeq: number;
@@ -145,6 +163,8 @@ export type CrewEvent = (
       choice: "all" | "first" | "stop";
       count?: number;
     }
+  // The home thread's turn that `turnId` names ended.
+  | { type: "lead.turn_finished"; turnId: number }
 ) & {
   // Ordered input events, with milliseconds supplied by the caller, never read by decide.
   seq: number;
@@ -165,6 +185,14 @@ export type CrewEffect =
   | ({ type: "run_script" } & CardRef)
   | { type: "remove_worktree"; cardId: string }
   | { type: "deliver_notes"; cardId: string }
-  | { type: "deliver_lead_update"; milestone: string }
-  | { type: "send_decision_request"; cardId: string; outcomes: string[] }
+  // The three turns the crew starts in the home thread. `turnId` comes back in `lead.turn_finished`.
+  | { type: "launch_lead"; turnId: number }
+  | { type: "deliver_lead_update"; turnId: number; milestones: string[] }
+  | {
+      type: "send_decision_request";
+      cardId: string;
+      outcomes: string[];
+      turnId: number;
+      reminder: boolean;
+    }
   | { type: "notify"; message: string; cardId?: string };

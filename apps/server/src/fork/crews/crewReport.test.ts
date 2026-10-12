@@ -10,6 +10,7 @@ import {
   crewArtifactErrors,
   crewReportErrors,
   crewStepOutcomes,
+  parseCrewDecisionBlock,
   parseCrewReportBlock,
 } from "./crewReport.ts";
 
@@ -116,5 +117,23 @@ describe("crew-report block", () => {
     ["another fenced language", '```json\n{ "outcome": "approve", "summary": "x" }\n```'],
   ])("finds no report in %s", (_name, text) => {
     expect(parseCrewReportBlock(text)).toBeNull();
+  });
+});
+
+describe("crew-decision block", () => {
+  it("reads the answer a lead without tools ends its message with", () => {
+    expect(
+      parseCrewDecisionBlock(
+        'Backend.\n\n```crew-decision\n{ "decisionId": "run:triage:1", "outcome": "backend", "note": "API bug" }\n```',
+      ),
+    ).toEqual({ decisionId: "run:triage:1", outcome: "backend", note: "API bug" });
+  });
+
+  it.each([
+    ["no block", "I would pick backend."],
+    ["a report block", '```crew-report\n{ "outcome": "backend", "summary": "x" }\n```'],
+    ["a block without a decision id", '```crew-decision\n{ "outcome": "backend" }\n```'],
+  ])("finds no decision in %s", (_name, text) => {
+    expect(parseCrewDecisionBlock(text)).toBeNull();
   });
 });

@@ -78,7 +78,7 @@ export function buildCrewRunView(
     crewName: crew.name,
     status,
     homeMode: snapshot.homeMode,
-    leadRoleId: null,
+    leadRoleId: snapshot.lead?.roleId ?? null,
     homeThreadId: run.homeThreadId,
     integrationBranch: run.integrationBranch,
     integrationWorktree: run.integrationWorktree,

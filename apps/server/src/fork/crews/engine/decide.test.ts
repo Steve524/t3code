@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { decide } from "./decide.ts";
-import { engine, end, task } from "./engineTestFixtures.ts";
+import { engine, end, led, task } from "./engineTestFixtures.ts";
 import type { CrewEvent } from "./types.ts";
 
 const changes = "review/outcome/changes";
@@ -30,7 +30,7 @@ function reviewLoop(resetOn?: string[], by: "user" | "lead" = "user") {
       },
       done: end,
     },
-    by === "lead" ? { home: { mode: "lead", role: "worker" } } : {},
+    by === "lead" ? led : {},
   );
 }
 function exhaustReview(run: ReturnType<typeof reviewLoop>) {
@@ -194,8 +194,8 @@ describe("outcomes, attempts and lifecycle", () => {
       const run = engine(
         { work: { ...task, next: "done" }, done: end },
         {
+          ...(mode === "lead" ? led : { home: { mode } }),
           defaults: { onNoReport: policy },
-          home: mode === "lead" ? { mode, role: "worker" } : { mode },
         },
       );
       run.start();
@@ -305,7 +305,7 @@ describe("outcomes, attempts and lifecycle", () => {
   it("escalation lets the user resolve a lead decision and refuses the lead afterwards", () => {
     const run = engine(
       { work: { ...task, next: "done" }, done: end },
-      { home: { mode: "lead", role: "worker" }, defaults: { onNoReport: "ask" } },
+      { ...led, defaults: { onNoReport: "ask" } },
     );
     run.start();
     run.complete(run.latest("work"), "no_report");

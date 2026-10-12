@@ -46,6 +46,7 @@ import { ForkCrewsError } from "../../../../../packages/contracts/src/fork/crews
 import {
   CrewMcpFailure,
   type CrewCardContext,
+  type CrewDecideInput,
   type CrewNoteInput,
   type CrewReportInput,
   type CrewRunListInput,
@@ -77,6 +78,9 @@ import {
 import {
   composeCrewCardPrompt,
   composeCrewConflictPrompt,
+  composeCrewLeadKickoff,
+  crewDecisionPrompt,
+  crewLeadUpdatePrompt,
   crewPromptFiles,
   crewReminderPrompt,
 } from "./CrewPromptComposer.ts";
@@ -85,6 +89,7 @@ import {
   crewReportErrors,
   crewStepOutcomes,
   crewStepProduces,
+  parseCrewDecisionBlock,
   parseCrewReportBlock,
 } from "./crewReport.ts";
 import {
@@ -95,7 +100,7 @@ import {
   type CrewRunRole,
 } from "./CrewRunStore.ts";
 import { buildCrewRunView } from "./crewRunView.ts";
-import { createCrewSnapshot, decide } from "./engine/decide.ts";
+import { createCrewSnapshot, crewCardLine, crewDecisionOutcomes, decide } from "./engine/decide.ts";
 import type { BudgetKind, CrewCard, CrewEffect, CrewEvent } from "./engine/types.ts";
 
 export class CrewRunService extends Context.Service<
@@ -166,6 +171,11 @@ export class CrewRunService extends Context.Service<
       threadId: ThreadId,
       input: CrewReportInput,
     ) => Effect.Effect<{ readonly recorded: true; readonly outcome: string }, CrewMcpFailure>;
+    /** The lead's answer to a decision it was asked for. Only the home thread of a lead run may. */
+    readonly decide: (
+      threadId: ThreadId,
+      input: CrewDecideInput,
+    ) => Effect.Effect<{ readonly decided: true; readonly outcome: string }, CrewMcpFailure>;
     readonly readArtifact: (
       threadId: ThreadId,
       name: string,
@@ -204,6 +214,15 @@ export class CrewRunService extends Context.Service<
   }
 >()("t3/fork/crews/CrewRunService") {}
 
+/**
+ * How long one minute of a crew's `home.decisionTimeoutMinutes` lasts. Tests shorten it, so
+ * they wait on the escalation and not on the clock.
+ */
+export const CrewDecisionMinute = Context.Reference<Duration.Duration>(
+  "t3/fork/crews/CrewDecisionMinute",
+  { defaultValue: () => Duration.minutes(1) },
+);
+
 /** A card as the board names it, or by the engine's run-local id. */
 interface CardTarget {
   readonly runId: string;
@@ -229,6 +248,11 @@ type Work =
 const LIVE_STATES: ReadonlySet<CrewCard["state"]> = new Set(["dispatching", "working", "reported"]);
 /** A card the user may retry, skip or force: not running, and not yet routed on. */
 const WAITING_STATES: ReadonlySet<CrewCard["state"]> = new Set(["queued", "blocked", "needs_you"]);
+/**
+ * What the home thread is indexed under while the lead is on a turn that is no card's. A step
+ * id starts with a letter, so no card is named this.
+ */
+const LEAD_TURN = "@lead";
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---/u;
 /** A script or tool with no timeout of its own is stopped after this long. */
 const DEFAULT_COMMAND_TIMEOUT_SECONDS = 600;
@@ -311,6 +335,8 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const settings = yield* ServerSettings.ServerSettingsService;
   const platform = yield* HostProcess.Platform;
+  const decisionMinute = yield* CrewDecisionMinute;
+  const scope = yield* Effect.scope;
   const store = makeCrewRunStore(sql);
   // shortcut: one lock for every run; give each run its own when concurrent runs wait on each other.
   const lock = yield* Semaphore.make(1);
@@ -552,6 +578,48 @@ const make = Effect.gen(function* () {
     });
   });
 
+  /** What an agent ended a turn with. */
+  const finalText = (threadId: ThreadId, orchestrationRunId: RunId) =>
+    threads
+      .getThreadRecords(threadId, ["messages", "turnItems"], {
+        messageRoles: ["assistant"],
+        messageRunIds: [orchestrationRunId],
+        turnItemRunIds: [orchestrationRunId],
+        turnItemTypes: ["assistant_message"],
+      })
+      .pipe(
+        Effect.mapError(unavailable),
+        // Not every provider records its answer as a message; all record it as a turn item.
+        Effect.map(({ messages, turnItems }) => {
+          const item = turnItems.at(-1);
+          return messages.at(-1)?.text ?? (item?.type === "assistant_message" ? item.text : "");
+        }),
+      );
+
+  /** One of the crew's own turns in the home thread ended. A decision may be in its last message. */
+  const leadTurnFinished = Effect.fn("CrewRunService.leadTurnFinished")(function* (
+    runId: string,
+    turnId: number,
+    work: Extract<Work, { readonly threadId: ThreadId }>,
+  ) {
+    const run = yield* loadRun(runId);
+    const turn = run.snapshot.lead?.turn;
+    if (turn?.id !== turnId) return;
+    if (
+      turn.cardId !== null &&
+      run.snapshot.cards.find((card) => card.id === turn.cardId)?.state === "waiting_lead"
+    ) {
+      const block = parseCrewDecisionBlock(
+        yield* finalText(work.threadId, work.orchestrationRunId),
+      );
+      // A block that is refused is no answer; the reminder says what is allowed.
+      if (block !== null && localCardId(runId, block.decisionId) === turn.cardId) {
+        yield* Effect.ignore(answerDecision(work.threadId, block));
+      }
+    }
+    yield* apply(runId, { type: "lead.turn_finished", turnId });
+  });
+
   /** A role's turn ended. Its report, or the block it ended with, decides the card. */
   const turnFinished = Effect.fn("CrewRunService.turnFinished")(function* (
     work: Extract<Work, { readonly threadId: ThreadId }>,
@@ -559,6 +627,8 @@ const make = Effect.gen(function* () {
     const entry = yield* store.findThread(work.threadId).pipe(Effect.mapError(unavailable));
     // Any other thread's turn, or an earlier turn of this one.
     if (entry === null || entry.orchestrationRunId !== work.orchestrationRunId) return;
+    if (entry.cardId === LEAD_TURN)
+      return yield* leadTurnFinished(entry.runId, entry.attempt, work);
     const run = yield* loadRun(entry.runId);
     const card = run.snapshot.cards.find((candidate) => candidate.id === entry.cardId);
     // A turn whose end was already handled; it is reported twice when it ends during dispatch.
@@ -571,19 +641,7 @@ const make = Effect.gen(function* () {
     }
     let summary = card.report?.summary ?? null;
     if (card.report === null && card.state !== "stopping") {
-      const { messages, turnItems } = yield* threads
-        .getThreadRecords(work.threadId, ["messages", "turnItems"], {
-          messageRoles: ["assistant"],
-          messageRunIds: [work.orchestrationRunId],
-          turnItemRunIds: [work.orchestrationRunId],
-          turnItemTypes: ["assistant_message"],
-        })
-        .pipe(Effect.mapError(unavailable));
-      // Not every provider records its answer as a message; all record it as a turn item.
-      const item = turnItems.at(-1);
-      const block = parseCrewReportBlock(
-        messages.at(-1)?.text ?? (item?.type === "assistant_message" ? item.text : ""),
-      );
+      const block = parseCrewReportBlock(yield* finalText(work.threadId, work.orchestrationRunId));
       if (block !== null) {
         const written = yield* store
           .artifactsWrittenBy(run.runId, card.id)
@@ -630,7 +688,23 @@ const make = Effect.gen(function* () {
     });
   });
 
-  /** Records the turn a card now waits on, then catches a turn that already ended. */
+  /** Records the turn a thread's index entry waits on, then catches a turn that already ended. */
+  const watchTurn = Effect.fn("CrewRunService.watchTurn")(function* (
+    threadId: ThreadId,
+    orchestrationRunId: RunId,
+  ) {
+    yield* store.setThreadTurn(threadId, orchestrationRunId).pipe(Effect.mapError(unavailable));
+    // Until the line above, this turn's end matched nothing and was dropped.
+    const { runs } = yield* threads
+      .getThreadRecords(threadId, ["runs"], { runIds: [orchestrationRunId] })
+      .pipe(Effect.mapError(unavailable));
+    const status = runs[0]?.status;
+    if (status !== undefined && ThreadManagementService.isTerminalRunStatus(status)) {
+      yield* turnFinished({ threadId, orchestrationRunId, status });
+    }
+  });
+
+  /** Records the turn a card now waits on. */
   const dispatched = Effect.fn("CrewRunService.dispatched")(function* (
     run: CrewRunRecord,
     card: CrewCard,
@@ -644,16 +718,62 @@ const make = Effect.gen(function* () {
       threadId,
       orchestrationRunId,
     });
-    yield* store.setThreadTurn(threadId, orchestrationRunId).pipe(Effect.mapError(unavailable));
-    // Until the line above, this turn's end matched no card and was dropped.
-    const { runs } = yield* threads
-      .getThreadRecords(threadId, ["runs"], { runIds: [orchestrationRunId] })
-      .pipe(Effect.mapError(unavailable));
-    const status = runs[0]?.status;
-    if (status !== undefined && ThreadManagementService.isTerminalRunStatus(status)) {
-      yield* turnFinished({ threadId, orchestrationRunId, status });
-    }
+    yield* watchTurn(threadId, orchestrationRunId);
   });
+
+  /** Launches a thread on its first message and returns the turn that answers it. */
+  const launchTurn = Effect.fn("CrewRunService.launchTurn")(function* (
+    runId: string,
+    input: ThreadLaunchService.ThreadLaunchInput,
+  ) {
+    const launched = yield* launches
+      .launch(input)
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new ForkCrewsError({ reason: "launch_failed", runId, detail: cause.message, cause }),
+        ),
+      );
+    const turn = launched.projection.runs.find(
+      (candidate) => candidate.userMessageId === input.initialMessage?.messageId,
+    );
+    if (turn === undefined) {
+      return yield* new ForkCrewsError({
+        reason: "launch_failed",
+        runId,
+        detail: "The thread was created without a turn for its first message.",
+      });
+    }
+    return { thread: launched.projection.thread, turnId: turn.id };
+  });
+
+  /** Queues one of the crew's messages in a thread and returns the turn that will answer it. */
+  const sendTurn = (run: CrewRunRecord, threadId: ThreadId, key: string, text: string) =>
+    threads
+      .sendToThread({
+        projectId: run.projectId,
+        // Derived from what the message is for, so a retried effect sends it once.
+        commandId: CommandId.make(`crew:${run.runId}:${key}:send`),
+        threadId,
+        messageId: MessageId.make(`message:${run.runId}:${key}`),
+        text,
+        attachments: [],
+        mode: "queue",
+        createdBy: "system",
+        creationSource: "server",
+      })
+      .pipe(
+        Effect.map((sent) => sent.run.id),
+        Effect.mapError(
+          (cause) =>
+            new ForkCrewsError({
+              reason: "launch_failed",
+              runId: run.runId,
+              detail: cause.message,
+              cause,
+            }),
+        ),
+      );
 
   const launchCard = Effect.fn("CrewRunService.launchCard")(function* (
     runId: string,
@@ -664,9 +784,18 @@ const make = Effect.gen(function* () {
     const role = card === undefined || card.roleId === null ? undefined : run.roles[card.roleId];
     const modelSelection = card === undefined ? null : crewCardModel(run, card);
     if (card === undefined || role === undefined || modelSelection === null) return;
+    const { homeThreadId } = run;
+    // The lead's own steps are follow-ups in the home thread, which holds its context.
+    if (run.snapshot.lead?.roleId === card.roleId && homeThreadId !== null) {
+      return yield* followUp(runId, {
+        ...effect,
+        type: "send_follow_up",
+        threadId: homeThreadId,
+        reason: "continue",
+      });
+    }
     const threadId = ThreadId.make(`thread:${runId}:${card.id}:${card.attempt}`);
     // The first thread a first-step run launches is the one the user sent from.
-    const { homeThreadId } = run;
     const isHome = homeThreadId === null;
     const home =
       homeThreadId === null
@@ -748,52 +877,181 @@ const make = Effect.gen(function* () {
         store.setHome(runId, {
           threadId: homeThreadId ?? threadId,
           worktree: home?.worktreePath ?? null,
-          branch,
+          // The home thread's branch, not the one a worktree card was just given.
+          branch: home === null ? branch : home.branch,
         }),
       ),
       Effect.mapError(unavailable),
     );
     const messageId = MessageId.make(`message:${runId}:${card.id}:${card.attempt}`);
-    const launched = yield* launches
-      .launch({
-        // Derived from the card and attempt, so a retried effect resumes this launch.
-        commandId: CommandId.make(`crew:${runId}:${card.id}:${card.attempt}:launch`),
-        threadId,
-        projectId: run.projectId,
-        title: `${run.crew.name}: ${isHome && brief !== undefined ? brief : `${role.name}${item}`}`
-          .replaceAll(/\s+/gu, " ")
-          .slice(0, 80),
-        modelSelection,
-        runtimeMode: readOnly ? "approval-required" : role.runtimeMode,
-        interactionMode: readOnly ? "plan" : interactionMode(run.crew, card),
-        workspaceStrategy,
-        initialMessage: { messageId, text, attachments: isHome ? run.start.attachments : [] },
-        createdBy: isHome ? "user" : "system",
-        creationSource: isHome ? "web" : "server",
-      })
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new ForkCrewsError({ reason: "launch_failed", runId, detail: cause.message, cause }),
-        ),
-      );
-    const turn = launched.projection.runs.find(
-      (candidate) => candidate.userMessageId === messageId,
-    );
-    if (turn === undefined) {
-      return yield* new ForkCrewsError({
-        reason: "launch_failed",
-        runId,
-        detail: "The thread was created without a turn for the card's prompt.",
-      });
-    }
-    const { thread } = launched.projection;
+    const { thread, turnId } = yield* launchTurn(runId, {
+      // Derived from the card and attempt, so a retried effect resumes this launch.
+      commandId: CommandId.make(`crew:${runId}:${card.id}:${card.attempt}:launch`),
+      threadId,
+      projectId: run.projectId,
+      title: `${run.crew.name}: ${isHome && brief !== undefined ? brief : `${role.name}${item}`}`
+        .replaceAll(/\s+/gu, " ")
+        .slice(0, 80),
+      modelSelection,
+      runtimeMode: readOnly ? "approval-required" : role.runtimeMode,
+      interactionMode: readOnly ? "plan" : interactionMode(run.crew, card),
+      workspaceStrategy,
+      initialMessage: { messageId, text, attachments: isHome ? run.start.attachments : [] },
+      createdBy: isHome ? "user" : "system",
+      creationSource: isHome ? "web" : "server",
+    });
     if (isHome) {
       yield* store
         .setHome(runId, { threadId, worktree: thread.worktreePath, branch: thread.branch })
         .pipe(Effect.mapError(unavailable));
     }
-    yield* dispatched(run, card, threadId, turn.id);
+    yield* dispatched(run, card, threadId, turnId);
+  });
+
+  /** Starts the home thread on the lead's kickoff. The flow's first step waits for that turn's end. */
+  const launchLead = Effect.fn("CrewRunService.launchLead")(function* (
+    runId: string,
+    turnId: number,
+  ) {
+    const run = yield* loadRun(runId);
+    const lead = run.snapshot.lead;
+    const role = lead ? run.roles[lead.roleId] : undefined;
+    if (!lead || lead.turn?.id !== turnId || role === undefined) return;
+    const threadId = ThreadId.make(`thread:${runId}:lead`);
+    const brief = Object.values(run.inputs).find((value) => typeof value === "string");
+    const workspace = run.start.workspace;
+    const branch = run.integrationBranch;
+    const definition = run.crew.roles[lead.roleId];
+    const plans =
+      (definition?.interactionMode ?? run.crew.defaults?.interactionMode ?? "inherit") === "plan";
+    // The kickoff turn can call a crew tool before `launch` returns, so the thread is known first.
+    yield* store
+      .indexThread(threadId, { runId, cardId: LEAD_TURN, attempt: turnId })
+      .pipe(
+        Effect.andThen(store.setHome(runId, { threadId, worktree: null, branch })),
+        Effect.mapError(unavailable),
+      );
+    const { thread, turnId: orchestrationRunId } = yield* launchTurn(runId, {
+      commandId: CommandId.make(`crew:${runId}:${LEAD_TURN}:launch`),
+      threadId,
+      projectId: run.projectId,
+      title: `${run.crew.name}: ${brief ?? role.name}`.replaceAll(/\s+/gu, " ").slice(0, 80),
+      modelSelection: role.modelSelection,
+      // Unless it may edit, the lead reads the checkout and changes go through the roles.
+      runtimeMode: lead.canEdit ? role.runtimeMode : "approval-required",
+      interactionMode: lead.canEdit && !plans ? "default" : "plan",
+      workspaceStrategy:
+        workspace.mode === "new-worktree" && branch !== null
+          ? { type: "worktree", baseRef: workspace.baseRef, branch, startFromOrigin: false }
+          : { type: "root" },
+      initialMessage: {
+        messageId: MessageId.make(`message:${runId}:${LEAD_TURN}:${turnId}`),
+        text: composeCrewLeadKickoff({
+          crew: run.crew,
+          files: run.files,
+          driver: role.driver,
+          inputs: run.inputs,
+          roleId: lead.roleId,
+          models: Object.fromEntries(
+            Object.entries(run.roles).map(([id, other]) => [
+              id,
+              `${other.modelSelection.instanceId}/${other.modelSelection.model}`,
+            ]),
+          ),
+          canEdit: lead.canEdit,
+          updates: lead.updates,
+        }),
+        attachments: run.start.attachments,
+      },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    // The launch returns before the home worktree exists, so its path is read from the thread
+    // when a card first needs it.
+    yield* store
+      .setHome(runId, { threadId, worktree: null, branch: thread.branch })
+      .pipe(Effect.mapError(unavailable));
+    yield* watchTurn(threadId, orchestrationRunId);
+  });
+
+  /** Sends the lead one of the crew's own turns, which the engine then waits on. */
+  const sendToLead = Effect.fn("CrewRunService.sendToLead")(function* (
+    runId: string,
+    turnId: number,
+    text: (run: CrewRunRecord) => string,
+  ) {
+    const run = yield* loadRun(runId);
+    const { homeThreadId } = run;
+    if (homeThreadId === null || run.snapshot.lead?.turn?.id !== turnId) return;
+    yield* store
+      .indexThread(homeThreadId, { runId, cardId: LEAD_TURN, attempt: turnId })
+      .pipe(Effect.mapError(unavailable));
+    yield* watchTurn(
+      homeThreadId,
+      yield* sendTurn(run, homeThreadId, `${LEAD_TURN}:${turnId}`, text(run)),
+    );
+  });
+
+  /** Asks the lead to decide, and hands the decision to the user if it takes too long. */
+  const requestDecision = Effect.fn("CrewRunService.requestDecision")(function* (
+    runId: string,
+    effect: Extract<CrewEffect, { readonly type: "send_decision_request" }>,
+  ) {
+    const { cardId } = effect;
+    const waiting = (run: CrewRunRecord) =>
+      run.snapshot.cards.find((card) => card.id === cardId && card.state === "waiting_lead");
+    yield* sendToLead(runId, effect.turnId, (run) => {
+      const { crew, snapshot } = run;
+      const card = snapshot.cards.find((candidate) => candidate.id === cardId);
+      const step = card === undefined ? undefined : crew.flow.steps[card.stepId];
+      const source = snapshot.cards.find((candidate) => candidate.id === card?.sourceCardId);
+      // A gate is about the steps that route into it; a decision, about the card it settles.
+      const about =
+        source === undefined
+          ? [
+              ...new Set(
+                snapshot.flow.edges
+                  .filter((edge) => edge.to === card?.stepId && edge.kind !== "branch")
+                  .map((edge) => edge.from),
+              ),
+            ].flatMap((stepId) => {
+              const latest = snapshot.cards.findLast(
+                (other) =>
+                  other.stepId === stepId && other.type !== "decision" && other.outcome !== null,
+              );
+              return latest === undefined ? [] : [latest];
+            })
+          : [source];
+      return crewDecisionPrompt({
+        decisionId: `${runId}:${cardId}`,
+        prompt:
+          step?.type === "gate"
+            ? step.prompt
+            : `Step \`${card?.stepId}\` ended with \`${source?.outcome}\`, which the flow has no route for. Choose how it continues.`,
+        outcomes: effect.outcomes,
+        context: about.map((other) => crewCardLine(crew, other)),
+        reminder: effect.reminder,
+      });
+    });
+    const run = yield* loadRun(runId);
+    const minutes =
+      run.crew.home?.mode === "lead" ? run.crew.home.decisionTimeoutMinutes : undefined;
+    if (effect.reminder || minutes === undefined || waiting(run) === undefined) return;
+    // shortcut: the timer lives in memory, so a restart forgets it; re-arm it from the request's event time when startup recovery lands.
+    yield* Effect.sleep(Duration.times(decisionMinute, minutes)).pipe(
+      Effect.andThen(loadRun(runId)),
+      Effect.flatMap((later) =>
+        waiting(later) === undefined
+          ? Effect.void
+          : apply(runId, {
+              type: "gate.escalated",
+              cardId,
+              reason: `The lead did not decide within ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+            }),
+      ),
+      Effect.ignore,
+      Effect.forkIn(scope),
+    );
   });
 
   /** Sends the card's prompt, or a reminder, to a thread that already holds the role's context. */
@@ -825,25 +1083,12 @@ const make = Effect.gen(function* () {
         })
         .pipe(Effect.mapError(unavailable));
     }
-    const sent = yield* threads
-      .sendToThread({
-        projectId: run.projectId,
-        commandId: CommandId.make(`crew:${runId}:${card.id}:${card.attempt}:send`),
-        threadId,
-        messageId: MessageId.make(`message:${runId}:${card.id}:${card.attempt}`),
-        text,
-        attachments: [],
-        mode: "queue",
-        createdBy: "system",
-        creationSource: "server",
-      })
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new ForkCrewsError({ reason: "launch_failed", runId, detail: cause.message, cause }),
-        ),
-      );
-    yield* dispatched(run, card, threadId, sent.run.id);
+    yield* dispatched(
+      run,
+      card,
+      threadId,
+      yield* sendTurn(run, threadId, `${card.id}:${card.attempt}`, text),
+    );
   });
 
   /** Records what each waiting branch changed outside its card's paths, then starts the merge. */
@@ -1079,18 +1324,17 @@ const make = Effect.gen(function* () {
         return removeCardWorktree(runId, effect.cardId);
       // The board shows what waits on the user; nothing is pushed to them yet. The service commits
       // at turn end and before a branch or merge, so the engine asks for no commit of its own.
+      // Notes reach a role in its next prompt, so nothing delivers them on their own.
       case "notify":
       case "commit_workspace":
+      case "deliver_notes":
         return Effect.void;
-      // Lead delivery belongs to a later phase.
-      default:
-        return Effect.fail(
-          new ForkCrewsError({
-            reason: "unsupported",
-            runId,
-            detail: `Crew effect "${effect.type}" is not available yet.`,
-          }),
-        );
+      case "launch_lead":
+        return launchLead(runId, effect.turnId);
+      case "deliver_lead_update":
+        return sendToLead(runId, effect.turnId, () => crewLeadUpdatePrompt(effect.milestones));
+      case "send_decision_request":
+        return requestDecision(runId, effect);
     }
   };
 
@@ -1108,7 +1352,13 @@ const make = Effect.gen(function* () {
     yield* store
       .finishEffect(effectId, error, (yield* timestamp).iso)
       .pipe(Effect.mapError(unavailable));
-    if (error !== null && "cardId" in effect && effect.cardId !== undefined) {
+    // A turn the lead could not be sent has ended: an update is dropped, and a decision goes on
+    // to its reminder and then to the user. A failed kickoff fails the start instead.
+    if (error !== null && "turnId" in effect) {
+      if (effect.type !== "launch_lead") {
+        yield* apply(runId, { type: "lead.turn_finished", turnId: effect.turnId });
+      }
+    } else if (error !== null && "cardId" in effect && effect.cardId !== undefined) {
       const { cardId } = effect;
       const run = yield* loadRun(runId);
       const attempt =
@@ -1213,11 +1463,8 @@ const make = Effect.gen(function* () {
           projectId: input.projectId,
         });
       }
-      const refuse = (reason: "unsupported" | "invalid_request", why: string) =>
+      const refuse = (reason: "invalid_request", why: string) =>
         new ForkCrewsError({ reason, crewId: input.crewId, detail: why });
-      if (detail.summary.home?.mode !== "first-step") {
-        return yield* refuse("unsupported", "Crews with a lead cannot run yet.");
-      }
       const inputs = resolveInputs(crew, input.inputs);
       if (typeof inputs === "string") return yield* refuse("invalid_request", inputs);
 
@@ -1330,27 +1577,82 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  /** The card a tool call comes from, with its run and role. */
-  const caller = Effect.fn("CrewRunService.caller")(function* (threadId: ThreadId) {
+  /** Who a tool call comes from: a card's thread, or the lead's home thread between its cards. */
+  const member = Effect.fn("CrewRunService.member")(function* (threadId: ThreadId) {
     const entry = yield* store.findThread(threadId).pipe(Effect.mapError(toolUnavailable));
     const run =
       entry === null
         ? null
         : yield* store.getRun(entry.runId).pipe(Effect.mapError(toolUnavailable));
     const card = run?.snapshot.cards.find((candidate) => candidate.id === entry?.cardId);
-    if (run === null || card === undefined) {
+    const lead = run?.homeThreadId === threadId ? (run.snapshot.lead ?? null) : null;
+    if (run === null || (card === undefined && lead === null)) {
       return yield* refused("not_a_crew_card", "This thread is not working for a crew run.");
     }
+    const roleId = card?.roleId ?? lead?.roleId ?? null;
     return {
       run,
       card,
-      toolbox: (card.roleId === null ? undefined : run.toolboxes[card.roleId]) ?? {
+      isLead: lead !== null,
+      roleId,
+      toolbox: (roleId === null ? undefined : run.toolboxes[roleId]) ?? {
         skills: [],
         mcp: [],
         tools: [],
       },
     };
   });
+
+  /** The card a tool call comes from, with its run and role. */
+  const caller = (threadId: ThreadId) =>
+    Effect.flatMap(member(threadId), ({ card, ...rest }) =>
+      card === undefined
+        ? Effect.fail(
+            refused("not_allowed", "The lead has no step of its own running, so this has no card."),
+          )
+        : Effect.succeed({ ...rest, card }),
+    );
+
+  const answerDecision: CrewRunService["Service"]["decide"] = Effect.fn("CrewRunService.decide")(
+    function* (threadId, input) {
+      const { run, isLead } = yield* member(threadId);
+      if (!isLead) return yield* refused("not_allowed", "Only the crew's lead answers decisions.");
+      const cardId = localCardId(run.runId, input.decisionId);
+      const card = run.snapshot.cards.find((candidate) => candidate.id === cardId);
+      if (card?.state !== "waiting_lead") {
+        return yield* refused(
+          "not_allowed",
+          card?.state === "needs_you" || card?.decidedBy === "user"
+            ? "The user has taken this decision over, so nothing was recorded."
+            : "That decision is not open. `crew_context` lists the open ones.",
+        );
+      }
+      const outcomes = crewDecisionOutcomes(run.snapshot.flow, card.stepId);
+      if (input.outcome !== "escalate" && !outcomes.includes(input.outcome)) {
+        return yield* refused(
+          "invalid_report",
+          `Nothing was recorded. Outcome "${input.outcome}" is not allowed. Use one of: ${[...outcomes, "escalate"].join(", ")}.`,
+        );
+      }
+      yield* apply(
+        run.runId,
+        input.outcome === "escalate"
+          ? {
+              type: "gate.escalated",
+              cardId,
+              reason: input.note ?? "The lead handed this decision to you.",
+            }
+          : {
+              type: "gate.resolved",
+              cardId,
+              outcome: input.outcome,
+              note: input.note ?? "",
+              by: "lead",
+            },
+      ).pipe(Effect.mapError(toolUnavailable));
+      return { decided: true as const, outcome: input.outcome };
+    },
+  );
 
   const cardAction = (action: "retry" | "skip" | "force_outcome") =>
     Effect.fn(`CrewRunService.${action}`)(function* (
@@ -1415,22 +1717,22 @@ const make = Effect.gen(function* () {
 
   const context: CrewRunService["Service"]["context"] = Effect.fn("CrewRunService.context")(
     function* (threadId) {
-      const { run, card, toolbox } = yield* caller(threadId);
-      const step = run.crew.flow.steps[card.stepId];
-      const role = card.roleId === null ? undefined : run.roles[card.roleId];
+      const { run, card, isLead, roleId, toolbox } = yield* member(threadId);
+      const step = card === undefined ? undefined : run.crew.flow.steps[card.stepId];
+      const role = roleId === null ? undefined : run.roles[roleId];
       return {
         runId: run.runId,
         crewId: run.crewId,
-        cardId: `${run.runId}:${card.id}`,
-        role:
-          card.roleId === null || role === undefined ? null : { id: card.roleId, name: role.name },
-        step: { id: card.stepId, type: card.type },
-        visit: card.visit,
-        attempt: card.attempt,
+        // Between its own steps the lead has no card: it is the run's lead and nothing more.
+        cardId: `${run.runId}:${card?.id ?? LEAD_TURN}`,
+        role: roleId === null || role === undefined ? null : { id: roleId, name: role.name },
+        step: { id: card?.stepId ?? "", type: card?.type ?? "lead" },
+        visit: card?.visit ?? 0,
+        attempt: card?.attempt ?? 0,
         inputs: run.inputs,
         branch: run.integrationBranch,
-        outcomes: crewStepOutcomes(run.crew, card.stepId),
-        produces: crewStepProduces(run.crew, card.stepId),
+        outcomes: card === undefined ? [] : crewStepOutcomes(run.crew, card.stepId),
+        produces: card === undefined ? [] : crewStepProduces(run.crew, card.stepId),
         artifacts: yield* store.listArtifacts(run.runId).pipe(Effect.mapError(toolUnavailable)),
         skills: toolbox.skills.map(({ name, source, description }) => ({
           name,
@@ -1445,20 +1747,23 @@ const make = Effect.gen(function* () {
         mcpServers: toolbox.mcp.map(({ name, source }) => ({ name, source })),
         owns: step !== undefined && "owns" in step ? [step.owns ?? []].flat() : [],
         teammates: run.snapshot.cards
-          .filter((other) => other.id !== card.id && other.type !== "decision")
+          .filter((other) => other.id !== card?.id && other.type !== "decision")
           .map((other) => ({
             cardId: `${run.runId}:${other.id}`,
             stepId: other.stepId,
             roleId: other.roleId,
             state: other.state,
           })),
+        ...(isLead
+          ? { board: yield* view(run.runId, false).pipe(Effect.mapError(toolUnavailable)) }
+          : {}),
       };
     },
   );
 
   const getSkill: CrewRunService["Service"]["getSkill"] = Effect.fn("CrewRunService.getSkill")(
     function* (threadId, input) {
-      const { toolbox } = yield* caller(threadId);
+      const { toolbox } = yield* member(threadId);
       const skill = toolbox.skills.find((candidate) => candidate.name === input.name);
       if (skill === undefined) {
         return yield* refused(
@@ -1571,9 +1876,10 @@ const make = Effect.gen(function* () {
 
     context,
     report,
+    decide: answerDecision,
     getSkill,
     readArtifact: Effect.fn("CrewRunService.readArtifact")(function* (threadId, name) {
-      const { run } = yield* caller(threadId);
+      const { run } = yield* member(threadId);
       const artifact = yield* store
         .readArtifact(run.runId, name)
         .pipe(Effect.mapError(toolUnavailable));
@@ -1602,7 +1908,7 @@ const make = Effect.gen(function* () {
       return { written: true as const };
     }),
     note: Effect.fn("CrewRunService.note")(function* (threadId, input) {
-      const { run, card } = yield* caller(threadId);
+      const { run, card } = yield* member(threadId);
       const toCardId = input.toCard === undefined ? null : localCardId(run.runId, input.toCard);
       if (
         (input.toRole === undefined && toCardId === null) ||
@@ -1619,7 +1925,7 @@ const make = Effect.gen(function* () {
         .insertNote({
           noteId,
           runId: run.runId,
-          fromCardId: card.id,
+          fromCardId: card?.id ?? LEAD_TURN,
           toRoleId: input.toRole ?? null,
           toCardId,
           text: input.text,
@@ -1629,14 +1935,14 @@ const make = Effect.gen(function* () {
       return { noteId };
     }),
     validate: Effect.fn("CrewRunService.validate")(function* (threadId, input) {
-      const { run } = yield* caller(threadId);
+      const { run } = yield* member(threadId);
       const diagnostics = yield* catalog
         .validateText({ projectId: run.projectId, text: input.text, kind: input.kind ?? "crew" })
         .pipe(Effect.mapError(toolUnavailable));
       return { diagnostics };
     }),
     listTools: (threadId) =>
-      Effect.map(caller(threadId), ({ toolbox }) => ({ tools: toolbox.tools })),
+      Effect.map(member(threadId), ({ toolbox }) => ({ tools: toolbox.tools })),
     runTool: Effect.fn("CrewRunService.runTool")(function* (threadId, input) {
       const { run, card, toolbox } = yield* caller(threadId);
       yield* requireLive(card);

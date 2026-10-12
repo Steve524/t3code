@@ -13,7 +13,10 @@ import type {
   CrewArtifactShape,
   CrewFile,
 } from "../../../../../packages/contracts/src/fork/crews/crewFile.ts";
-import { CrewReportInput } from "../../../../../packages/contracts/src/fork/crews/crewRun.ts";
+import {
+  CrewDecideInput,
+  CrewReportInput,
+} from "../../../../../packages/contracts/src/fork/crews/crewRun.ts";
 import { isCrewListShape } from "../../../../../packages/shared/src/fork/crews/crewTemplates.ts";
 
 export interface CrewReport {
@@ -101,13 +104,24 @@ export function crewReportErrors(
 }
 
 const decodeReport = Schema.decodeUnknownOption(Schema.fromJsonString(CrewReportInput));
+const decodeDecision = Schema.decodeUnknownOption(Schema.fromJsonString(CrewDecideInput));
+
+/** The body of the last fenced block of that kind in a message. */
+const lastBlock = (text: string, kind: "crew-report" | "crew-decision") =>
+  [...text.matchAll(new RegExp(`\`\`\`${kind}[^\\n]*\\n([\\s\\S]*?)\`\`\``, "gu"))].at(-1)?.[1];
 
 /** The last fenced `crew-report` block in a role's final message, when it holds a report. */
 export function parseCrewReportBlock(text: string): CrewReport | null {
-  const body = [...text.matchAll(/```crew-report[^\n]*\n([\s\S]*?)```/gu)].at(-1)?.[1];
+  const body = lastBlock(text, "crew-report");
   if (body === undefined) return null;
   return Option.match(decodeReport(body), {
     onNone: () => null,
     onSome: (report) => ({ ...report, artifacts: report.artifacts ?? {} }),
   });
+}
+
+/** The last fenced `crew-decision` block in the lead's final message, when it holds an answer. */
+export function parseCrewDecisionBlock(text: string): CrewDecideInput | null {
+  const body = lastBlock(text, "crew-decision");
+  return body === undefined ? null : Option.getOrNull(decodeDecision(body));
 }

@@ -43,6 +43,11 @@ through the constant already spread into `ClaudeAdapterV2.ts`; `crew_tool_run` r
 stays off it. Parallel work and git (worktrees, auto-commit, merge, script steps) touched no
 upstream file and added no dependency: ownership globs use Node's `path.matchesGlob`.
 
+Lead mode (the kickoff turn, milestone updates, lead decisions) touched no upstream file and added
+no RPC or dependency. `crew_decide` only records a decision, so it joined the read-only allowlist
+through the same constant, which lets a read-only Claude lead answer. `ClaudeAdapterV2.test.ts`
+checks that constant against the crew toolkit's read-only annotations, so the two cannot drift.
+
 ## Added dependencies
 
 Dependencies added to upstream `package.json` files (`FORK.md` rule 8).

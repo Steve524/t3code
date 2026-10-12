@@ -4,6 +4,7 @@ import { Tool, Toolkit } from "effect/ai";
 
 import {
   CrewCardContext,
+  CrewDecideInput,
   CrewMcpFailure,
   CrewNoteInput,
   CrewReportInput,
@@ -31,7 +32,7 @@ const failure = Schema.Union([OrchestratorMcpFailure, CrewMcpFailure]);
 
 const CrewContextTool = Tool.make("crew_context", {
   description:
-    "Needs an agent working for a crew run. Returns your role, step, the run's inputs, the outcomes you may report, the artifacts you must produce and those that exist, your skills, tools and MCP servers with where each comes from, and your teammates' cards and their states.",
+    "Needs an agent working for a crew run. Returns your role, step, the run's inputs, the outcomes you may report, the artifacts you must produce and those that exist, your skills, tools and MCP servers with where each comes from, and your teammates' cards and their states. The crew's lead also gets `board`: every card, the decisions waiting on it, route counters and budget usage.",
   success: CrewCardContext,
   failure,
   failureMode: "return",
@@ -52,6 +53,19 @@ const CrewReportTool = Tool.make("crew_report", {
   dependencies,
 })
   .annotate(Tool.Title, "Report this card's result")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false);
+
+const CrewDecideTool = Tool.make("crew_decide", {
+  description:
+    "Needs the lead of a crew run. Answer a decision you were asked for: `decisionId` from the request, and one of its outcomes. Use `escalate` to hand the decision to the user, with a note saying why. Refused when the decision is no longer open, for example because the user already answered it.",
+  parameters: CrewDecideInput,
+  success: Schema.Struct({ decided: Schema.Literal(true), outcome: Schema.String }),
+  failure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Answer a crew decision")
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);
 
@@ -155,6 +169,7 @@ const CrewToolRunTool = Tool.make("crew_tool_run", {
 export const CrewToolkit = Toolkit.make(
   CrewContextTool,
   CrewReportTool,
+  CrewDecideTool,
   CrewArtifactReadTool,
   CrewArtifactWriteTool,
   CrewSkillGetTool,

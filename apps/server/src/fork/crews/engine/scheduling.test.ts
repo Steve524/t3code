@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { engine, end, task, worker } from "./engineTestFixtures.ts";
+import { engine, end, led, task, worker } from "./engineTestFixtures.ts";
 
 function fanout(
   count: number,
@@ -227,7 +227,7 @@ describe("budgets", () => {
   it.each(["first-step", "lead"])(
     "AC 21 asks the user before launching any of 20 items in %s mode",
     (mode) => {
-      const run = fanout(20, { home: mode === "lead" ? { mode, role: "worker" } : { mode } });
+      const run = fanout(20, mode === "lead" ? led : { home: { mode } });
       run.start();
       const result = run.complete(run.latest("work"));
       expect(result.effects.filter((effect) => effect.type === "launch_card")).toEqual([]);
@@ -273,10 +273,7 @@ describe("budgets", () => {
   });
 
   it("AC 22 blocks the 61st dispatch, lets active cards finish, then extends by 20", () => {
-    const run = fanout(64, {
-      home: { mode: "lead", role: "worker" },
-      limits: { maxFanoutItems: 100 },
-    });
+    const run = fanout(64, { ...led, limits: { maxFanoutItems: 100 } });
     run.start();
     run.complete(run.latest("work"));
     while (run.snapshot.budget.cards < 60)

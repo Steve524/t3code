@@ -10,6 +10,9 @@ import {
 import {
   composeCrewCardPrompt,
   composeCrewConflictPrompt,
+  composeCrewLeadKickoff,
+  crewDecisionPrompt,
+  crewLeadUpdatePrompt,
   crewPromptFiles,
   crewReminderPrompt,
   renderCrewTemplate,
@@ -194,5 +197,103 @@ describe("crew prompt", () => {
     expect(crewReminderPrompt(definition, "review")).toContain(
       "Report now with one of: approve, changes, failed.",
     );
+  });
+});
+
+describe("lead prompts", () => {
+  const led = decodeCrew({
+    ...withSteps(
+      {},
+      {
+        home: { mode: "lead", role: "lead" },
+        roles: {
+          lead: { name: "Lead", instructions: "You coordinate." },
+          builder: { name: "Builder", description: "Writes the code" },
+        },
+      },
+    ),
+    flow: {
+      start: "build",
+      steps: {
+        build: { ...task, role: "builder", next: "review" },
+        review: {
+          ...task,
+          role: "builder",
+          outcomes: { approve: "wrap", changes: { to: "triage", max: 2, else: "wrap" } },
+        },
+        triage: {
+          type: "gate",
+          by: "lead",
+          prompt: "Who fixes it?",
+          outcomes: { builder: "build", accept: "wrap" },
+        },
+        wrap: { ...task, role: "lead", next: "done" },
+        done: end,
+      },
+    },
+  });
+  const kickoff = (canEdit: boolean) =>
+    composeCrewLeadKickoff({
+      crew: led,
+      files: {},
+      driver: null,
+      inputs: { brief: "add a /health route" },
+      roleId: "lead",
+      models: { lead: "claudeAgent/claude-opus-5-5", builder: "codex/gpt-5.6-terra" },
+      canEdit,
+      updates: "milestones",
+    });
+
+  it("opens the home thread with the brief, the roster, the flow and how to decide", () => {
+    const prompt = kickoff(false);
+    expect(prompt.startsWith("## Brief\n\nbrief: add a /health route")).toBe(true);
+    expect(prompt).toContain("## Your role\n\nYou are the Lead");
+    expect(prompt).toContain("- Lead (`lead`), on claudeAgent/claude-opus-5-5 (you)");
+    expect(prompt).toContain("- Builder (`builder`): Writes the code, on codex/gpt-5.6-terra");
+    expect(prompt).toContain("It starts at `build` when this turn of yours ends.");
+    expect(prompt).toContain("- `build`: Builder works on it; then `review`.");
+    expect(prompt).toContain(
+      "- `review`: Builder works on it; `approve` goes to `wrap`, `changes` goes to `triage` (at most 2 times, then `wrap`).",
+    );
+    expect(prompt).toContain(
+      "- `triage`: you decide: Who fixes it?; `builder` goes to `build`, `accept` goes to `wrap`.",
+    );
+    expect(prompt).toContain("- `wrap`: you work on it; then `done`.");
+    expect(prompt).toContain("- `done`: the run ends.");
+    expect(prompt).toContain("Answer it with `crew_decide`");
+    expect(prompt).toContain("You read the checkout but do not change it");
+    expect(kickoff(true)).toContain("You may edit the shared checkout.");
+  });
+
+  it("batches what the lead missed into one message", () => {
+    expect(crewLeadUpdatePrompt(["Merge `integrate` finished."])).toBe(
+      "## Crew update\n\n- Merge `integrate` finished.\n\nNo answer is needed.",
+    );
+    expect(crewLeadUpdatePrompt(["one", "two"])).toContain(
+      "## While you were working\n\n- one\n- two\n",
+    );
+  });
+
+  it("asks for a decision with its id, the outcomes and the block to answer with", () => {
+    const ask = (reminder: boolean) =>
+      crewDecisionPrompt({
+        decisionId: "run:triage:1",
+        prompt: "Who fixes it?",
+        outcomes: ["builder", "accept"],
+        context: ["`review` (Builder) finished with `changes`: Missing a route."],
+        reminder,
+      });
+    expect(ask(false)).toContain(
+      "## Decision needed\n\nWho fixes it?\n\n- `review` (Builder) finished with `changes`: Missing a route.",
+    );
+    expect(ask(false)).toContain("Decision id: `run:triage:1`");
+    expect(ask(false)).toContain(
+      "Allowed outcomes: builder, accept, or `escalate` to hand the decision to the user.",
+    );
+    expect(ask(false)).toContain(
+      '```crew-decision\n{ "decisionId": "run:triage:1", "outcome": "<outcome>", "note": "<why>" }\n```',
+    );
+    expect(ask(false)).not.toContain("without deciding");
+    expect(ask(true)).toContain("You ended your turn without deciding. Decide now.");
   });
 });

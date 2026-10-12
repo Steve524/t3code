@@ -8,7 +8,10 @@
  */
 import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@t3tools/contracts";
 
-import type { CrewFile } from "../../../../../packages/contracts/src/fork/crews/crewFile.ts";
+import type {
+  CrewFile,
+  CrewRoute,
+} from "../../../../../packages/contracts/src/fork/crews/crewFile.ts";
 import type { CrewRunToolbox } from "../../../../../packages/contracts/src/fork/crews/crewRun.ts";
 import { normalizedPath } from "../../../../../packages/shared/src/fork/crews/validateCrew.ts";
 import { crewStepOutcomes, crewStepProduces } from "./crewReport.ts";
@@ -263,4 +266,140 @@ export function crewReminderPrompt(crew: CrewFile, stepId: string): string {
     `Report now with one of: ${[...crewStepOutcomes(crew, stepId), "failed"].join(", ")}.`,
     "If you have no tools, reply with a fenced `crew-report` block holding outcome, summary and artifacts.",
   ].join(" ");
+}
+
+const sectioned = (sections: ReadonlyArray<readonly [title: string, body: string]>) =>
+  sections
+    .filter(([, body]) => body.length > 0)
+    .map(([title, body]) => `## ${title}\n\n${body}`)
+    .join("\n\n")
+    .slice(0, PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
+
+/** The flow as the lead reads it: a line per step, saying who does it and where it goes next. */
+function flowLines(crew: CrewFile, leadRoleId: string) {
+  const who = (roleId: string) =>
+    roleId === leadRoleId ? "you work" : `${crew.roles[roleId]?.name ?? roleId} works`;
+  const route = (target: CrewRoute) =>
+    typeof target === "string"
+      ? `\`${target}\``
+      : `\`${target.to}\` (at most ${target.max} times, then \`${target.else}\`)`;
+  return Object.entries(crew.flow.steps).map(([id, step]) => {
+    const what =
+      step.type === "end"
+        ? `the run ends${step.status === "failed" ? " as failed" : ""}`
+        : step.type === "parallel"
+          ? `runs ${step.branches.map((branch) => `\`${branch}\``).join(" and ")} at the same time`
+          : step.type === "fanout"
+            ? `${who(step.role)} on one card per item of \`${step.over}\``
+            : step.type === "merge"
+              ? "merges the finished branches into the shared checkout"
+              : step.type === "script"
+                ? "runs a script"
+                : step.type === "gate"
+                  ? `${step.by === "lead" ? "you decide" : "the user decides"}: ${step.prompt}`
+                  : `${who(step.role)} on it`;
+    const routes = [
+      ...Object.entries(step.outcomes ?? {}).map(
+        ([outcome, target]) => `\`${outcome}\` goes to ${route(target)}`,
+      ),
+      ...(step.next === undefined ? [] : [`then ${route(step.next)}`]),
+    ];
+    return `- \`${id}\`: ${what}${routes.length === 0 ? "" : `; ${routes.join(", ")}`}.`;
+  });
+}
+
+/** The lead's first message: the brief, who is on the crew, how the flow runs and how to decide. */
+export function composeCrewLeadKickoff(
+  input: Pick<CrewPromptInput, "crew" | "files" | "driver" | "inputs"> & {
+    readonly roleId: string;
+    /** Each role's resolved model, as `<instance>/<model>`. */
+    readonly models: Readonly<Record<string, string>>;
+    readonly canEdit: boolean;
+    readonly updates: "milestones" | "decisions";
+  },
+): string {
+  const { crew } = input;
+  return sectioned([
+    [
+      "Brief",
+      Object.entries(input.inputs)
+        .map(([name, value]) => `${name}: ${String(value)}`)
+        .join("\n"),
+    ],
+    ["Your role", roleSection(input, input.roleId)],
+    [
+      "The crew",
+      Object.entries(crew.roles)
+        .map(
+          ([id, role]) =>
+            `- ${role.name} (\`${id}\`)${role.description === undefined ? "" : `: ${role.description}`}${input.models[id] === undefined ? "" : `, on ${input.models[id]}`}${id === input.roleId ? " (you)" : ""}`,
+        )
+        .join("\n"),
+    ],
+    [
+      "The flow",
+      [
+        `The crew's flow decides what runs. It starts at \`${crew.flow.start}\` when this turn of yours ends.`,
+        flowLines(crew, input.roleId).join("\n"),
+      ].join("\n\n"),
+    ],
+    [
+      "Protocol",
+      [
+        "This is the kickoff. Read the brief, and leave a note for a role with `crew_note` if it should know something before it starts; it reads the note in its first prompt.",
+        input.updates === "milestones"
+          ? "As the crew works you get updates in this thread: a step finished, a group joined, a merge, a limit reached. Several arrive as one message when they happened while you were busy. They need no answer."
+          : "You are only messaged when a decision is yours. Read the whole board at any time with `crew_context`.",
+        "When a decision is yours you get a request with a decision id and the outcomes to choose from. Answer it with `crew_decide`, or with the outcome `escalate` to hand it to the user. Without tools, end your reply with a fenced `crew-decision` block holding decisionId, outcome and note.",
+        "`crew_context` returns the whole board: every card, open decisions, route counters and budget usage.",
+        input.canEdit
+          ? "You may edit the shared checkout. Do not push, switch branches or open pull requests."
+          : "You read the checkout but do not change it: changes go through the roles.",
+      ].join("\n\n"),
+    ],
+  ]);
+}
+
+/** The milestones the lead missed, as one message. */
+export function crewLeadUpdatePrompt(milestones: ReadonlyArray<string>): string {
+  return sectioned([
+    [
+      milestones.length === 1 ? "Crew update" : "While you were working",
+      [...milestones.map((milestone) => `- ${milestone}`), "", "No answer is needed."].join("\n"),
+    ],
+  ]);
+}
+
+/** Asks the lead to decide, or reminds it once when its turn ended without an answer. */
+export function crewDecisionPrompt(input: {
+  readonly decisionId: string;
+  readonly prompt: string;
+  readonly outcomes: ReadonlyArray<string>;
+  /** What the decision is about: how the steps before it ended. */
+  readonly context: ReadonlyArray<string>;
+  readonly reminder: boolean;
+}): string {
+  return sectioned([
+    [
+      "Decision needed",
+      [
+        ...(input.reminder ? ["You ended your turn without deciding. Decide now."] : []),
+        input.prompt,
+        ...input.context.map((line) => `- ${line}`),
+      ].join("\n\n"),
+    ],
+    [
+      "Protocol",
+      [
+        `Decision id: \`${input.decisionId}\``,
+        `Allowed outcomes: ${input.outcomes.join(", ")}, or \`escalate\` to hand the decision to the user.`,
+        "Answer with `crew_decide` before you end your turn. If you have no tools, end your reply with this block instead:",
+        [
+          "```crew-decision",
+          `{ "decisionId": "${input.decisionId}", "outcome": "<outcome>", "note": "<why>" }`,
+          "```",
+        ].join("\n"),
+      ].join("\n\n"),
+    ],
+  ]);
 }

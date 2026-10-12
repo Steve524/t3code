@@ -9,6 +9,7 @@
 export const CREW_STATE_MCP_TOOL_NAMES = [
   "crew_context",
   "crew_report",
+  "crew_decide",
   "crew_artifact_read",
   "crew_artifact_write",
   "crew_skill_get",

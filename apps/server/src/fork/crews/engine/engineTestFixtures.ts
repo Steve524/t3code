@@ -2,6 +2,7 @@ import { compileCrewFlow } from "../../../../../../packages/shared/src/fork/crew
 import {
   decodeCrew,
   withSteps,
+  worker,
 } from "../../../../../../packages/shared/src/fork/crews/crewTestFixtures.ts";
 import { createCrewSnapshot, decide } from "./decide.ts";
 import type { CrewCard, CrewEvent } from "./types.ts";
@@ -11,6 +12,12 @@ export {
   task,
   worker,
 } from "../../../../../../packages/shared/src/fork/crews/crewTestFixtures.ts";
+
+/** Crew fields that put a role of its own in the home thread, apart from the worker. */
+export const led = {
+  home: { mode: "lead" as const, role: "lead" },
+  roles: { worker, lead: { name: "Lead", instructions: "Lead the crew." } },
+};
 
 type Input = {
   [K in CrewEvent["type"]]: Omit<Extract<CrewEvent, { type: K }>, "seq" | "at">;
@@ -51,6 +58,11 @@ export function engine(
     latest,
     complete,
     dispatched,
-    start: () => send({ type: "run.created" }),
+    /** Starts the run. In lead mode the kickoff turn ends too, so the flow's first step is entered. */
+    start: () => {
+      const created = send({ type: "run.created" });
+      const kickoff = snapshot.lead?.turn;
+      return kickoff ? send({ type: "lead.turn_finished", turnId: kickoff.id }) : created;
+    },
   };
 }

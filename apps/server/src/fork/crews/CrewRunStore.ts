@@ -157,6 +157,9 @@ function toRecord(row: RunRow): CrewRunRecord {
 
 const budgetJson = (snapshot: CrewSnapshot) =>
   json({ ...snapshot.budget, gate: snapshot.budgetGate });
+/** The milestones waiting for the lead to go idle, mirrored from the engine for readers. */
+const digestJson = (snapshot: CrewSnapshot) =>
+  snapshot.lead?.digest.length ? json(snapshot.lead.digest) : null;
 
 export function makeCrewRunStore(sql: SqlClient.SqlClient) {
   const cardKey = (runId: string, cardId: string) => `${runId}:${cardId}`;
@@ -179,7 +182,8 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
         ${json({ crew: run.crew, files: run.files, scriptTools: run.scriptTools })},
         ${run.crewHash}, ${json(run.start)},
         ${json(run.inputs)}, ${json(run.roles)}, ${run.toolboxMode}, ${json(run.toolboxes)},
-        ${run.snapshot.homeMode}, ${null}, ${json(run.snapshot.routeCounters)},
+        ${run.snapshot.homeMode}, ${run.snapshot.lead?.roleId ?? null},
+        ${json(run.snapshot.routeCounters)},
         ${budgetJson(run.snapshot)}, ${run.integrationBranch}, ${run.snapshot.status},
         ${json(runtime(run.snapshot))}, ${run.snapshot.lastEventSeq}, ${run.createdAt},
         ${run.updatedAt}
@@ -258,6 +262,7 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
         machine_snapshot_json = ${json(runtime(snapshot))},
         last_event_seq = ${snapshot.lastEventSeq},
         route_counters_json = ${json(snapshot.routeCounters)},
+        lead_digest_json = ${digestJson(snapshot)},
         budget_json = ${budgetJson(snapshot)},
         active_since = ${iso(snapshot.activeSince)},
         updated_at = ${at}

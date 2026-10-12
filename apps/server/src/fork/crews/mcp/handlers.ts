@@ -40,6 +40,9 @@ const handlers = {
   crew_report: McpToolAccess.actsAsCaller((input) =>
     asCard((runs, threadId) => runs.report(threadId, input)),
   ),
+  crew_decide: McpToolAccess.actsAsCaller((input) =>
+    asCard((runs, threadId) => runs.decide(threadId, input)),
+  ),
   crew_artifact_read: McpToolAccess.readsAsCaller(({ name }) =>
     asCard((runs, threadId) => runs.readArtifact(threadId, name)),
   ),

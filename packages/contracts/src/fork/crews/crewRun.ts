@@ -259,6 +259,14 @@ export class CrewMcpFailure extends Schema.TaggedError<CrewMcpFailure>()("CrewMc
   message: Schema.String,
 }) {}
 
+/** The lead's answer to a decision it was asked for. `escalate` hands it to the user. */
+export const CrewDecideInput = Schema.Struct({
+  decisionId: Schema.String,
+  outcome: Schema.String,
+  note: Schema.optionalKey(Schema.String),
+});
+export type CrewDecideInput = typeof CrewDecideInput.Type;
+
 export const CrewReportInput = Schema.Struct({
   outcome: Schema.String,
   summary: Schema.String,
@@ -297,6 +305,8 @@ export const CrewCardContext = Schema.Struct({
       state: Schema.String,
     }),
   ),
+  // Only the lead's thread gets the whole board: every card, open decisions, counters, budgets.
+  board: Schema.optionalKey(CrewRunView),
 });
 export type CrewCardContext = typeof CrewCardContext.Type;
 

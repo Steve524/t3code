@@ -23,20 +23,23 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
 import * as DateTime from "effect/DateTime";
+import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
-import type * as Scope from "effect/Scope";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { McpSchema, type McpServer } from "effect/ai";
 import type * as SqlClient from "effect/sql/SqlClient";
 
 import type { CrewRunView } from "../../../../../packages/contracts/src/fork/crews/crewRun.ts";
+import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../config.ts";
 import * as GitWorkflow from "../../git/GitWorkflowService.ts";
 import * as McpHttpServer from "../../mcp/McpHttpServer.ts";
@@ -66,6 +69,8 @@ import { runForkMigrations } from "../persistence/ForkMigrations.ts";
 import * as CrewCatalog from "./CrewCatalog.ts";
 import * as CrewRunService from "./CrewRunService.ts";
 import * as CrewSettingsStore from "./CrewSettingsStore.ts";
+import * as CrewMcpGateway from "./mcp/CrewMcpGateway.ts";
+import * as CrewNativeMcp from "./mcp/CrewNativeMcp.ts";
 import * as CrewMcp from "./mcp/handlers.ts";
 
 export const projectId = ProjectId.make("project:crew-runs");
@@ -357,12 +362,23 @@ export interface CrewRunHarness {
     runId: string,
     predicate: (view: CrewRunView) => boolean,
   ) => Effect.Effect<CrewRunView>;
+  /**
+   * Kills the crew services the way a server shutdown does: their workers stop where they
+   * are. The database, the orchestrator and the fake providers keep running.
+   */
+  readonly stop: Effect.Effect<void>;
+  /**
+   * Starts the crew services again on the same database, which runs their startup recovery,
+   * and runs `after` with them. `until` and `tool` use them from then on.
+   */
+  readonly restart: <A, E, R>(after: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 }
 
 export type CrewRunTestServices =
   | CrewRunService.CrewRunService
   | CrewCatalog.CrewCatalog
   | ThreadManagementService.ThreadManagementService
+  | ServerSecretStore.ServerSecretStore
   | SqlClient.SqlClient
   | FileSystem.FileSystem
   | Path.Path
@@ -492,29 +508,52 @@ export const withCrewRuns = <A, E>(
       ),
       Layer.provide(layerExternal),
     );
-    const layer = McpHttpServer.toolkitRegistration(CrewMcp.CrewToolkit, CrewMcp.layer).pipe(
+    // What a restart keeps: the database, the orchestrator and its providers, git, secrets.
+    const layerBase = Layer.mergeAll(
+      layerLaunch,
+      layerThreads,
+      ProcessRunner.layer,
+      ServerSecretStore.layer,
+    ).pipe(
+      Layer.provideMerge(layerExternal),
+      Layer.provideMerge(layerGit),
+      Layer.provideMerge(layerConfig),
+      Layer.provideMerge(layerDatabase),
+    );
+    // What a restart builds again.
+    const layerCrew = McpHttpServer.toolkitRegistration(CrewMcp.CrewToolkit, CrewMcp.layer).pipe(
       Layer.provideMerge(mcpServer.layer),
-      Layer.provideMerge(CrewRunService.layer),
+      Layer.provideMerge(Layer.mergeAll(CrewRunService.layer, CrewNativeMcp.layer)),
       Layer.provideMerge(CrewCatalog.layer),
       Layer.provide(CrewSettingsStore.layer),
+      Layer.provide(CrewMcpGateway.layer),
       Layer.provide(Layer.effectDiscard(runForkMigrations())),
       Layer.provide(
         Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({
           capabilities: () => Effect.succeed(capabilities),
         }),
       ),
-      Layer.provide(layerConfig),
-      Layer.provide(layerLaunch),
-      Layer.provideMerge(layerThreads),
-      Layer.provide(layerExternal),
-      Layer.provide(ProcessRunner.layer),
-      Layer.provideMerge(layerGit),
-      Layer.provideMerge(layerDatabase),
     );
 
+    const base = yield* Layer.build(layerBase);
+    const startCrew = Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const context = yield* Layer.buildWithScope(layerCrew, scope).pipe(
+        Effect.provide(base),
+        Effect.orDie,
+      );
+      return {
+        scope,
+        context,
+        runs: Context.get(context, CrewRunService.CrewRunService),
+        server: Context.get(context, mcpServer),
+      };
+    });
+    let crew = yield* startCrew;
+    // Closed before the database and orchestrator it runs on.
+    yield* Effect.addFinalizer(() => Scope.close(crew.scope, Exit.void));
+
     return yield* Effect.gen(function* () {
-      const server = yield* mcpServer;
-      const runs = yield* CrewRunService.CrewRunService;
       const vcs = yield* GitVcsDriver.GitVcsDriver;
       const git: CrewRunHarness["git"] = (cwd, ...args) =>
         vcs.execute({ operation: "CrewRunHarness.git", cwd, args }).pipe(
@@ -531,7 +570,7 @@ export const withCrewRuns = <A, E>(
           Effect.flatMap((complete) => complete(text)),
         );
       const tool: CrewRunHarness["tool"] = (turn, name, args = {}) =>
-        server.callTool({ name, arguments: args }).pipe(
+        Effect.suspend(() => crew.server.callTool({ name, arguments: args })).pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, {
             environmentId: EnvironmentId.make("environment:crew-runs"),
             requestNamespace: `session:${turn.threadId}`,
@@ -555,14 +594,29 @@ export const withCrewRuns = <A, E>(
           Effect.orDie,
         );
       const until: CrewRunHarness["until"] = (runId, predicate) =>
-        runs
-          .subscribe(runId)
-          .pipe(
-            Stream.filter(predicate),
-            Stream.runHead,
-            Effect.map(Option.getOrThrow),
-            Effect.orDie,
-          );
-      return yield* body({ home, workspace, agent, turns, tool, until, git, finish });
-    }).pipe(Effect.provide(layer));
+        Stream.suspend(() => crew.runs.subscribe(runId)).pipe(
+          Stream.filter(predicate),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+          Effect.orDie,
+        );
+      const stop = Effect.suspend(() => Scope.close(crew.scope, Exit.void));
+      const restart: CrewRunHarness["restart"] = (after) =>
+        Effect.gen(function* () {
+          crew = yield* startCrew.pipe(Effect.provide(NodeServices.layer));
+          return yield* after.pipe(Effect.provideContext(crew.context));
+        });
+      return yield* body({
+        home,
+        workspace,
+        agent,
+        turns,
+        tool,
+        until,
+        git,
+        finish,
+        stop,
+        restart,
+      });
+    }).pipe(Effect.provide(Context.merge(base, crew.context)));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));

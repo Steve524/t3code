@@ -47,6 +47,9 @@ import {
   CrewMcpFailure,
   type CrewCardContext,
   type CrewDecideInput,
+  type CrewMcpCallInput,
+  type CrewMcpCallResult,
+  type CrewMcpToolList,
   type CrewNoteInput,
   type CrewReportInput,
   type CrewRunListInput,
@@ -73,6 +76,7 @@ import {
   crewCardOwns,
   crewCommitMessage,
   crewOwnershipViolations,
+  crewWorktreeForBranch,
   isPlainToolArgument,
 } from "./crewGit.ts";
 import {
@@ -102,6 +106,8 @@ import {
 import { buildCrewRunView } from "./crewRunView.ts";
 import { createCrewSnapshot, crewCardLine, crewDecisionOutcomes, decide } from "./engine/decide.ts";
 import type { BudgetKind, CrewCard, CrewEffect, CrewEvent } from "./engine/types.ts";
+import * as CrewMcpGateway from "./mcp/CrewMcpGateway.ts";
+import { crewMcpDelivery } from "./mcp/crewMcpDelivery.ts";
 
 export class CrewRunService extends Context.Service<
   CrewRunService,
@@ -208,6 +214,16 @@ export class CrewRunService extends Context.Service<
       threadId: ThreadId,
       input: CrewToolRunInput,
     ) => Effect.Effect<CrewToolRunResult, CrewMcpFailure>;
+    /** The tools of an MCP server in the role's frozen toolbox, through the crew's gateway. */
+    readonly mcpListTools: (
+      threadId: ThreadId,
+      server: string,
+    ) => Effect.Effect<CrewMcpToolList, CrewMcpFailure>;
+    /** Calls one tool of such a server through the gateway. */
+    readonly mcpCall: (
+      threadId: ThreadId,
+      input: CrewMcpCallInput,
+    ) => Effect.Effect<CrewMcpCallResult, CrewMcpFailure>;
 
     /** Resolves once every queued effect and finished turn has been handled. For tests. */
     readonly drain: Effect.Effect<void>;
@@ -335,6 +351,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const settings = yield* ServerSettings.ServerSettingsService;
   const platform = yield* HostProcess.Platform;
+  const gateway = yield* CrewMcpGateway.CrewMcpGateway;
   const decisionMinute = yield* CrewDecisionMinute;
   const scope = yield* Effect.scope;
   const store = makeCrewRunStore(sql);
@@ -694,7 +711,15 @@ const make = Effect.gen(function* () {
     orchestrationRunId: RunId,
   ) {
     yield* store.setThreadTurn(threadId, orchestrationRunId).pipe(Effect.mapError(unavailable));
-    // Until the line above, this turn's end matched nothing and was dropped.
+    yield* catchEndedTurn(threadId, orchestrationRunId);
+  });
+
+  /** Handles a turn that ended before its index entry named it. */
+  const catchEndedTurn = Effect.fn("CrewRunService.catchEndedTurn")(function* (
+    threadId: ThreadId,
+    orchestrationRunId: RunId,
+  ) {
+    // Until the turn was recorded, its end matched nothing and was dropped.
     const { runs } = yield* threads
       .getThreadRecords(threadId, ["runs"], { runIds: [orchestrationRunId] })
       .pipe(Effect.mapError(unavailable));
@@ -711,14 +736,18 @@ const make = Effect.gen(function* () {
     threadId: ThreadId,
     orchestrationRunId: RunId,
   ) {
-    yield* apply(run.runId, {
-      type: "card.dispatched",
-      cardId: card.id,
-      attempt: card.attempt,
-      threadId,
-      orchestrationRunId,
-    });
-    yield* watchTurn(threadId, orchestrationRunId);
+    // Recorded together: a restart that finds the card dispatched also finds the turn it waits on.
+    const effectIds = yield* transact(
+      decideAndCommit(run.runId, {
+        type: "card.dispatched",
+        cardId: card.id,
+        attempt: card.attempt,
+        threadId,
+        orchestrationRunId,
+      }).pipe(Effect.tap(() => store.setThreadTurn(threadId, orchestrationRunId))),
+    );
+    yield* committed(run.runId, effectIds);
+    yield* catchEndedTurn(threadId, orchestrationRunId);
   });
 
   /** Launches a thread on its first message and returns the turn that answers it. */
@@ -833,13 +862,18 @@ const make = Effect.gen(function* () {
         (workspace) => workspace.cardId === card.id && workspace.branch === branch,
       );
       // Made here, not by the launch: a launch returns before its worktree exists, and the card's
-      // tools and commit need the path.
+      // tools and commit need the path. A launch cut off before it recorded the worktree finds it.
       // shortcut: a retried card's earlier worktree is not tracked, so it is never removed; list them per attempt when retries of worktree cards are common.
+      const root = yield* projectRoot(run);
       const worktreePath =
         made?.worktreePath ??
+        crewWorktreeForBranch(
+          (yield* git(runId, root, ["worktree", "list", "--porcelain"])).stdout,
+          branch,
+        ) ??
         (yield* vcs
           .createWorktree({
-            cwd: yield* projectRoot(run),
+            cwd: root,
             refName: baseSha,
             newRefName: branch,
             baseRefName: baseSha,
@@ -992,14 +1026,48 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const waitingOnLead = (run: CrewRunRecord, cardId: string) =>
+    run.snapshot.cards.find((card) => card.id === cardId && card.state === "waiting_lead");
+
+  /**
+   * Hands an open lead decision to the user once the crew's time for it has passed, counted from
+   * when it was asked. A restart arms it again from the same time.
+   */
+  const armDecisionTimeout = Effect.fn("CrewRunService.armDecisionTimeout")(function* (
+    runId: string,
+    cardId: string,
+    askedAt: string,
+  ) {
+    const run = yield* loadRun(runId);
+    const minutes =
+      run.crew.home?.mode === "lead" ? run.crew.home.decisionTimeoutMinutes : undefined;
+    if (minutes === undefined || waitingOnLead(run, cardId) === undefined) return;
+    const deadline =
+      DateTime.toEpochMillis(DateTime.makeUnsafe(askedAt)) +
+      Duration.toMillis(Duration.times(decisionMinute, minutes));
+    yield* Effect.sleep(Duration.millis(Math.max(0, deadline - (yield* timestamp).millis))).pipe(
+      Effect.andThen(loadRun(runId)),
+      Effect.flatMap((later) =>
+        waitingOnLead(later, cardId) === undefined
+          ? Effect.void
+          : apply(runId, {
+              type: "gate.escalated",
+              cardId,
+              reason: `The lead did not decide within ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+            }),
+      ),
+      Effect.ignore,
+      Effect.forkIn(scope),
+    );
+  });
+
   /** Asks the lead to decide, and hands the decision to the user if it takes too long. */
   const requestDecision = Effect.fn("CrewRunService.requestDecision")(function* (
     runId: string,
     effect: Extract<CrewEffect, { readonly type: "send_decision_request" }>,
+    askedAt: string,
   ) {
     const { cardId } = effect;
-    const waiting = (run: CrewRunRecord) =>
-      run.snapshot.cards.find((card) => card.id === cardId && card.state === "waiting_lead");
     yield* sendToLead(runId, effect.turnId, (run) => {
       const { crew, snapshot } = run;
       const card = snapshot.cards.find((candidate) => candidate.id === cardId);
@@ -1033,25 +1101,8 @@ const make = Effect.gen(function* () {
         reminder: effect.reminder,
       });
     });
-    const run = yield* loadRun(runId);
-    const minutes =
-      run.crew.home?.mode === "lead" ? run.crew.home.decisionTimeoutMinutes : undefined;
-    if (effect.reminder || minutes === undefined || waiting(run) === undefined) return;
-    // shortcut: the timer lives in memory, so a restart forgets it; re-arm it from the request's event time when startup recovery lands.
-    yield* Effect.sleep(Duration.times(decisionMinute, minutes)).pipe(
-      Effect.andThen(loadRun(runId)),
-      Effect.flatMap((later) =>
-        waiting(later) === undefined
-          ? Effect.void
-          : apply(runId, {
-              type: "gate.escalated",
-              cardId,
-              reason: `The lead did not decide within ${minutes} minute${minutes === 1 ? "" : "s"}.`,
-            }),
-      ),
-      Effect.ignore,
-      Effect.forkIn(scope),
-    );
+    // A reminder runs on the first request's clock.
+    if (!effect.reminder) yield* armDecisionTimeout(runId, cardId, askedAt);
   });
 
   /** Sends the card's prompt, or a reminder, to a thread that already holds the role's context. */
@@ -1296,7 +1347,12 @@ const make = Effect.gen(function* () {
       .pipe(Effect.mapError((cause) => failed(runId, cause)));
   });
 
-  const runEffect = (runId: string, effect: CrewEffect): Effect.Effect<void, ForkCrewsError> => {
+  /** `createdAt` is when the event that asked for the effect was committed. */
+  const runEffect = (
+    runId: string,
+    effect: CrewEffect,
+    createdAt: string,
+  ): Effect.Effect<void, ForkCrewsError> => {
     switch (effect.type) {
       case "launch_card":
         return launchCard(runId, effect);
@@ -1334,7 +1390,7 @@ const make = Effect.gen(function* () {
       case "deliver_lead_update":
         return sendToLead(runId, effect.turnId, () => crewLeadUpdatePrompt(effect.milestones));
       case "send_decision_request":
-        return requestDecision(runId, effect);
+        return requestDecision(runId, effect, createdAt);
     }
   };
 
@@ -1345,7 +1401,7 @@ const make = Effect.gen(function* () {
       .pipe(Effect.mapError(unavailable));
     if (claimed === null) return null;
     const { runId, effect } = claimed;
-    const exit = yield* Effect.exit(runEffect(runId, effect));
+    const exit = yield* Effect.exit(runEffect(runId, effect, claimed.createdAt));
     // A shutdown mid-effect leaves the row claimed; it is not the card's failure.
     if (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)) return null;
     const error = Exit.isSuccess(exit) ? null : message(Cause.squash(exit.cause));
@@ -1392,6 +1448,31 @@ const make = Effect.gen(function* () {
     Effect.catchCause((cause) => Effect.logWarning("crew turn completion stream failed", cause)),
     Effect.forkScoped,
   );
+
+  // Startup recovery: what a shutdown cut off is picked up from what was committed. Effects run
+  // again (their command ids are derived, so a launch resumes rather than repeats), a turn that
+  // ended while the server was down is handled now, and open lead decisions get their timeouts
+  // back. `turnFinished` ignores a turn already handled, so one the stream also reports counts once.
+  // shortcut: a turn that ends between the status read below and the stream's first read is missed until the next restart; have the stream signal when it is live if that window shows up.
+  yield* Effect.gen(function* () {
+    const now = yield* timestamp;
+    for (const effectId of yield* store.reclaimEffects(now.iso)) {
+      yield* worker.enqueue({ effectId });
+    }
+    for (const turn of yield* store.listWatchedTurns()) {
+      const { orchestrationRunId } = turn;
+      const { runs } = yield* threads.getThreadRecords(turn.threadId, ["runs"], {
+        runIds: [orchestrationRunId],
+      });
+      const status = runs[0]?.status;
+      if (status !== undefined && ThreadManagementService.isTerminalRunStatus(status)) {
+        yield* worker.enqueue({ threadId: turn.threadId, orchestrationRunId, status });
+      }
+    }
+    for (const request of yield* store.listDecisionRequests()) {
+      yield* armDecisionTimeout(request.runId, request.cardId, request.askedAt);
+    }
+  }).pipe(Effect.catchCause((cause) => Effect.logWarning("crew run recovery failed", cause)));
 
   const freezeToolbox = Effect.fn("CrewRunService.freezeToolbox")(function* (
     resolution: CrewCatalog.CrewRunResolution,
@@ -1744,7 +1825,14 @@ const make = Effect.gen(function* () {
           source,
           ...(description === undefined ? {} : { description }),
         })),
-        mcpServers: toolbox.mcp.map(({ name, source }) => ({ name, source })),
+        mcpServers: toolbox.mcp.map((server) => ({
+          name: server.name,
+          source: server.source,
+          description:
+            crewMcpDelivery(role?.driver ?? null, server) === "native"
+              ? "Its tools are among yours."
+              : "Reach it with crew_mcp_list_tools and crew_mcp_call.",
+        })),
         owns: step !== undefined && "owns" in step ? [step.owns ?? []].flat() : [],
         teammates: run.snapshot.cards
           .filter((other) => other.id !== card?.id && other.type !== "decision")
@@ -1760,6 +1848,23 @@ const make = Effect.gen(function* () {
       };
     },
   );
+
+  /** An MCP server in the caller's toolbox, run in the run's shared checkout. */
+  const mcpTarget = Effect.fn("CrewRunService.mcpTarget")(function* (
+    threadId: ThreadId,
+    name: string,
+  ) {
+    const { run, toolbox } = yield* member(threadId);
+    const server = toolbox.mcp.find((candidate) => candidate.name === name);
+    if (server === undefined) {
+      return yield* refused(
+        "not_allowed",
+        `MCP server "${name}" is not in this role's toolbox. It has: ${toolbox.mcp.map((candidate) => candidate.name).join(", ") || "none"}.`,
+      );
+    }
+    const cwd = yield* integrationCwd(run).pipe(Effect.mapError(toolUnavailable));
+    return { runId: run.runId, cwd, server };
+  });
 
   const getSkill: CrewRunService["Service"]["getSkill"] = Effect.fn("CrewRunService.getSkill")(
     function* (threadId, input) {
@@ -1972,6 +2077,13 @@ const make = Effect.gen(function* () {
         ),
       );
     }),
+
+    mcpListTools: (threadId, server) =>
+      Effect.flatMap(mcpTarget(threadId, server), gateway.listTools),
+    mcpCall: (threadId, input) =>
+      Effect.flatMap(mcpTarget(threadId, input.server), (target) =>
+        gateway.callTool(target, input.tool, input.arguments ?? {}),
+      ),
 
     drain: worker.drain,
   });

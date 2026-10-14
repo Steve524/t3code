@@ -62,6 +62,7 @@ import { makeAcpMcpOverAcpBridge, type AcpMcpOverAcpBridge } from "./mcpOverAcpB
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import { acpExtraMcpServers } from "../../../provider-core/src/server/fork/crewMcpServers.ts"; // FORK: crew native MCP
 import {
   applyAcpAgentTerminalUpdate,
   acpContentBlockDisplayText,
@@ -705,6 +706,7 @@ function acpMcpContext(
           { name: "T3_ACP_MCP_AUTHORIZATION", value: session.authorizationHeader },
         ],
       },
+      ...acpExtraMcpServers(session), // FORK: crew native MCP
     ],
     acpServers: [{ type: "acp", name: "t3-code", serverId: "t3-code" }],
     endpoint: session.endpoint,

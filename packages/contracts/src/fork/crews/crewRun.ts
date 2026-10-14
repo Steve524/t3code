@@ -347,6 +347,34 @@ export const CrewToolRunResult = Schema.Struct({
 });
 export type CrewToolRunResult = typeof CrewToolRunResult.Type;
 
+/** The tools an MCP server in the role's toolbox offers, as its `tools/list` named them. */
+export const CrewMcpToolList = Schema.Struct({
+  server: Schema.String,
+  tools: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      description: Schema.optionalKey(Schema.String),
+      inputSchema: Schema.optionalKey(Schema.Unknown),
+    }),
+  ),
+});
+export type CrewMcpToolList = typeof CrewMcpToolList.Type;
+
+export const CrewMcpCallInput = Schema.Struct({
+  server: Schema.String,
+  tool: Schema.String,
+  arguments: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
+});
+export type CrewMcpCallInput = typeof CrewMcpCallInput.Type;
+
+/** An MCP `tools/call` result, passed through. `isError` is the tool's own failure. */
+export const CrewMcpCallResult = Schema.Struct({
+  content: Schema.Array(Schema.Unknown),
+  isError: Schema.optionalKey(Schema.Boolean),
+  structuredContent: Schema.optionalKey(Schema.Unknown),
+});
+export type CrewMcpCallResult = typeof CrewMcpCallResult.Type;
+
 export const CrewNoteInput = Schema.Struct({
   toRole: Schema.optionalKey(Schema.String),
   toCard: Schema.optionalKey(Schema.String),

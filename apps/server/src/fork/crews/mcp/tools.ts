@@ -5,7 +5,10 @@ import { Tool, Toolkit } from "effect/ai";
 import {
   CrewCardContext,
   CrewDecideInput,
+  CrewMcpCallInput,
+  CrewMcpCallResult,
   CrewMcpFailure,
+  CrewMcpToolList,
   CrewNoteInput,
   CrewReportInput,
   CrewSkillResult,
@@ -166,6 +169,34 @@ const CrewToolRunTool = Tool.make("crew_tool_run", {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false);
 
+// Both start the server's process, so neither is on the read-only list.
+const CrewMcpListToolsTool = Tool.make("crew_mcp_list_tools", {
+  description:
+    "Needs an agent working for a crew run. Lists the tools of an MCP server in your role's toolbox, with their input schemas. The crew starts the server for you; a server outside your toolbox is refused.",
+  parameters: Schema.Struct({ server: Schema.String }),
+  success: CrewMcpToolList,
+  failure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "List an MCP server's tools")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
+
+const CrewMcpCallTool = Tool.make("crew_mcp_call", {
+  description:
+    "Needs an agent working for a crew run. Calls one tool of an MCP server in your role's toolbox and returns the server's result as is; `isError` is the tool's own failure. Use crew_mcp_list_tools first to see the tools and their arguments.",
+  parameters: CrewMcpCallInput,
+  success: CrewMcpCallResult,
+  failure,
+  failureMode: "return",
+  dependencies,
+})
+  .annotate(Tool.Title, "Call an MCP server's tool")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false);
+
 export const CrewToolkit = Toolkit.make(
   CrewContextTool,
   CrewReportTool,
@@ -177,4 +208,6 @@ export const CrewToolkit = Toolkit.make(
   CrewValidateTool,
   CrewToolListTool,
   CrewToolRunTool,
+  CrewMcpListToolsTool,
+  CrewMcpCallTool,
 );

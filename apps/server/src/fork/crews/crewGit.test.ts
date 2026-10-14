@@ -6,6 +6,7 @@ import {
   crewCardOwns,
   crewCommitMessage,
   crewOwnershipViolations,
+  crewWorktreeForBranch,
   isPlainToolArgument,
 } from "./crewGit.ts";
 import type { CrewCard } from "./engine/types.ts";
@@ -101,5 +102,22 @@ describe("crew git", () => {
         isPlainToolArgument,
       ),
     ).toEqual(Array.from({ length: 9 }, () => false));
+  });
+
+  it("finds the worktree a branch is checked out in", () => {
+    const porcelain = [
+      "worktree C:/repo",
+      "HEAD 1111111111111111111111111111111111111111",
+      "branch refs/heads/main",
+      "",
+      "worktree C:/repo/.t3/worktrees/build-1-0",
+      "HEAD 2222222222222222222222222222222222222222",
+      "branch refs/heads/crew/abc12345/build-1-0",
+      "",
+    ].join("\r\n");
+    expect(crewWorktreeForBranch(porcelain, "crew/abc12345/build-1-0")).toBe(
+      "C:/repo/.t3/worktrees/build-1-0",
+    );
+    expect(crewWorktreeForBranch(porcelain, "crew/abc12345/build-1")).toBeNull();
   });
 });

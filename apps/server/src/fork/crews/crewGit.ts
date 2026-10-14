@@ -91,3 +91,13 @@ export function crewOwnershipViolations(
 
 /** Words a role may append to a tool's command: paths, flags and names, nothing a shell reads. */
 export const isPlainToolArgument = (value: string) => /^[\w./\\:=@,+-]+$/u.test(value);
+
+/** The path of the worktree that `git worktree list --porcelain` shows on `branch`, if any. */
+export function crewWorktreeForBranch(porcelain: string, branch: string): string | null {
+  for (const block of porcelain.split(/\r?\n\r?\n/u)) {
+    const lines = block.split(/\r?\n/u);
+    if (!lines.includes(`branch refs/heads/${branch}`)) continue;
+    return lines.find((line) => line.startsWith("worktree "))?.slice("worktree ".length) ?? null;
+  }
+  return null;
+}

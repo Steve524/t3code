@@ -163,6 +163,7 @@ import {
   subagentThreadTitle,
 } from "@t3tools/provider-core/server/subagentProjection";
 import { CLAUDE_READ_ONLY_CREW_MCP_ALLOWED_TOOLS } from "../../fork/crews/mcp/readOnlyTools.ts"; // FORK: crew tools
+import { withExtraClaudeMcpServers } from "../../../../../packages/provider-core/src/server/fork/crewMcpServers.ts"; // FORK: crew native MCP
 
 export const CLAUDE_PROVIDER = ProviderDriverKind.make("claudeAgent");
 export const CLAUDE_AGENT_SDK_QUERY_PROTOCOL = "claude-agent-sdk.query" as const;
@@ -1139,6 +1140,7 @@ export function claudeMcpQueryOverrides(input: {
         timeout: CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
       },
     },
+    ...withExtraClaudeMcpServers(input, claudeMcpQueryOverrides), // FORK: crew native MCP
   };
 }
 

@@ -1,4 +1,5 @@
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import type { ExtraMcpServer } from "./fork/crewMcpServers.ts"; // FORK: crew native MCP
 
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
@@ -22,6 +23,7 @@ export interface McpProviderSessionConfig {
    * already pointed at the server's daemon; the agent never handles a token.
    */
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
+  readonly extraMcpServers?: ReadonlyArray<ExtraMcpServer>; // FORK: crew native MCP
 }
 
 /** Provider env with the device variables applied over `base`, or `base` untouched. */

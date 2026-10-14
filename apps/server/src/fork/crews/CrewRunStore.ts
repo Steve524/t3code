@@ -12,6 +12,7 @@ import {
   type ModelSelection,
   type ProjectId,
   ProviderInstanceId,
+  type RunId,
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -475,16 +476,74 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
 
     /** Takes a pending effect for running. Null when it already ran or is running. */
     claimEffect: (effectId: string, at: string) =>
-      sql<{ readonly runId: string; readonly payload: string }>`
+      sql<{ readonly runId: string; readonly payload: string; readonly createdAt: string }>`
         UPDATE fork_crew_outbox
         SET status = 'running', attempts = attempts + 1, updated_at = ${at}
         WHERE effect_id = ${effectId} AND status = 'pending'
-        RETURNING run_id AS "runId", payload_json AS "payload"
+        RETURNING run_id AS "runId", payload_json AS "payload", created_at AS "createdAt"
       `.pipe(
         Effect.map((rows) =>
           rows[0] === undefined
             ? null
-            : { runId: rows[0].runId, effect: parse<CrewEffect>(rows[0].payload) },
+            : {
+                runId: rows[0].runId,
+                effect: parse<CrewEffect>(rows[0].payload),
+                createdAt: rows[0].createdAt,
+              },
+        ),
+      ),
+
+    /**
+     * Puts every effect a shutdown cut off back to pending and returns all pending ones, oldest
+     * first. Only for startup, when nothing can be running yet.
+     */
+    reclaimEffects: (at: string) =>
+      sql`
+        UPDATE fork_crew_outbox SET status = 'pending', updated_at = ${at}
+        WHERE status = 'running'
+      `.pipe(
+        Effect.andThen(
+          sql<{ readonly effectId: string }>`
+            SELECT effect_id AS "effectId" FROM fork_crew_outbox
+            WHERE status = 'pending'
+            ORDER BY created_at, rowid
+          `,
+        ),
+        Effect.map((rows) => rows.map((row) => row.effectId)),
+      ),
+
+    /** The turns unfinished runs wait on, each with the thread it runs in. */
+    listWatchedTurns: () =>
+      sql<{ readonly threadId: ThreadId; readonly orchestrationRunId: RunId }>`
+        SELECT
+          fork_crew_thread_index.thread_id AS "threadId",
+          fork_crew_thread_index.orchestration_run_id AS "orchestrationRunId"
+        FROM fork_crew_thread_index
+        JOIN fork_crew_runs ON fork_crew_runs.run_id = fork_crew_thread_index.run_id
+        WHERE fork_crew_thread_index.orchestration_run_id IS NOT NULL
+          AND fork_crew_runs.status NOT IN ('completed', 'failed', 'cancelled')
+      `,
+
+    /** Decision requests the lead of an unfinished run was sent, with when each was asked. */
+    listDecisionRequests: () =>
+      sql<{ readonly runId: string; readonly payload: string; readonly createdAt: string }>`
+        SELECT
+          fork_crew_outbox.run_id AS "runId",
+          fork_crew_outbox.payload_json AS "payload",
+          fork_crew_outbox.created_at AS "createdAt"
+        FROM fork_crew_outbox
+        JOIN fork_crew_runs ON fork_crew_runs.run_id = fork_crew_outbox.run_id
+        WHERE fork_crew_outbox.kind = 'send_decision_request'
+          AND fork_crew_outbox.status = 'done'
+          AND fork_crew_runs.status NOT IN ('completed', 'failed', 'cancelled')
+      `.pipe(
+        Effect.map((rows) =>
+          rows.flatMap((row) => {
+            const effect = parse<CrewEffect>(row.payload);
+            return effect.type === "send_decision_request" && !effect.reminder
+              ? [{ runId: row.runId, cardId: effect.cardId, askedAt: row.createdAt }]
+              : [];
+          }),
         ),
       ),
 

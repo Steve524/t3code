@@ -45,6 +45,7 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import { cursorExtraMcpServers } from "../../../provider-core/src/server/fork/crewMcpServers.ts"; // FORK: crew native MCP
 import { CursorTransportFailure } from "./transportFailure.ts";
 import { cursorSdkModelSelection } from "./sdkModel.ts";
 import {
@@ -215,6 +216,7 @@ export function cursorMcpServers(
         Authorization: session.authorizationHeader,
       },
     },
+    ...cursorExtraMcpServers(session), // FORK: crew native MCP
   };
 }
 

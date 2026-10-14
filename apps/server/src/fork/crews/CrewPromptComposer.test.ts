@@ -166,6 +166,30 @@ describe("crew prompt", () => {
     expect(composeCrewCardPrompt(input("plan"))).not.toContain("## Tools");
   });
 
+  it("lists each MCP server once, the way the role's provider reaches it", () => {
+    const mcp = [
+      { name: "playwright", source: "home" as const, command: "npx", args: [], env: {} },
+      {
+        name: "figma",
+        source: "repo" as const,
+        command: "figma-mcp",
+        args: [],
+        env: { TOKEN: "${secret:FIGMA}" },
+      },
+    ];
+    const tools = (driver: string) =>
+      composeCrewCardPrompt(input("plan", { driver, toolbox: { skills: [], mcp, tools: [] } }))
+        .split("## Tools\n\n")[1]
+        ?.split("\n\n## ")[0];
+    const gateway = "MCP servers you reach through `crew_mcp_list_tools` and `crew_mcp_call`";
+    expect(tools("codex")).toBe("MCP servers whose tools you have directly: playwright, figma.");
+    expect(tools("opencode")).toBe(`${gateway}: playwright, figma.`);
+    // Cursor gets a server with a secret through the gateway only.
+    expect(tools("cursor")).toBe(
+      `MCP servers whose tools you have directly: playwright.\n\n${gateway}: figma.`,
+    );
+  });
+
   it("tells a conflict resolver which files to fix and to leave the commit to the crew", () => {
     const prompt = composeCrewConflictPrompt({
       crew: definition,

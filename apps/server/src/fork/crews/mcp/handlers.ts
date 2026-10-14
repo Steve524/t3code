@@ -64,6 +64,12 @@ const handlers = {
   crew_tool_run: McpToolAccess.actsAsCaller((input) =>
     asCard((runs, threadId) => runs.runTool(threadId, input)),
   ),
+  crew_mcp_list_tools: McpToolAccess.actsAsCaller(({ server }) =>
+    asCard((runs, threadId) => runs.mcpListTools(threadId, server)),
+  ),
+  crew_mcp_call: McpToolAccess.actsAsCaller((input) =>
+    asCard((runs, threadId) => runs.mcpCall(threadId, input)),
+  ),
 } satisfies McpToolAccess.Handlers<typeof CrewToolkit.tools>;
 
 export const layer = McpToolAccess.toLayer(CrewToolkit, handlers);

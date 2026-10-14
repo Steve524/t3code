@@ -15,6 +15,7 @@ import type {
 import type { CrewRunToolbox } from "../../../../../packages/contracts/src/fork/crews/crewRun.ts";
 import { normalizedPath } from "../../../../../packages/shared/src/fork/crews/validateCrew.ts";
 import { crewStepOutcomes, crewStepProduces } from "./crewReport.ts";
+import { crewMcpDelivery } from "./mcp/crewMcpDelivery.ts";
 
 /** Crew files by path relative to the crew folder. */
 type CrewFiles = Readonly<Record<string, string>>;
@@ -151,6 +152,11 @@ function compose(input: CrewPromptInput, inlineArtifacts: boolean) {
   const owns = step.owns === undefined ? [] : [step.owns].flat().map(render);
   const outcomes = crewStepOutcomes(crew, input.stepId);
   const produces = crewStepProduces(crew, input.stepId);
+  // Each server once, the way this role's provider gets it.
+  const native = input.toolbox.mcp.filter(
+    (server) => crewMcpDelivery(input.driver, server) === "native",
+  );
+  const gateway = input.toolbox.mcp.filter((server) => !native.includes(server));
 
   const sections: ReadonlyArray<readonly [title: string, body: ReadonlyArray<string>]> = [
     ["Task", [render(crewText(input.files, step.task)).trim()]],
@@ -183,17 +189,29 @@ function compose(input: CrewPromptInput, inlineArtifacts: boolean) {
     ],
     [
       "Tools",
-      input.toolbox.tools.length === 0
-        ? []
-        : [
-            input.toolbox.tools
-              .map(
-                (tool) =>
-                  `- ${tool.name}${tool.description === undefined ? "" : `: ${tool.description}`}`,
-              )
-              .join("\n"),
-            "Run one with `crew_tool_run`. It runs in your checkout and returns its exit code and the end of its output.",
-          ],
+      [
+        ...(input.toolbox.tools.length === 0
+          ? []
+          : [
+              input.toolbox.tools
+                .map(
+                  (tool) =>
+                    `- ${tool.name}${tool.description === undefined ? "" : `: ${tool.description}`}`,
+                )
+                .join("\n"),
+              "Run one with `crew_tool_run`. It runs in your checkout and returns its exit code and the end of its output.",
+            ]),
+        ...(native.length === 0
+          ? []
+          : [
+              `MCP servers whose tools you have directly: ${native.map((server) => server.name).join(", ")}.`,
+            ]),
+        ...(gateway.length === 0
+          ? []
+          : [
+              `MCP servers you reach through \`crew_mcp_list_tools\` and \`crew_mcp_call\`: ${gateway.map((server) => server.name).join(", ")}.`,
+            ]),
+      ],
     ],
     [
       "Protocol",

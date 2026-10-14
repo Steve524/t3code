@@ -43,6 +43,8 @@ import {
 
 type OverridePatch = Pick<CrewRoleOverrideSetInput, "modelSelection" | "runtimeMode">;
 
+const CREW_PICKER_TRIGGER_CLASSNAME = `${SETTINGS_PICKER_TRIGGER_CLASSNAME} h-8 border-input bg-input/40 text-foreground hover:bg-input/60 data-popup-open:bg-input/60 [&_[data-composer-control-chevron]]:text-foreground`;
+
 export function CrewRoleCard({
   detail,
   roleId,
@@ -185,7 +187,7 @@ export function CrewRoleCard({
           instanceEntries={entries}
           modelOptionsByInstance={modelOptions}
           disabled={disabled}
-          triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+          triggerClassName={CREW_PICKER_TRIGGER_CLASSNAME}
           triggerAriaLabel={`${role.name} model`}
           {...(mixed
             ? { triggerLabel: "Mixed" }
@@ -210,7 +212,7 @@ export function CrewRoleCard({
             modelOptions={selection.options ?? []}
             allowPromptInjectedEffort={false}
             planModeEnabled={settings.planModeEnabled}
-            triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
+            triggerClassName={CREW_PICKER_TRIGGER_CLASSNAME}
             disabled={disabled || unavailable}
             onModelOptionsChange={(options) =>
               setModel(createModelSelection(selection.instanceId, selection.model, options))

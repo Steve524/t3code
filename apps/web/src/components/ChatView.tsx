@@ -38,6 +38,7 @@ import {
 } from "@t3tools/shared/usageLimits";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
+import { useCrewSendInterceptor } from "../fork/crews/composer/useCrewSendInterceptor"; // FORK: crew send
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as Schema from "effect/Schema";
 import {
@@ -8790,6 +8791,16 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
 
+  // FORK-BEGIN: crew send hook
+  const crewSend = useCrewSendInterceptor({
+    environmentId,
+    projectId: activeProject?.id ?? null,
+    draftId: routeKind === "draft" ? draftId : null,
+    promptRef,
+    composerRef,
+    setThreadError,
+  });
+  // FORK-END
   const onSend = async (
     e?: { preventDefault: () => void },
     dispatchMode: ComposerDispatchMode = "auto",
@@ -8881,6 +8892,22 @@ export default function ChatView(props: ChatViewProps) {
       notifyDirectAnnotationAttached();
       return;
     }
+    // FORK-BEGIN: selected crews start runs before ordinary sends
+    if (
+      crewSend.isSelected() &&
+      (await crewSend.start({
+        prompt: promptRef.current,
+        sendContext: sendCtx,
+        runtimeMode,
+        envMode: sendEnvMode,
+        baseRef: activeThreadBranch,
+        startFromOrigin,
+        threadId: activeThread.id,
+        directAnnotation,
+      }))
+    )
+      return;
+    // FORK-END
     const multipleModelSelections = sendCtx.multipleModelSelections;
     if (
       multipleModelSelections !== null &&

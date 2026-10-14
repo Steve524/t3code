@@ -169,11 +169,9 @@ export type CrewRoleOverrideResetInput = typeof CrewRoleOverrideResetInput.Type;
 const error = Schema.Union([ForkCrewsError, EnvironmentAuthorizationError]);
 
 /**
- * Spread into `WsRpcGroup`, which adds scope authorization.
- *
- * Do not add to this list. The server's handler types cost the square of the group's size, and
- * `WsRpcGroup` is at TypeScript's limit: with one more RPC (203) the server layer is typed `any`
- * and `apps/server` fails to typecheck in `server.ts`. Add an action to an existing payload instead.
+ * The shared WebSocket contract includes these RPCs for client typing and scope checks.
+ * The server builds their handlers in a separate group to stay below TypeScript's inference
+ * limit, then merges the groups at the transport. Add controls to runs.control, not new RPCs.
  */
 export const ForkCrewsRpcs = [
   Rpc.make(FORK_CREWS_WS_METHODS.list, {

@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./fork/crews/commands": {
+      "types": "./src/fork/crews/commands.ts",
+      "default": "./src/fork/crews/commands.ts"
+    },
+    "./fork/crews/runs": {
+      "types": "./src/fork/crews/runs.ts",
+      "default": "./src/fork/crews/runs.ts"
+    },
     "./fork/crews/catalog": {
       "types": "./src/fork/crews/catalog.ts",
       "default": "./src/fork/crews/catalog.ts"

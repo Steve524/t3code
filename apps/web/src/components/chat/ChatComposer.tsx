@@ -260,7 +260,7 @@ import {
 } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { useDebouncedValue } from "~/state/queries";
-import { ProviderModelPicker } from "./ProviderModelPicker";
+import { ProviderModelPicker, useCrewComposer } from "../../fork/crews/composer/useCrewComposer"; // FORK: crew composer wiring
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import {
   type ComposerCommandItem,
@@ -1713,6 +1713,7 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
+  const crewComposer = useCrewComposer(props); // FORK: crew validation and single-model mode
   const {
     composerDraftTarget,
     environmentId,
@@ -1815,7 +1816,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onFileOpen,
     editingQueuedAttachments,
     onRemoveEditingQueuedAttachment,
-  } = props;
+  } = crewComposer.props; // FORK: crew composer state
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const composerDraftTargetKey = composerTargetKey(composerDraftTarget);
   const {
@@ -5474,7 +5475,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const restingProviderTraitsPicker = renderProviderTraitsPicker({
     ...providerTraitsPickerInput,
     size: composerControlsCollapsed ? "xs" : "sm",
-    hidden: composerControlsHidden || restingHiddenBlockCount > 1,
+    hidden: composerControlsHidden || restingHiddenBlockCount > 1 + Number(crewComposer.visible), // FORK: crew is the last footer block
   });
   const restingBlockDefs = [
     ...(providerTraitsPicker
@@ -5499,12 +5500,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           runtimeMode={compatibleRuntimeMode}
           runtimeModeOptions={compatibleRuntimeModeOptions}
           size={composerControlsCollapsed ? "xs" : "sm"}
-          hidden={composerControlsHidden || restingHiddenBlockCount > 0}
+          hidden={composerControlsHidden || restingHiddenBlockCount > Number(crewComposer.visible)} // FORK: crew is the last footer block
           onToggleInteractionMode={toggleInteractionMode}
           onRuntimeModeChange={handleRuntimeModeChange}
         />
       ),
     },
+    // FORK-BEGIN: crew selector
+    ...(crewComposer.visible
+      ? [
+          {
+            id: "crew",
+            content: crewComposer.control(
+              selectedModelSelection,
+              composerControlsCollapsed ? "xs" : "sm",
+              composerControlsHidden || restingHiddenBlockCount > 0,
+            ),
+          },
+        ]
+      : []),
+    // FORK-END
   ];
   const hiddenRestingBlockIds = restingBlockDefs
     .slice(restingBlockDefs.length - restingHiddenBlockCount)
@@ -5536,6 +5551,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         />
       ) : null}
       <ProviderModelPicker
+        crewSelected={crewComposer.selected} // FORK: explain the fallback model
         environmentId={environmentId}
         compact={false}
         isComposerOwned
@@ -5658,6 +5674,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           )}
         >
           <CompactComposerControlsMenu
+            // FORK-BEGIN: compact crew selector
+            crewControl={
+              hiddenRestingBlockIds.includes("crew")
+                ? crewComposer.control(
+                    selectedModelSelection,
+                    composerControlsCollapsed ? "xs" : "sm",
+                  )
+                : undefined
+            }
+            // FORK-END
             interactionMode={interactionMode}
             runtimeMode={compatibleRuntimeMode}
             runtimeModeOptions={compatibleRuntimeModeOptions}

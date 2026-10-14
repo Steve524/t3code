@@ -284,7 +284,19 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
         return;
       }
     }
-    snapshot.pendingSteps.push({ stepId: target, parent });
+    snapshot.pendingSteps.push({
+      stepId: target,
+      parent,
+      ...(edge.limit && target === edge.to
+        ? {
+            enteredVia: {
+              id: edge.id,
+              used: snapshot.routeCounters[edge.id]!,
+              max: edge.limit.max,
+            },
+          }
+        : {}),
+    });
   }
 
   function createCard(
@@ -293,6 +305,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     parent: CrewCard["parent"],
     itemIndex: number | null = null,
     item: unknown = null,
+    enteredVia?: CrewCard["enteredVia"],
   ) {
     const step = getStep(stepId);
     if (step.type === "end" || step.type === "parallel")
@@ -324,6 +337,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       sourceCardId: null,
       decidedBy: null,
       note: null,
+      ...(enteredVia ? { enteredVia } : {}),
     };
     snapshot.cards.push(card);
     emit({ type: "card.created", card });
@@ -378,6 +392,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     card.state = "queued";
     card.report = null;
     card.outcome = null;
+    card.note = null;
     card.orchestrationRunId = null;
     card.followUp = reminder ? "reminder" : "retry";
     if (reminder) card.reminderSent = true;
@@ -434,6 +449,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
         { groupId: group.id, branch: index },
         index,
         group.items[index],
+        group.enteredVia,
       );
     if (count === 0) {
       group.state = "done";
@@ -442,7 +458,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     }
   }
 
-  function enter(stepId: string, parent: CrewCard["parent"]) {
+  function enter(stepId: string, parent: CrewCard["parent"], enteredVia?: CrewCard["enteredVia"]) {
     if (parent && getGroup(parent.groupId).state === "done") return;
     const step = getStep(stepId);
     const visit = (snapshot.visits[stepId] ?? 0) + 1;
@@ -464,6 +480,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
         total: join.branches.length,
         finished: [],
         items: [],
+        ...(enteredVia ? { enteredVia } : {}),
       };
       snapshot.groups.push(group);
       if (step.type === "parallel")
@@ -471,6 +488,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
           snapshot.pendingSteps.push({
             stepId: branch.start,
             parent: { groupId: group.id, branch: index },
+            ...(enteredVia ? { enteredVia } : {}),
           }),
         );
       else {
@@ -492,7 +510,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
         } else expandFanout(group, items.length);
       }
     } else {
-      const card = createCard(stepId, visit, parent);
+      const card = createCard(stepId, visit, parent, null, null, enteredVia);
       if (step.type === "gate")
         openGate(card, step.by ?? "user", step.prompt, Object.keys(step.outcomes));
     }
@@ -542,7 +560,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
   function pump() {
     while (snapshot.pendingSteps.length && !isTerminal(snapshot)) {
       const entry = snapshot.pendingSteps.shift()!;
-      enter(entry.stepId, entry.parent);
+      enter(entry.stepId, entry.parent, entry.enteredVia);
     }
     // Before any card is dispatched: an editing lead hears of a step's end before the next
     // shared card takes the checkout, so a run of shared steps cannot keep it waiting.
@@ -717,8 +735,14 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
             : undefined;
         // Why a card failed is all the board has to show for it.
         if (event.type === "card.failed") card.note = event.reason;
-        if (card.state === "stopping") card.state = "cancelled";
-        else if (merge) {
+        if (card.state === "stopping") {
+          card.state = card.stoppedByUser && !isTerminal(snapshot) ? "blocked" : "cancelled";
+          if (card.stoppedByUser) {
+            card.outcome = "failed";
+            card.report = null;
+            card.note = "Stopped by you.";
+          }
+        } else if (merge) {
           // A conflict resolver routes nothing: its merge checks the checkout and carries on.
           card.state = "done";
           card.outcome = card.report?.outcome ?? "done";
@@ -743,6 +767,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       break;
     case "script.finished":
       if (currentAttempt && card.type === "script" && isActive(card) && card.state !== "stopping") {
+        card.scriptExitCode = event.exitCode;
         card.report = {
           outcome: event.exitCode === 0 ? "pass" : "fail",
           summary: event.outputTail.slice(-8192),
@@ -845,6 +870,13 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       endRun("failed");
       break;
     case "user.card_action":
+      if (event.action === "stop") {
+        if (card && ["working", "reported"].includes(card.state) && card.threadId) {
+          card.stoppedByUser = true;
+          stopCard(card);
+        }
+        break;
+      }
       if (
         !card ||
         card.type === "gate" ||
@@ -869,6 +901,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
         if (isClosed(card))
           throw new Error("A routed card cannot be retried after its successors have started.");
         card.reminderSent = false;
+        card.stoppedByUser = false;
         retry(card, false);
       } else if (!isClosed(card)) {
         finish(
@@ -899,6 +932,7 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
       break;
     case "merge.conflict":
       if (card?.type === "merge" && isActive(card)) {
+        card.conflictPaths = [...event.paths];
         const step = getStep(card.stepId);
         const role =
           step.type === "merge" && typeof step.onConflict === "object"
@@ -937,13 +971,15 @@ export function decide(previous: CrewSnapshot, event: CrewEvent) {
     case "budget.exhausted":
       openBudget(event.kind);
       break;
+    case "merge.card_merged":
+      if (card?.type === "merge") card.mergedCount = (card.mergedCount ?? 0) + 1;
+      break;
     // These facts describe work already recorded by decide or owned by later workers.
     case "lead.update_queued":
     case "step.entered":
     case "card.created":
     case "gate.opened":
     case "route.limit_reached":
-    case "merge.card_merged":
     case "lead.kickoff_finished":
     case "lead.update_delivered":
       break;

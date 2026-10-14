@@ -40,6 +40,11 @@ export interface CrewCard {
   sourceCardId: string | null;
   decidedBy: "user" | "lead" | null;
   note: string | null;
+  enteredVia?: { id: string; used: number; max: number };
+  stoppedByUser?: boolean;
+  scriptExitCode?: number;
+  mergedCount?: number;
+  conflictPaths?: string[];
 }
 
 export interface CrewGroup {
@@ -52,6 +57,7 @@ export interface CrewGroup {
   total: number;
   finished: number[];
   items: unknown[];
+  enteredVia?: CrewCard["enteredVia"];
 }
 
 /** The role that runs in the home thread for the whole run, in lead mode. */
@@ -84,7 +90,7 @@ export interface CrewSnapshot {
   visits: Record<string, number>;
   cards: CrewCard[];
   groups: CrewGroup[];
-  pendingSteps: { stepId: string; parent: Parent | null }[];
+  pendingSteps: { stepId: string; parent: Parent | null; enteredVia?: CrewCard["enteredVia"] }[];
   artifacts: Record<string, unknown>;
   routeCounters: Record<string, number>;
   roleInstances: Record<string, string>;
@@ -150,7 +156,7 @@ export type CrewFact =
   | {
       type: "user.card_action";
       cardId: string;
-      action: "retry" | "skip" | "force_outcome";
+      action: "stop" | "retry" | "skip" | "force_outcome";
       outcome?: string;
     }
   | { type: "user.role_model_changed"; roleId: string; selection: ModelSelection };

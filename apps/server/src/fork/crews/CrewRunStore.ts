@@ -229,7 +229,8 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
         outcome = excluded.outcome,
         summary = excluded.summary,
         report_json = excluded.report_json,
-        started_at = COALESCE(fork_crew_cards.started_at, excluded.started_at),
+        started_at = CASE WHEN fork_crew_cards.attempt != excluded.attempt THEN excluded.started_at
+          ELSE COALESCE(fork_crew_cards.started_at, excluded.started_at) END,
         finished_at = CASE
           WHEN excluded.finished_at IS NULL THEN NULL
           ELSE COALESCE(fork_crew_cards.finished_at, excluded.finished_at)
@@ -315,6 +316,8 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
         readonly projectId: ProjectId;
         readonly crewId: string;
         readonly crewName: string;
+        readonly brief: string;
+        readonly cardThreadIdsJson: string;
         readonly status: CrewRunStatus;
         readonly homeThreadId: ThreadId | null;
         readonly needsYou: number;
@@ -326,19 +329,30 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
           project_id AS "projectId",
           crew_id AS "crewId",
           json_extract(crew_snapshot_json, '$.crew.name') AS "crewName",
+          COALESCE(json_extract(inputs_json, '$.brief'), '') AS "brief",
+          (SELECT json_group_array(thread_id) FROM fork_crew_thread_index
+            WHERE fork_crew_thread_index.run_id = fork_crew_runs.run_id
+            AND thread_id != COALESCE(home_thread_id, '')) AS "cardThreadIdsJson",
           status AS "status",
           home_thread_id AS "homeThreadId",
-          (
+          CASE WHEN status IN ('completed', 'failed', 'cancelled') THEN 0 ELSE (
             SELECT COUNT(*) FROM fork_crew_cards
             WHERE fork_crew_cards.run_id = fork_crew_runs.run_id AND state = 'needs_you'
-          ) AS "needsYou",
+          ) + CASE WHEN json_extract(budget_json, '$.gate') IS NOT NULL THEN 1 ELSE 0 END END AS "needsYou",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM fork_crew_runs
         WHERE project_id = ${projectId}
           AND (${status ?? null} IS NULL OR status = ${status ?? null})
         ORDER BY created_at DESC
-      `,
+      `.pipe(
+        Effect.map((rows) =>
+          rows.map(({ cardThreadIdsJson, ...row }) => ({
+            ...row,
+            cardThreadIds: parse<ThreadId[]>(cardThreadIdsJson),
+          })),
+        ),
+      ),
 
     /** The run's cards in the order the flow created them. */
     listCards: (runId: string) =>
@@ -361,6 +375,7 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
         readonly branch: string | null;
         readonly worktreePath: string | null;
         readonly ownershipViolations: string | null;
+        readonly changedFileCount: number | null;
         readonly startedAt: string | null;
         readonly finishedAt: string | null;
         readonly updatedAt: string;
@@ -384,6 +399,7 @@ export function makeCrewRunStore(sql: SqlClient.SqlClient) {
           branch AS "branch",
           worktree_path AS "worktreePath",
           ownership_violations_json AS "ownershipViolations",
+          json_array_length(changed_paths_json) AS "changedFileCount",
           started_at AS "startedAt",
           finished_at AS "finishedAt",
           updated_at AS "updatedAt"

@@ -139,6 +139,7 @@ export class CrewRunService extends Context.Service<
     }) => Effect.Effect<void, ForkCrewsError>;
     /** A new attempt of a card that is waiting, in its own thread when it has one. */
     readonly retryCard: (input: CardTarget) => Effect.Effect<void, ForkCrewsError>;
+    readonly stopCard: (input: CardTarget) => Effect.Effect<void, ForkCrewsError>;
     /** The card's step carries on as if it had reported `skipped`. */
     readonly skipCard: (input: CardTarget) => Effect.Effect<void, ForkCrewsError>;
     /** Treats a waiting card as having reported `outcome`. */
@@ -1735,7 +1736,7 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const cardAction = (action: "retry" | "skip" | "force_outcome") =>
+  const cardAction = (action: "stop" | "retry" | "skip" | "force_outcome") =>
     Effect.fn(`CrewRunService.${action}`)(function* (
       input: CardTarget & { readonly outcome?: string },
     ) {
@@ -1748,13 +1749,17 @@ const make = Effect.gen(function* () {
         card.type === "gate" ||
         card.type === "decision" ||
         card.sourceCardId !== null ||
-        !WAITING_STATES.has(card.state)
+        (action === "stop"
+          ? !["working", "reported"].includes(card.state) || card.threadId === null
+          : !WAITING_STATES.has(card.state))
       ) {
         return yield* new ForkCrewsError({
           reason: "invalid_request",
           runId: input.runId,
           detail:
-            "Only a card that is queued or waiting on a decision can be retried, skipped or forced.",
+            action === "stop"
+              ? "Only a running card with a thread can be stopped."
+              : "Only a card that is queued or waiting on a decision can be retried, skipped or forced.",
         });
       }
       yield* apply(input.runId, {
@@ -1940,6 +1945,7 @@ const make = Effect.gen(function* () {
       });
     }),
     retryCard: cardAction("retry"),
+    stopCard: cardAction("stop"),
     skipCard: cardAction("skip"),
     forceOutcome: cardAction("force_outcome"),
     setRoleModel: (input) =>

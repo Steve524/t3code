@@ -15,8 +15,8 @@ describe("board lanes", () => {
     ["reported", "approve", "working"],
     ["waiting_lead", null, "waiting_lead"],
     ["needs_you", null, "needs_you"],
-    // A card whose outcome waits on a decision card: the turn is the user's unless it failed.
-    ["blocked", "no_report", "needs_you"],
+    // The separate decision card owns attention, so its source must not count twice.
+    ["blocked", "no_report", "queued"],
     ["blocked", "failed", "failed"],
     ["done", "approve", "done"],
     ["skipped", null, "skipped"],

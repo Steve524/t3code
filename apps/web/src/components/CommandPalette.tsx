@@ -55,6 +55,7 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { useCrewPaletteItems } from "../fork/crews/board/CrewIntegrations"; // FORK: crew commands
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
@@ -641,6 +642,7 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const crewItems = useCrewPaletteItems(activeThread); // FORK: current thread's crew board
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
@@ -2223,7 +2225,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
+  const rootGroups = buildRootGroups({ actionItems, recentThreadItems, crewItems }); // FORK: crew commands
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,
     availableSettingsSearchItems,

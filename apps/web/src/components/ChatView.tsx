@@ -39,6 +39,7 @@ import {
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
 import { useCrewSendInterceptor } from "../fork/crews/composer/useCrewSendInterceptor"; // FORK: crew send
+import { useCrewBanner } from "../fork/crews/board/CrewIntegrations"; // FORK: crew banner
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as Schema from "effect/Schema";
 import {
@@ -7833,9 +7834,16 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
+  // FORK-BEGIN: crew banner hook
+  const crewBannerItems = useCrewBanner(
+    environmentId,
+    routeKind === "server" ? activeThreadId : null,
+  );
+  // FORK-END
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const backgroundWorkItems = [
+      ...crewBannerItems, // FORK: crew banner
       childInputBannerItem,
       goalBannerItem,
       backgroundWorkBannerItem,
@@ -7902,6 +7910,7 @@ export default function ChatView(props: ChatViewProps) {
     ];
   }, [
     activeBranchMismatchKey,
+    crewBannerItems, // FORK: live crew banner
     activeThreadShell,
     serverRuntime?.usageLimitResetAt,
     canWriteSourceControl,

@@ -99,10 +99,24 @@ export const CrewRunCard = Schema.Struct({
   startedAt: Schema.NullOr(Schema.String),
   finishedAt: Schema.NullOr(Schema.String),
   updatedAt: Schema.String,
+  title: Schema.optionalKey(Schema.String),
+  outcomes: Schema.optionalKey(Schema.Array(Schema.String)),
+  note: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  enteredVia: Schema.optionalKey(
+    Schema.Struct({ id: Schema.String, used: Schema.Number, max: Schema.Number }),
+  ),
+  changedFileCount: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  scriptExitCode: Schema.optionalKey(Schema.Number),
+  mergedCount: Schema.optionalKey(Schema.Number),
+  conflictPaths: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type CrewRunCard = typeof CrewRunCard.Type;
 
-const Usage = Schema.Struct({ used: Schema.Number, limit: Schema.Number });
+const Usage = Schema.Struct({
+  used: Schema.Number,
+  limit: Schema.Number,
+  extended: Schema.optionalKey(Schema.Number),
+});
 
 /** The board: a run's header and its cards. Transcripts stay in the thread streams. */
 export const CrewRunView = Schema.Struct({
@@ -110,6 +124,7 @@ export const CrewRunView = Schema.Struct({
   projectId: ProjectId,
   crewId: Schema.String,
   crewName: Schema.String,
+  brief: Schema.optionalKey(Schema.String),
   status: CrewRunStatus,
   homeMode: Schema.Literals(["first-step", "lead"]),
   leadRoleId: Schema.NullOr(Schema.String),
@@ -160,6 +175,8 @@ export const CrewRunSummary = Schema.Struct({
   projectId: ProjectId,
   crewId: Schema.String,
   crewName: Schema.String,
+  brief: Schema.optionalKey(Schema.String),
+  cardThreadIds: Schema.optionalKey(Schema.Array(ThreadId)),
   status: CrewRunStatus,
   homeThreadId: Schema.NullOr(ThreadId),
   needsYou: Schema.Number,
@@ -212,7 +229,10 @@ export const CrewRunControlInput = Schema.Struct({
       note: Schema.optionalKey(Schema.String),
     }),
     // A new attempt of a card that is not running, or its step carrying on without it.
-    Schema.Struct({ type: Schema.Literals(["retryCard", "skipCard"]), cardId: Schema.String }),
+    Schema.Struct({
+      type: Schema.Literals(["stopCard", "retryCard", "skipCard"]),
+      cardId: Schema.String,
+    }),
     Schema.Struct({
       type: Schema.Literal("forceOutcome"),
       cardId: Schema.String,

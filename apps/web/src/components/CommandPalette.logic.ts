@@ -594,7 +594,11 @@ export function getCommandPaletteMode(input: {
 export function buildRootGroups(input: {
   actionItems: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
   recentThreadItems: ReadonlyArray<CommandPaletteActionItem>;
+  crewItems?: ReadonlyArray<CommandPaletteActionItem>; // FORK: crew commands
 }): CommandPaletteGroup[] {
+  // FORK-BEGIN: crew commands
+  input = { ...input, actionItems: [...input.actionItems, ...(input.crewItems ?? [])] };
+  // FORK-END
   const groups: CommandPaletteGroup[] = [];
   if (input.actionItems.length > 0) {
     groups.push({ value: "actions", label: "Actions", items: input.actionItems });

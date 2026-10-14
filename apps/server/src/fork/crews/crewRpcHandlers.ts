@@ -43,6 +43,8 @@ export const layer = group.toLayer(
             return runs.resolveGate({ runId, ...action });
           case "retryCard":
             return runs.retryCard({ runId, ...action });
+          case "stopCard":
+            return runs.stopCard({ runId, ...action });
           case "skipCard":
             return runs.skipCard({ runId, ...action });
           case "forceOutcome":

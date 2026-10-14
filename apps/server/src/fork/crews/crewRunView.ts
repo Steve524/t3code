@@ -26,13 +26,13 @@ export function crewCardLane(
     case "stopping":
       return runOver ? "skipped" : "working";
     case "waiting_lead":
-      return "waiting_lead";
+      return runOver ? "skipped" : "waiting_lead";
     case "needs_you":
-      return "needs_you";
+      return runOver ? "skipped" : "needs_you";
     // The card's own outcome is waiting on a decision card. A merge waits on its conflict resolver.
     case "blocked":
       if (card.stepType === "merge") return runOver ? "skipped" : "working";
-      return card.outcome === "failed" ? "failed" : "needs_you";
+      return card.outcome === "failed" ? "failed" : runOver ? "skipped" : "queued";
     case "done":
       return "done";
     default:
@@ -59,11 +59,41 @@ export function buildCrewRunView(
   // A run is stored only once it has started, so the engine's `pending` never reaches here.
   const status: CrewRunStatus = snapshot.status === "pending" ? "running" : snapshot.status;
   const runOver = status === "completed" || status === "failed" || status === "cancelled";
-  const cards = rows.map((row) => ({
-    ...row,
-    lane: crewCardLane(row, runOver),
-    column: crewCardColumn(crew, row.stepId, row.stepType),
-  }));
+  const engineCards = new Map(snapshot.cards.map((card) => [`${run.runId}:${card.id}`, card]));
+  const cards = rows.map((row) => {
+    const card = engineCards.get(row.cardId);
+    const step = crew.flow.steps[row.stepId];
+    const item = card?.item;
+    const itemTitle =
+      typeof item === "string"
+        ? item
+        : item && typeof item === "object" && "title" in item && typeof item.title === "string"
+          ? item.title
+          : null;
+    return {
+      ...row,
+      outcome: card?.report?.outcome ?? row.outcome,
+      title:
+        itemTitle ??
+        (step && "name" in step && typeof step.name === "string" ? step.name : undefined) ??
+        row.stepId,
+      outcomes: [
+        ...new Set(
+          snapshot.flow.edges
+            .filter((edge) => edge.from === row.stepId && edge.outcome)
+            .map((edge) => edge.outcome!),
+        ),
+      ],
+      note: card?.note ?? null,
+      ...(card?.enteredVia ? { enteredVia: card.enteredVia } : {}),
+      ...(card?.scriptExitCode !== undefined ? { scriptExitCode: card.scriptExitCode } : {}),
+      ...(card?.type === "merge"
+        ? { mergedCount: card.mergedCount ?? 0, conflictPaths: card.conflictPaths ?? [] }
+        : {}),
+      lane: crewCardLane(row, runOver),
+      column: crewCardColumn(crew, row.stepId, row.stepType),
+    };
+  });
   const columns = (crew.board?.columns ?? []).map(({ id, label }) => ({ id, label }));
   for (const card of cards) {
     if (!columns.some((column) => column.id === card.column)) {
@@ -76,6 +106,7 @@ export function buildCrewRunView(
     projectId: run.projectId,
     crewId: run.crewId,
     crewName: crew.name,
+    brief: String(run.inputs.brief ?? ""),
     status,
     homeMode: snapshot.homeMode,
     leadRoleId: snapshot.lead?.roleId ?? null,
@@ -107,8 +138,16 @@ export function buildCrewRunView(
           ],
     ),
     budget: {
-      cards: { used: budget.cards, limit: budget.limits.maxCards },
-      hours: { used: budget.activeSeconds / 3600, limit: budget.limits.maxHours },
+      cards: {
+        used: budget.cards,
+        limit: budget.limits.maxCards,
+        extended: budget.extensions.maxCards,
+      },
+      hours: {
+        used: budget.activeSeconds / 3600,
+        limit: budget.limits.maxHours,
+        extended: budget.extensions.maxHours,
+      },
       fanoutItems: budget.limits.maxFanoutItems,
       gate:
         snapshot.budgetGate === null

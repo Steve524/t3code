@@ -94,6 +94,7 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
+import { UsersIcon } from "lucide-react"; // FORK: crew board tab icon
 
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -601,6 +602,10 @@ function surfaceTitle(
   terminalLabelsById: ReadonlyMap<string, string>,
 ): string {
   switch (surface.kind) {
+    // FORK-BEGIN: crew board tab label
+    case "crew-board":
+      return "Crew board";
+    // FORK-END
     case "diff":
       return "Diff";
     case "files":
@@ -668,6 +673,10 @@ function SurfaceIcon({
   pullRequestStatusSeeds: Readonly<Record<string, PullRequestTabStatusSeed>> | undefined;
 }) {
   switch (surface.kind) {
+    // FORK-BEGIN: crew board tab icon
+    case "crew-board":
+      return <UsersIcon className="size-3 shrink-0" />;
+    // FORK-END
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       const url = !snapshot || snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url;

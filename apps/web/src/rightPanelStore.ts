@@ -20,8 +20,10 @@ import { useClosedViewStore } from "./closedViewStore";
 import { resolveStorage } from "./lib/storage";
 import type { ThreadPanelPresentation } from "./rightPanelLayout";
 import type { ChatFileAttachment } from "./types";
+import { CREW_BOARD_SURFACE, type CrewBoardSurface } from "./fork/crews/board/crewBoardSurface"; // FORK: crew board surface
 
 const RIGHT_PANEL_KINDS = [
+  CREW_BOARD_SURFACE.kind, // FORK: crew board surface
   "diff",
   "files",
   "file",
@@ -41,6 +43,7 @@ export interface DeviceTabTarget {
 }
 
 export type RightPanelSurface =
+  | CrewBoardSurface // FORK: crew board surface
   | { id: `browser:${string}`; kind: "preview"; resourceId: string }
   | { id: "browser:new"; kind: "preview"; resourceId: null }
   | { id: "device" | `device:${string}`; kind: "device"; target?: DeviceTabTarget; title?: string }
@@ -217,6 +220,10 @@ const singletonSurface = (
   kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
 ): RightPanelSurface => {
   switch (kind) {
+    // FORK-BEGIN: crew board surface
+    case "crew-board":
+      return CREW_BOARD_SURFACE;
+    // FORK-END
     case "diff":
       return { id: "diff", kind };
     case "files":

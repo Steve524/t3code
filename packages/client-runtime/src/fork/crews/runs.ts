@@ -62,7 +62,7 @@ export function createCrewRunAtoms<R, E>(
     get: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:fork:crews:runs:get",
       tag: FORK_CREWS_WS_METHODS.runsGet,
-      refreshTrigger: live,
+      // Card details read the frozen toolbox, so they need no second live subscription.
     }),
     activity: (target: Parameters<typeof live>[0]) =>
       Atom.map(live(target), AsyncResult.map(crewRunActivity)),

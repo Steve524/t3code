@@ -123,3 +123,22 @@ existing guarded `runs.control`; it waits for the thread's stop acknowledgement 
 available. The source of a decision no longer duplicates its decision card's needs-you count.
 The sidebar refreshes lightweight run lists on thread creation and the shared minute tick.
 No right-panel surface, gate notifications or board keybinding was added in this phase.
+
+## Crews right-panel touch points
+
+| File                                         | What changed                                                                                                                    | Why                                                                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/rightPanelStore.ts`            | Imports the fork surface descriptor/type and registers its kind, union member and singleton factory case. All additions marked. | Gives the crew board the existing per-environment/thread tab ordering, persistence and close/reopen behavior. |
+| `apps/web/src/components/RightPanelTabs.tsx` | Adds a marked icon import and label/icon cases for `crew-board`.                                                                | Displays the board in the existing draggable tab strip.                                                       |
+| `apps/web/src/components/ChatView.tsx`       | Imports and renders the fork panel component as the content fallback, both marked.                                              | Both inline and sheet layouts render the board beside the home thread.                                        |
+| `apps/web/src/closedViewStore.ts`            | Adds a marked `crew-board` case to the singleton validation.                                                                    | Keeps closed board tabs available when saved tab history migrates.                                            |
+
+Phase 12 reuses `CrewBoard` for the panel and full page. Navigation from the banner,
+composer chip, palette and full-page board lives under `fork/` and opens beside the
+run's home thread. Panel lookup uses that thread's existing crew stream. Frozen
+toolbox reads no longer subscribe to a second stream or refresh on every card update.
+Web and desktop share this code; mobile UI is skipped. No RPC, dependency or package export
+was added. `CrewRoleCard.tsx` is unchanged.
+
+Steve approved the additional `ChatView.tsx` and `closedViewStore.ts` wiring on
+2026-10-14. The planned `RightPanelSheet.tsx` is only a wrapper and needs no edit.

@@ -571,6 +571,7 @@ import {
 } from "../lib/attachmentUploadQueue";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { RightPanelSheet } from "./RightPanelSheet";
+import { CrewBoardPanel } from "../fork/crews/board/CrewBoardPanel"; // FORK: crew board panel
 import { previewEnvironment } from "../state/preview";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -11270,7 +11271,10 @@ export default function ChatView(props: ChatViewProps) {
           workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
-    ) : null
+    ) : (
+      // FORK: crew board panel for both inline and sheet layouts.
+      <CrewBoardPanel surface={renderedRightPanelSurface} threadRef={activeThreadRef} />
+    )
   ) : null;
   const threadDetailsPanelProps: ThreadDetailsPanelProps = {
     anchor: threadPanelPopoverAnchorRef,

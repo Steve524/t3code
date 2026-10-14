@@ -3,7 +3,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { crewRunActivity } from "@t3tools/client-runtime/fork/crews/runs";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { CrewRunCard, CrewRunView } from "@t3tools/contracts/fork/crews/crewRun";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 import { memo, useState } from "react";
@@ -25,6 +25,7 @@ import {
 import { useCrewControl, useCrewLive, type CrewControl } from "./crewBoardState";
 import { CrewBudgetGate, CrewConfirm, CrewGateActions } from "./CrewControls";
 import { CrewModelLabel, CrewRoleModel } from "./CrewModel";
+import { openCrewBoard } from "./openCrewBoard";
 
 export function CrewThreadLink({
   environmentId,
@@ -329,49 +330,92 @@ function BoardColumn({
 
 export function CrewBoard({
   environmentId,
-  runId,
+  ...input
 }: {
   environmentId: EnvironmentId;
-  runId: string;
-}) {
-  const { view, result } = useCrewLive(environmentId, { runId });
-  const control = useCrewControl(environmentId, runId);
-  const now = useNowMinute();
-  const [needsYouOnly, setNeedsYouOnly] = useState(false);
+} & ({ runId: string } | { threadId: ThreadId })) {
+  const { view, result } = useCrewLive(environmentId, input);
   if (!view)
     return (
       <div className="p-6">
         <p>
           {result?._tag === "Failure"
             ? "Could not load this crew run. Check the environment connection."
-            : "Loading crew run…"}
+            : result?._tag === "Success"
+              ? "No crew run is linked to this thread."
+              : "Loading crew run…"}
         </p>
         <Link to="/crews">Crew runs</Link>
       </div>
     );
+  return (
+    <LiveCrewBoard
+      key={`${environmentId}:${view.runId}`}
+      environmentId={environmentId}
+      view={view}
+      disconnected={result?._tag === "Failure"}
+      inPanel={"threadId" in input}
+    />
+  );
+}
+
+function LiveCrewBoard({
+  environmentId,
+  view,
+  disconnected,
+  inPanel,
+}: {
+  environmentId: EnvironmentId;
+  view: CrewRunView;
+  disconnected: boolean;
+  inPanel: boolean;
+}) {
+  const control = useCrewControl(environmentId, view.runId);
+  const now = useNowMinute();
+  const navigate = useNavigate();
+  const [needsYouOnly, setNeedsYouOnly] = useState(false);
   const needsYou = crewRunActivity(view).needsYou;
   const lead = view.roles.find((role) => role.id === view.leadRoleId);
   const terminal = ["completed", "failed", "cancelled"].includes(view.status);
   return (
-    <main className="flex h-full min-h-0 flex-col" aria-label={`${view.crewName} board`}>
+    <main className="flex h-full min-h-0 min-w-0 flex-col" aria-label={`${view.crewName} board`}>
       <header className="space-y-3 border-b p-4">
         <div className="flex flex-wrap items-center gap-3">
           <Link className="text-xs underline" to="/crews">
             Crew runs
           </Link>
+          {inPanel ? (
+            <Link
+              className="text-xs underline"
+              to="/crews/$environmentId/$runId"
+              params={{ environmentId, runId: view.runId }}
+            >
+              Full page
+            </Link>
+          ) : view.homeThreadId ? (
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => void navigate(openCrewBoard(environmentId, view))}
+            >
+              Open beside home thread
+            </Button>
+          ) : null}
           <h1 className="text-lg font-semibold">{view.crewName}</h1>
           <Badge variant="secondary">{view.status}</Badge>
-          <code className="text-xs">{view.integrationBranch ?? "Preparing workspace"}</code>
+          <code className="break-all text-xs">
+            {view.integrationBranch ?? "Preparing workspace"}
+          </code>
           <span className="text-xs">
             {view.cards.filter((card) => card.lane === "done").length}/{view.cards.length} done
           </span>
         </div>
-        {result?._tag === "Failure" && (
+        {disconnected && (
           <p role="alert" className="text-sm text-warning">
             Connection interrupted. Showing the last received state.
           </p>
         )}
-        <p className="text-sm text-muted-foreground">{view.brief}</p>
+        <p className="break-words text-sm text-muted-foreground">{view.brief}</p>
         {lead && (
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span>Lead: {lead.name}</span>
@@ -424,7 +468,7 @@ export function CrewBoard({
                 {view.status === "paused" ? "Resume" : "Pause"}
               </Button>
               <CrewConfirm
-                action={`${runId}:cancel`}
+                action={`${view.runId}:cancel`}
                 label="Cancel run"
                 disabled={control.disabled}
                 onConfirm={() => void control.send({ type: "cancel" })}

@@ -1,9 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
 import { crewRunActivity } from "@t3tools/client-runtime/fork/crews/runs";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { UsersIcon } from "lucide-react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../../../components/ui/tooltip";
+import { Button } from "../../../components/ui/button";
 import { useMemo } from "react";
 import type { ComposerBannerStackItem } from "../../../components/chat/ComposerBannerStack";
 import type { CommandPaletteActionItem } from "../../../components/CommandPalette.logic";
@@ -14,11 +15,13 @@ import {
 } from "../../../components/chat/ComposerControl";
 import { crewThreadIndexAtom, useCrewLive } from "./crewBoardState";
 import { CrewBannerGates } from "./CrewControls";
+import { openCrewBoard } from "./openCrewBoard";
 
 export function useCrewBanner(
   environmentId: EnvironmentId,
   threadId: ThreadId | null,
 ): ComposerBannerStackItem[] {
+  const navigate = useNavigate();
   const { view } = useCrewLive(environmentId, threadId ? { threadId } : null);
   return useMemo(() => {
     if (!view) return [];
@@ -35,18 +38,18 @@ export function useCrewBanner(
           ? `${view.roles.find((role) => role.id === view.leadRoleId)?.name ?? "Lead"} is deciding (${deciding})`
           : view.status,
         actions: (
-          <Link
-            className="text-xs underline"
-            to="/crews/$environmentId/$runId"
-            params={{ environmentId, runId: view.runId }}
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => void navigate(openCrewBoard(environmentId, view))}
           >
             Open board
-          </Link>
+          </Button>
         ),
         children: <CrewBannerGates environmentId={environmentId} view={view} />,
       },
     ];
-  }, [environmentId, view]);
+  }, [environmentId, navigate, view]);
 }
 
 export function CrewSidebarBadge({ thread }: { thread: { environmentId: string; id: string } }) {
@@ -105,10 +108,7 @@ export function useCrewPaletteItems(
       searchTerms: ["crew", view.crewName],
       icon: <UsersIcon />,
       run: async () => {
-        await navigate({
-          to: "/crews/$environmentId/$runId",
-          params: { environmentId: thread.environmentId, runId: view.runId },
-        });
+        await navigate(openCrewBoard(thread.environmentId, view));
       },
     });
   return items;
@@ -135,12 +135,7 @@ export function CrewThreadComposerControl({
       aria-label={`Open ${view.crewName} board`}
       aria-hidden={hidden || undefined}
       tabIndex={hidden ? -1 : undefined}
-      onClick={() =>
-        void navigate({
-          to: "/crews/$environmentId/$runId",
-          params: { environmentId, runId: view.runId },
-        })
-      }
+      onClick={() => void navigate(openCrewBoard(environmentId, view))}
     >
       <ComposerControlIcon icon={UsersIcon} size={size} />
       {view.crewName} · {activity.working} working · {activity.needsYou} needs you

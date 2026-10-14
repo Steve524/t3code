@@ -62,6 +62,7 @@ const isClosedViewEntry = (entry: unknown): entry is ClosedViewEntry => {
   switch (surface.kind) {
     case "diff":
     case "files":
+    case "crew-board": // FORK: retain crew boards in migrated closed-tab history.
     case "pull-requests":
       return surface.id === surface.kind;
     case "preview":

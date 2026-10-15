@@ -58,6 +58,8 @@ export function useCrewComposerState(
           return {
             list,
             crews,
+            detailResult: detail,
+            toolboxResult: toolbox,
             detail: detail ? Option.getOrNull(AsyncResult.value(detail)) : null,
             toolbox: toolbox ? Option.getOrNull(AsyncResult.value(toolbox)) : null,
             canStart: get(crewCommands.start.permissionAtom(environmentId)),
@@ -82,7 +84,11 @@ export function useCrewComposerState(
       ? null
       : !data?.canStart
         ? "This connection cannot start crew runs."
-        : crewSelectionError(selection, data.detail);
+        : data.list._tag === "Failure" ||
+            data.detailResult?._tag === "Failure" ||
+            data.toolboxResult?._tag === "Failure"
+          ? "Could not load this crew. Check the environment connection and retry."
+          : crewSelectionError(selection, data.detail);
   return {
     target,
     selection,

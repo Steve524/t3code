@@ -43,7 +43,7 @@ import {
 
 type OverridePatch = Pick<CrewRoleOverrideSetInput, "modelSelection" | "runtimeMode">;
 
-const CREW_PICKER_TRIGGER_CLASSNAME = `${SETTINGS_PICKER_TRIGGER_CLASSNAME} h-8 border-input bg-input/40 text-foreground hover:bg-input/60 data-popup-open:bg-input/60 [&_[data-composer-control-chevron]]:text-foreground`;
+const CREW_PICKER_TRIGGER_CLASSNAME = `${SETTINGS_PICKER_TRIGGER_CLASSNAME} max-w-full shrink`;
 
 export function CrewRoleCard({
   detail,
@@ -162,11 +162,14 @@ export function CrewRoleCard({
       ?.name ?? selection.model;
   const chips = crewToolboxChips(resolved.toolbox, target.projectId !== null);
   return (
-    <section className="space-y-3 rounded-lg border border-border p-4" aria-label={role.name}>
+    <section
+      className="min-w-0 space-y-3 rounded-lg border border-border p-4 [overflow-wrap:anywhere]"
+      aria-label={role.name}
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="flex items-center gap-2 text-sm font-medium">
-            {role.name}
+        <div className="min-w-0">
+          <h3 className="flex flex-wrap items-center gap-2 text-sm font-medium">
+            <span className="min-w-0">{role.name}</span>
             {detail.summary.home?.mode === "lead" && detail.summary.home.roleId === roleId ? (
               <Badge variant="info">Lead</Badge>
             ) : null}
@@ -233,7 +236,7 @@ export function CrewRoleCard({
         ) : null}
       </div>
       {unavailable ? (
-        <div className="space-y-1 text-xs text-warning">
+        <div className="space-y-1 text-xs text-warning-foreground">
           {resolved.model.warnings.length === 0 ? (
             <p>{disabledReason(selection.instanceId, selection.model)}</p>
           ) : null}
@@ -328,10 +331,14 @@ export function CrewRoleCard({
                   <Tooltip key={chip.key}>
                     <TooltipTrigger
                       render={
-                        <Badge variant={chip.warning ? "warning" : "secondary"} tabIndex={0} />
+                        <Badge
+                          variant={chip.warning ? "warning" : "secondary"}
+                          tabIndex={0}
+                          className="min-w-0 max-w-full"
+                        />
                       }
                     >
-                      {chip.label}
+                      <span className="min-w-0 max-w-48 truncate">{chip.label}</span>
                     </TooltipTrigger>
                     <TooltipPopup>{chip.tooltip}</TooltipPopup>
                   </Tooltip>

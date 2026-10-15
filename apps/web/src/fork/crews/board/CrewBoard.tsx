@@ -38,7 +38,7 @@ export function CrewThreadLink({
 }) {
   return (
     <Link
-      className="text-xs text-primary underline underline-offset-2"
+      className="rounded-sm text-xs text-primary underline underline-offset-2 hover:text-primary/80 focus-visible:outline-2 focus-visible:outline-ring"
       to="/$environmentId/$threadId"
       params={{ environmentId, threadId }}
     >
@@ -73,8 +73,15 @@ function FrozenToolbox({
   )?.toolbox;
   if (!toolbox)
     return (
-      <p className="text-xs">
-        {result._tag === "Failure" ? "Could not load this run's toolbox." : "Loading run toolbox…"}
+      <p
+        role={result._tag === "Failure" ? "alert" : "status"}
+        className="text-xs text-muted-foreground"
+      >
+        {result._tag === "Failure"
+          ? "Could not load this run's toolbox."
+          : result._tag === "Success"
+            ? "No toolbox was recorded for this role."
+            : "Loading run toolbox…"}
       </p>
     );
   return (
@@ -86,8 +93,12 @@ function FrozenToolbox({
           <div className="flex flex-wrap gap-1">
             {toolbox[kind].map((item) => (
               <Tooltip key={item.name}>
-                <TooltipTrigger render={<Badge variant="secondary" tabIndex={0} />}>
-                  {item.name} · {item.source === "home" ? "T3 home" : item.source}
+                <TooltipTrigger
+                  render={<Badge variant="secondary" tabIndex={0} className="min-w-0 max-w-full" />}
+                >
+                  <span className="min-w-0 max-w-48 truncate">
+                    {item.name} · {item.source === "home" ? "T3 home" : item.source}
+                  </span>
                 </TooltipTrigger>
                 <TooltipPopup>
                   {"path" in item
@@ -124,13 +135,14 @@ const BoardCard = memo(function BoardCard({
   const [details, setDetails] = useState(false);
   const actions = crewCardActions(card, view);
   const role = view.roles.find((candidate) => candidate.id === card.roleId);
+  const terminal = ["completed", "failed", "cancelled"].includes(view.status);
   const resolver = view.cards.find(
     (candidate) =>
       candidate.sourceCardId === card.cardId && candidate.stepType === "task" && candidate.threadId,
   );
   return (
     <article
-      className="space-y-2 rounded-lg border bg-card p-3"
+      className="min-w-0 space-y-2 rounded-lg border bg-card p-3 [overflow-wrap:anywhere]"
       aria-label={`${card.title ?? card.stepId}: ${crewLaneLabel(card)}`}
     >
       <div className="flex flex-wrap items-center gap-1.5">
@@ -162,7 +174,14 @@ const BoardCard = memo(function BoardCard({
       </div>
       {card.ownershipViolations.length > 0 && (
         <Tooltip>
-          <TooltipTrigger render={<p className="text-xs text-warning" />}>
+          <TooltipTrigger
+            render={
+              <p
+                tabIndex={0}
+                className="rounded-sm text-xs text-warning-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              />
+            }
+          >
             Outside owned paths: {card.ownershipViolations.length}
           </TooltipTrigger>
           <TooltipPopup>{card.ownershipViolations.join("\n")}</TooltipPopup>
@@ -175,17 +194,23 @@ const BoardCard = memo(function BoardCard({
         </p>
       )}
       {card.note && !card.gate && <p className="text-xs text-muted-foreground">{card.note}</p>}
-      <CrewGateActions card={card} control={control} />
+      {!terminal && <CrewGateActions card={card} control={control} />}
       {card.stepType === "script" && (
         <div className="space-y-1 text-xs">
           <p>
             {card.scriptExitCode !== undefined
               ? `Exit ${card.scriptExitCode}`
-              : "Script running or queued"}
+              : card.lane === "working"
+                ? "Script running"
+                : card.lane === "queued"
+                  ? "Script queued"
+                  : crewLaneLabel(card)}
           </p>
           {card.summary && (
             <details>
-              <summary className="cursor-pointer">Output tail</summary>
+              <summary className="cursor-pointer rounded-sm hover:text-primary focus-visible:outline-2 focus-visible:outline-ring">
+                Output tail
+              </summary>
               <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all">
                 {card.summary}
               </pre>
@@ -252,7 +277,7 @@ const BoardCard = memo(function BoardCard({
         </Button>
       </div>
       {details && (
-        <div className="space-y-3 border-t pt-2">
+        <div className="min-w-0 space-y-3 border-t pt-2">
           {card.summary && card.stepType !== "script" && (
             <p className="whitespace-pre-wrap text-xs">{card.summary}</p>
           )}
@@ -264,6 +289,7 @@ const BoardCard = memo(function BoardCard({
                   key={outcome}
                   action={`${card.cardId}:force:${outcome}`}
                   label={`Force ${outcome}`}
+                  size="sm-multiline"
                   disabled={control.disabled}
                   onConfirm={() =>
                     void control.send({ type: "forceOutcome", cardId: card.cardId, outcome })
@@ -275,7 +301,7 @@ const BoardCard = memo(function BoardCard({
           {card.roleId && (
             <>
               <FrozenToolbox environmentId={environmentId} view={view} roleId={card.roleId} />
-              {!["completed", "failed", "cancelled"].includes(view.status) && (
+              {!terminal && (
                 <CrewRoleModel
                   environmentId={environmentId}
                   view={view}
@@ -312,16 +338,24 @@ function BoardColumn({
       ? column.cards.filter((card) => card.lane !== "done" && card.lane !== "skipped")
       : column.cards;
   return (
-    <section className="w-80 shrink-0 space-y-3" aria-label={column.label}>
+    <section className="min-w-0 space-y-3" aria-label={column.label}>
       <h2 className="text-sm font-medium">
         {column.label} <span className="text-muted-foreground">{column.cards.length}</span>
       </h2>
+      {column.cards.length === 0 && (
+        <p className="text-xs text-muted-foreground">No cards in this column.</p>
+      )}
       {visible.map((card) => (
         <BoardCard key={card.cardId} {...{ card, environmentId, view, control, now }} />
       ))}
       {collapse && (
-        <Button size="sm" variant="ghost" onClick={() => setShowDone(!showDone)}>
-          {showDone ? "Hide finished cards" : `Show ${done.length} done`}
+        <Button
+          size="sm-multiline"
+          variant="ghost"
+          aria-expanded={showDone}
+          onClick={() => setShowDone(!showDone)}
+        >
+          {showDone ? "Hide finished cards" : `Show ${done.length} finished cards`}
         </Button>
       )}
     </section>
@@ -337,15 +371,19 @@ export function CrewBoard({
   const { view, result } = useCrewLive(environmentId, input);
   if (!view)
     return (
-      <div className="p-6">
-        <p>
+      <div className="space-y-3 p-6 text-sm">
+        <p role={result?._tag === "Failure" ? "alert" : "status"}>
           {result?._tag === "Failure"
             ? "Could not load this crew run. Check the environment connection."
             : result?._tag === "Success"
-              ? "No crew run is linked to this thread."
+              ? "threadId" in input
+                ? "No crew run is linked to this thread."
+                : "This crew run could not be found."
               : "Loading crew run…"}
         </p>
-        <Link to="/crews">Crew runs</Link>
+        <Button variant="outline" size="sm" render={<Link to="/crews" />}>
+          Crew runs
+        </Button>
       </div>
     );
   return (
@@ -370,23 +408,31 @@ function LiveCrewBoard({
   disconnected: boolean;
   inPanel: boolean;
 }) {
-  const control = useCrewControl(environmentId, view.runId);
+  const commands = useCrewControl(environmentId, view.runId);
+  const control = { ...commands, disabled: commands.disabled || disconnected };
   const now = useNowMinute();
   const navigate = useNavigate();
   const [needsYouOnly, setNeedsYouOnly] = useState(false);
   const needsYou = crewRunActivity(view).needsYou;
   const lead = view.roles.find((role) => role.id === view.leadRoleId);
   const terminal = ["completed", "failed", "cancelled"].includes(view.status);
+  const columns = crewBoardColumns(view, needsYouOnly);
   return (
-    <main className="flex h-full min-h-0 min-w-0 flex-col" aria-label={`${view.crewName} board`}>
+    <main
+      className="@container h-full min-h-0 min-w-0 overflow-auto [overflow-wrap:anywhere]"
+      aria-label={`${view.crewName} board`}
+    >
       <header className="space-y-3 border-b p-4">
         <div className="flex flex-wrap items-center gap-3">
-          <Link className="text-xs underline" to="/crews">
+          <Link
+            className="rounded-sm text-xs underline underline-offset-2 hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+            to="/crews"
+          >
             Crew runs
           </Link>
           {inPanel ? (
             <Link
-              className="text-xs underline"
+              className="rounded-sm text-xs underline underline-offset-2 hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
               to="/crews/$environmentId/$runId"
               params={{ environmentId, runId: view.runId }}
             >
@@ -394,14 +440,14 @@ function LiveCrewBoard({
             </Link>
           ) : view.homeThreadId ? (
             <Button
-              size="xs"
+              size="sm-multiline"
               variant="outline"
               onClick={() => void navigate(openCrewBoard(environmentId, view))}
             >
               Open beside home thread
             </Button>
           ) : null}
-          <h1 className="text-lg font-semibold">{view.crewName}</h1>
+          <h1 className="min-w-0 text-lg font-semibold">{view.crewName}</h1>
           <Badge variant="secondary">{view.status}</Badge>
           <code className="break-all text-xs">
             {view.integrationBranch ?? "Preparing workspace"}
@@ -411,7 +457,7 @@ function LiveCrewBoard({
           </span>
         </div>
         {disconnected && (
-          <p role="alert" className="text-sm text-warning">
+          <p role="alert" className="text-sm text-warning-foreground">
             Connection interrupted. Showing the last received state.
           </p>
         )}
@@ -432,8 +478,10 @@ function LiveCrewBoard({
         )}
         <div className="flex flex-wrap items-center gap-3">
           {view.routes.map((route) => (
-            <details key={route.id} className="text-xs">
-              <summary className="cursor-pointer">{crewCounterLabel(route)}</summary>
+            <details key={route.id} className="min-w-0 text-xs">
+              <summary className="cursor-pointer rounded-sm hover:text-primary focus-visible:outline-2 focus-visible:outline-ring">
+                {crewCounterLabel(route)}
+              </summary>
               <CrewConfirm
                 action={`${view.runId}:${route.id}:reset`}
                 label="Reset counter"
@@ -489,18 +537,40 @@ function LiveCrewBoard({
             Needs you ({needsYou})
           </Button>
           <details className="text-xs">
-            <summary className="cursor-pointer">Run options</summary>
+            <summary className="cursor-pointer rounded-sm hover:text-primary focus-visible:outline-2 focus-visible:outline-ring">
+              Run options
+            </summary>
             <p>Toolbox mode: {view.toolboxMode}</p>
           </details>
         </div>
       </header>
-      <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
-        {view.budget.gate && <CrewBudgetGate view={view} control={control} />}
-        <div className="flex items-start gap-4">
-          {crewBoardColumns(view, needsYouOnly).map((column) => (
-            <BoardColumn key={column.id} {...{ column, environmentId, view, control, now }} />
-          ))}
-        </div>
+      {control.pending && (
+        <p role="status" className="px-4 pt-3 text-xs text-muted-foreground">
+          Updating crew run…
+        </p>
+      )}
+      <div className="space-y-4 p-4">
+        {columns.length === 0 && !needsYouOnly && (
+          <p role="status" className="text-sm text-muted-foreground">
+            No cards in this run.
+          </p>
+        )}
+        {!terminal && view.budget.gate && (
+          <CrewBudgetGate key={view.budget.gate.kind} view={view} control={control} />
+        )}
+        {needsYouOnly && columns.every((column) => column.cards.length === 0) ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {view.budget.gate
+              ? "Only the budget needs your attention."
+              : "No cards need your attention."}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 items-start gap-4 @2xl:grid-cols-2 @5xl:grid-cols-3">
+            {columns.map((column) => (
+              <BoardColumn key={column.id} {...{ column, environmentId, view, control, now }} />
+            ))}
+          </div>
+        )}
       </div>
     </main>
   );

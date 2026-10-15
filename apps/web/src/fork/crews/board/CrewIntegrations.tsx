@@ -62,7 +62,7 @@ export function CrewSidebarBadge({ thread }: { thread: { environmentId: string; 
           <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground" />
         }
       >
-        <UsersIcon className="size-3" />
+        <UsersIcon aria-hidden="true" className="size-3" />
         <span className="sr-only">Crew: {entry.run.crewName}</span>
       </TooltipTrigger>
       <TooltipPopup>Crew: {entry.run.crewName}</TooltipPopup>
@@ -138,7 +138,9 @@ export function CrewThreadComposerControl({
       onClick={() => void navigate(openCrewBoard(environmentId, view))}
     >
       <ComposerControlIcon icon={UsersIcon} size={size} />
-      {view.crewName} · {activity.working} working · {activity.needsYou} needs you
+      <span className="min-w-0 max-w-64 truncate">
+        {view.crewName} · {activity.working} working · {activity.needsYou} needs you
+      </span>
     </ComposerControl>
   );
 }

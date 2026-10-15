@@ -5,6 +5,8 @@ import { Button } from "../../../components/ui/button";
 import { Checkbox } from "../../../components/ui/checkbox";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../../../components/ui/tooltip";
 import { useNowMinute } from "../../../hooks/useNowMinute";
+import { useEnvironments } from "../../../state/environments";
+import { Badge } from "../../../components/ui/badge";
 import { crewRuns } from "../composer/crewComposerState";
 import { crewProjectRunsAtom, useCrewPreferences } from "./crewBoardState";
 
@@ -19,16 +21,22 @@ function CrewRunsList() {
   const showRoleThreads = useCrewPreferences((state) => state.showRoleThreads);
   const setShowRoleThreads = useCrewPreferences((state) => state.setShowRoleThreads);
   const now = useNowMinute();
+  const { environments } = useEnvironments();
+  const refreshing = groups.some(({ result }) => result.waiting);
   return (
-    <main className="h-full space-y-6 overflow-auto p-6">
+    <main className="h-full min-w-0 space-y-6 overflow-auto p-4 sm:p-6 [overflow-wrap:anywhere]">
       <header className="flex flex-wrap items-center gap-4">
         <h1 className="text-xl font-semibold">Crew runs</h1>
-        <Link className="text-sm underline" to="/settings/crews">
+        <Link
+          className="rounded-sm text-sm underline underline-offset-2 hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+          to="/settings/crews"
+        >
           Crew settings
         </Link>
         <Button
           variant="outline"
           size="sm"
+          disabled={refreshing || groups.length === 0}
           onClick={() => {
             for (const { project } of groups)
               registry.refresh(
@@ -39,7 +47,7 @@ function CrewRunsList() {
               );
           }}
         >
-          Refresh
+          {refreshing ? "Refreshing…" : "Refresh"}
         </Button>
       </header>
       <label className="flex items-center gap-2 text-sm">
@@ -53,17 +61,21 @@ function CrewRunsList() {
       )}
       {groups.map(({ project, runs, result }) => (
         <section key={`${project.environmentId}:${project.id}`} className="space-y-3">
-          <h2 className="font-medium">
+          <h2 className="min-w-0 font-medium">
             {project.title ?? project.id}{" "}
-            <span className="text-xs text-muted-foreground">{project.environmentId}</span>
+            <span className="text-xs text-muted-foreground">
+              {environments.find(
+                (environment) => environment.environmentId === project.environmentId,
+              )?.label ?? project.environmentId}
+            </span>
           </h2>
           {result._tag === "Failure" && (
-            <p role="alert" className="text-sm">
-              Could not load runs for this project.
+            <p role="alert" className="text-sm text-destructive-foreground">
+              Could not load runs for this project. Check the environment connection and refresh.
             </p>
           )}
           {runs.length === 0 && result._tag !== "Failure" && (
-            <p className="text-sm text-muted-foreground">
+            <p role="status" className="text-sm text-muted-foreground">
               {result._tag === "Initial"
                 ? "Loading runs…"
                 : "No crew runs yet. Choose a crew in a new thread's composer to start one."}
@@ -75,11 +87,21 @@ function CrewRunsList() {
                 <Link
                   to="/crews/$environmentId/$runId"
                   params={{ environmentId: project.environmentId, runId: run.runId }}
-                  className="block space-y-1 rounded-lg border bg-card p-3 hover:bg-muted/40"
+                  className="block min-w-0 space-y-1 rounded-lg border bg-card p-3 outline-none hover:bg-muted/40 active:bg-muted/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 >
                   <div className="flex flex-wrap gap-3 text-sm">
                     <span className="font-medium">{run.crewName}</span>
-                    <span>{run.status}</span>
+                    <Badge
+                      variant={
+                        run.status === "failed"
+                          ? "error"
+                          : run.status === "completed"
+                            ? "success"
+                            : "secondary"
+                      }
+                    >
+                      {run.status}
+                    </Badge>
                     <span>{run.needsYou} needs you</span>
                     <Tooltip>
                       <TooltipTrigger

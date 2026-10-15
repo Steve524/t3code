@@ -1,12 +1,12 @@
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import type { ModelSelection, UnifiedSettings } from "@t3tools/contracts";
 import type { CrewSummary } from "@t3tools/contracts/fork/crews/crewFile";
 import { createModelSelection } from "@t3tools/shared/model";
 import { useNavigate } from "@tanstack/react-router";
 import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
-import { UsersIcon } from "lucide-react";
-import { useId } from "react";
+import { ArrowUpRightIcon, UsersIcon } from "lucide-react";
+import { useContext, useId } from "react";
 
 import {
   ComposerControl,
@@ -29,7 +29,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../components/ui/select";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../../../components/ui/tooltip";
 import { useEnvironments } from "../../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../../state/server";
 import { getCustomModelOptionsByInstance } from "../../../modelSelection";
@@ -63,14 +62,11 @@ function InvalidCrewOption({ crew, target }: { crew: CrewSummary; target: CrewCo
     detail?.diagnostics.find((diagnostic) => diagnostic.severity === "error")?.message ??
     "This crew has errors in this project.";
   return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="block" />}>
-        <SelectItem value={crew.id} disabled>
-          {crew.name} · {reason}
-        </SelectItem>
-      </TooltipTrigger>
-      <TooltipPopup>{reason}</TooltipPopup>
-    </Tooltip>
+    <SelectItem value={crew.id} disabled>
+      <span className="min-w-0 whitespace-normal [overflow-wrap:anywhere]">
+        {crew.name} · {reason}
+      </span>
+    </SelectItem>
   );
 }
 
@@ -100,7 +96,7 @@ function CrewRoles({
   );
   const pending = selection.sending || !data.canStart;
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 space-y-3 [overflow-wrap:anywhere]">
       <p className="text-xs text-muted-foreground">
         {crewHomeLine(detail.summary, detail.definition)}
       </p>
@@ -126,8 +122,8 @@ function CrewRoles({
         };
         return (
           <div key={role.id} className="space-y-1">
-            <div className="flex items-center justify-between gap-2 text-sm">
-              <span>{role.name}</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="min-w-0">{role.name}</span>
               <span className="text-xs text-muted-foreground">
                 {override ? "This run" : crewModelSource(resolved.model.source, true)}
               </span>
@@ -163,7 +159,7 @@ function CrewRoles({
                   modelOptions={model.options ?? []}
                   allowPromptInjectedEffort={false}
                   planModeEnabled={settings.planModeEnabled}
-                  disabled={pending}
+                  disabled={pending || disabledReason(model.instanceId, model.model) !== null}
                   onModelOptionsChange={(options) =>
                     setModel(createModelSelection(model.instanceId, model.model, options))
                   }
@@ -173,6 +169,7 @@ function CrewRoles({
                 <Button
                   size="xs"
                   variant="ghost-muted"
+                  aria-label={`Reset ${role.name} model for this run`}
                   disabled={pending}
                   onClick={() =>
                     crewComposerSelectionStore.getState().setRoleModel(target, role.id, null)
@@ -209,6 +206,7 @@ export function CrewComposerControl({
   const navigate = useNavigate();
   const floating = useComposerMenuProps();
   const openCrewInit = useOpenCrewInitDraft();
+  const registry = useContext(RegistryContext);
   const { target, selection, data } = state;
   if (!state.visible || !target || !data) return null;
   const selected = data.crews.find((crew) => crew.id === selection.crewId);
@@ -242,18 +240,31 @@ export function CrewComposerControl({
     });
   };
   const pending = selection.sending || !data.canStart;
+  const loadFailed =
+    data.list._tag === "Failure" ||
+    data.detailResult?._tag === "Failure" ||
+    data.toolboxResult?._tag === "Failure";
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        render={<ComposerControl size={size} disabled={selection.sending} aria-label="Crew" />}
+        render={
+          <ComposerControl
+            size={size}
+            disabled={selection.sending}
+            aria-label={`Crew: ${selected?.name ?? "No crew"}`}
+            className="min-w-0 max-w-48"
+          />
+        }
       >
         <ComposerControlIcon icon={UsersIcon} size={size} />
-        <span data-composer-control-label>{selected?.name ?? "No crew"}</span>
+        <span className="min-w-0 truncate" data-composer-control-label>
+          {selected?.name ?? "No crew"}
+        </span>
         <ComposerControlChevron size={size} />
       </PopoverTrigger>
-      <PopoverPopup align="start" {...floating}>
-        <div className="w-80 max-w-[calc(100vw-3rem)] space-y-4">
-          <label className="flex items-center justify-between gap-3 text-sm">
+      <PopoverPopup align="start" width="md" aria-label="Crew options" {...floating}>
+        <div className="min-w-0 space-y-4 [overflow-wrap:anywhere]">
+          <div className="space-y-1.5 text-sm">
             Crew
             <Select
               value={selection.crewId ?? ""}
@@ -278,10 +289,10 @@ export function CrewComposerControl({
                 )}
               </SelectPopup>
             </Select>
-          </label>
+          </div>
           <CrewRoles state={state} settings={settings} fallback={fallback} />
           {hasToolbox ? (
-            <Button variant="ghost-muted" size="sm" onClick={() => openSettings(true)}>
+            <Button variant="ghost-muted" size="sm-multiline" onClick={() => openSettings(true)}>
               Repo toolbox · {toolbox.mode} · +{repoItems.size} ·{" "}
               {toolbox.diagnostics.filter((entry) => entry.severity === "warning").length} warnings
             </Button>
@@ -310,7 +321,7 @@ export function CrewComposerControl({
               return (
                 <div key={name} className="space-y-1">
                   <label className="text-sm" htmlFor={`${inputId}-${name}`}>
-                    {name}
+                    {name} <span className="text-xs text-muted-foreground">Required</span>
                   </label>
                   {field.type === "boolean" ? (
                     <Select
@@ -320,7 +331,15 @@ export function CrewComposerControl({
                         if (value !== null) setValue(value === "true");
                       }}
                     >
-                      <SelectTrigger id={`${inputId}-${name}`} size="sm" aria-label={name}>
+                      <SelectTrigger
+                        id={`${inputId}-${name}`}
+                        size="sm"
+                        aria-label={name}
+                        aria-required="true"
+                        aria-describedby={
+                          field.description ? `${inputId}-${name}-description` : undefined
+                        }
+                      >
                         <SelectValue placeholder="Choose a value" />
                       </SelectTrigger>
                       <SelectPopup>
@@ -336,7 +355,15 @@ export function CrewComposerControl({
                         if (value !== null) setValue(value);
                       }}
                     >
-                      <SelectTrigger id={`${inputId}-${name}`} size="sm" aria-label={name}>
+                      <SelectTrigger
+                        id={`${inputId}-${name}`}
+                        size="sm"
+                        aria-label={name}
+                        aria-required="true"
+                        aria-describedby={
+                          field.description ? `${inputId}-${name}-description` : undefined
+                        }
+                      >
                         <SelectValue placeholder="Choose a value" />
                       </SelectTrigger>
                       <SelectPopup>
@@ -352,22 +379,55 @@ export function CrewComposerControl({
                       id={`${inputId}-${name}`}
                       value={typeof value === "string" ? value : ""}
                       disabled={pending}
+                      required
+                      aria-describedby={
+                        field.description ? `${inputId}-${name}-description` : undefined
+                      }
                       onChange={(event) => setValue(event.target.value)}
                     />
                   )}
                   {field.description ? (
-                    <p className="text-xs text-muted-foreground">{field.description}</p>
+                    <p
+                      id={`${inputId}-${name}-description`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      {field.description}
+                    </p>
                   ) : null}
                 </div>
               );
             })}
-          {state.error ? (
-            <p role="status" className="text-xs text-warning">
-              {state.error}
+          {state.error || loadFailed ? (
+            <p role={loadFailed ? "alert" : "status"} className="text-xs text-warning-foreground">
+              {state.error ?? "Could not load crews. Check the environment connection and retry."}
             </p>
           ) : null}
+          {loadFailed ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const input = { projectId: target.projectId };
+                registry.refresh(
+                  crewCatalog.crewsLive({ environmentId: target.environmentId, input }),
+                );
+                if (selection.crewId)
+                  registry.refresh(
+                    crewCatalog.detail({
+                      environmentId: target.environmentId,
+                      input: { ...input, crewId: selection.crewId },
+                    }),
+                  );
+                registry.refresh(
+                  crewCatalog.toolbox({ environmentId: target.environmentId, input }),
+                );
+              }}
+            >
+              Retry loading crew
+            </Button>
+          ) : null}
           <Button variant="ghost-muted" size="sm" onClick={() => openSettings()}>
-            Crew settings ↗
+            Crew settings <ArrowUpRightIcon aria-hidden="true" />
           </Button>
         </div>
       </PopoverPopup>

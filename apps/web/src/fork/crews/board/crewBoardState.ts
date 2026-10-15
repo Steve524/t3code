@@ -105,6 +105,6 @@ export function useCrewControl(environmentId: EnvironmentId, runId: string) {
       setPending(false);
     }
   };
-  return { send, disabled: !permission || pending };
+  return { send, pending, disabled: !permission || pending };
 }
 export type CrewControl = ReturnType<typeof useCrewControl>;

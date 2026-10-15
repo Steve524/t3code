@@ -2,7 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { CrewRoleOverrideSetInput } from "@t3tools/contracts/fork/crews/crewRpc";
 import { useSettingsScope } from "../../../components/settings/SettingsScopeContext";
@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "../../../components/ui/select";
 import { Radio, RadioGroup } from "../../../components/ui/radio-group";
+import { toastManager } from "../../../components/ui/toast";
 import { useProjectFileQuery } from "../../../components/files/projectFilesQueryState";
 import { CrewRoleCard } from "./CrewRoleCard";
 import {
@@ -89,12 +90,9 @@ function RepoToolbox({
     );
   const directory = crewPath(workspaceRoot, ".t3");
   return (
-    <SettingsSection
-      title="Repo toolbox"
-      id="crew-repo-toolbox"
-      variant="plain"
-      headerAction={
-        <div className="flex gap-2">
+    <SettingsSection title="Repo toolbox" id="crew-repo-toolbox" variant="plain">
+      <div className="min-w-0 space-y-3 px-4 [overflow-wrap:anywhere]">
+        <div className="flex flex-wrap gap-2">
           <Button size="xs" variant="outline" onClick={onSetUp}>
             Set up with /crew-init
           </Button>
@@ -107,15 +105,18 @@ function RepoToolbox({
             {missing ? "Create crews.yaml" : "Open crews.yaml"}
           </Button>
         </div>
-      }
-    >
-      <div className="space-y-3 px-4">
         <p className="break-all text-xs text-muted-foreground">{directory}</p>
-        {result?._tag === "Failure" ? (
-          <p role="alert" className="text-sm text-destructive-foreground">
-            {Cause.pretty(result.cause)}
-          </p>
-        ) : null}
+        {snapshots.map((candidate) =>
+          candidate.toolbox?._tag === "Failure" ? (
+            <p
+              key={`${candidate.target.environmentId}:${candidate.target.projectId}`}
+              role="alert"
+              className="text-sm text-destructive-foreground"
+            >
+              {candidate.target.label}: {Cause.pretty(candidate.toolbox.cause)}
+            </p>
+          ) : null,
+        )}
         {toolbox ? (
           <>
             <RadioGroup
@@ -163,12 +164,7 @@ function RepoToolbox({
                 diagnostics
               </p>
             ) : (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                No repo toolbox yet.
-                <Button size="xs" variant="ghost-muted" onClick={onSetUp}>
-                  Set up with /crew-init
-                </Button>
-              </p>
+              <p className="text-sm text-muted-foreground">No repo toolbox yet.</p>
             )}
             <CrewDiagnostics diagnostics={toolbox.diagnostics} editor={editor} />
           </>
@@ -223,6 +219,7 @@ function ConnectedCrewsSettings({
   const toolbox = snapshot?.toolbox && Option.getOrNull(AsyncResult.value(snapshot.toolbox));
   const setOverride = useAtomCommand(crewCatalog.setRoleOverride, { reportFailure: false });
   const [pending, setPending] = useState(false);
+  const saving = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const directory = config ? crewsDirectory(config.keybindingsConfigPath) : null;
   const projectScope = showsRepoToolbox(scope.kind);
@@ -230,16 +227,19 @@ function ConnectedCrewsSettings({
     (member) => member.environmentId === target.environmentId && member.id === target.projectId,
   )?.workspaceRoot;
   const save = async (operation: () => Promise<readonly string[]>) => {
-    if (pending) return;
+    if (saving.current) return;
+    saving.current = true;
     setPending(true);
     setSaveError(null);
     try {
       const failures = await operation();
       if (failures.length > 0) setSaveError(failures.join("\n"));
+      else toastManager.add({ type: "success", title: "Crew settings saved" });
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
       refresh();
+      saving.current = false;
       setPending(false);
     }
   };
@@ -268,7 +268,7 @@ function ConnectedCrewsSettings({
         id="crews"
         variant="plain"
         headerAction={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <Button
               size="xs"
               variant="outline"
@@ -286,7 +286,12 @@ function ConnectedCrewsSettings({
           </div>
         }
       >
-        <div className="space-y-4 px-4">
+        <div className="min-w-0 space-y-4 px-4 [overflow-wrap:anywhere]">
+          {pending ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              Saving crew settings…
+            </p>
+          ) : null}
           {targets.length > 1 ? (
             <p className="text-xs text-muted-foreground">
               Showing files and diagnostics from {target.label}. Changes apply to all{" "}
@@ -322,7 +327,11 @@ function ConnectedCrewsSettings({
               Some settings were not saved. {saveError}
             </p>
           ) : null}
-          {crews === null && list._tag !== "Failure" ? <p role="status">Loading crews…</p> : null}
+          {crews === null && list._tag !== "Failure" ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Loading crews…
+            </p>
+          ) : null}
           {crews?.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Install a crew at{" "}
@@ -396,7 +405,9 @@ function ConnectedCrewsSettings({
                   <CrewDiagnostics diagnostics={detail.diagnostics} editor={editor} />
                 </>
               ) : detailResult?._tag !== "Failure" ? (
-                <p role="status">Loading crew…</p>
+                <p role="status" className="text-sm text-muted-foreground">
+                  Loading crew…
+                </p>
               ) : null}
             </>
           ) : null}

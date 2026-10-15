@@ -32,7 +32,14 @@ export function CrewModelLabel({
     entry?.models.find((model) => model.slug === selection.model)?.name ?? selection.model;
   return (
     <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex items-center gap-1 text-xs" />}>
+      <TooltipTrigger
+        render={
+          <span
+            tabIndex={0}
+            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm text-xs focus-visible:outline-2 focus-visible:outline-ring"
+          />
+        }
+      >
         {entry && (
           <ProviderInstanceIcon
             driverKind={entry.driverKind}
@@ -43,7 +50,9 @@ export function CrewModelLabel({
             iconClassName="size-4"
           />
         )}
-        {label} · {entry?.displayName ?? selection.instanceId}
+        <span className="min-w-0 truncate">
+          {label} · {entry?.displayName ?? selection.instanceId}
+        </span>
       </TooltipTrigger>
       <TooltipPopup>
         {selection.instanceId} · {selection.model}

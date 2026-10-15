@@ -78,7 +78,7 @@ export function CrewDisclosure({ title, children }: { title: string; children: R
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger render={<Button variant="ghost-muted" size="xs" />}>
-        <ChevronDownIcon className={open ? "size-3.5" : "size-3.5 -rotate-90"} />
+        <ChevronDownIcon aria-hidden="true" className={open ? "size-3.5" : "size-3.5 -rotate-90"} />
         {title}
       </CollapsibleTrigger>
       <CollapsiblePanel animate={false}>
@@ -98,7 +98,7 @@ export function CrewDiagnostics({
   if (diagnostics.length === 0) return null;
   return (
     <CrewDisclosure title={`Diagnostics (${diagnostics.length})`}>
-      <ul className="space-y-2 text-sm">
+      <ul className="min-w-0 space-y-2 text-sm [overflow-wrap:anywhere]">
         {diagnostics.map((diagnostic) => (
           <li
             key={`${diagnosticLocation(diagnostic)}:${diagnostic.severity}:${diagnostic.message}:${diagnostic.path.join(".")}`}
@@ -178,7 +178,7 @@ export function CrewInstructions({
         </p>
       )}
       {file.data?.truncated ? (
-        <p className="text-sm text-warning">
+        <p className="text-sm text-warning-foreground">
           Instructions are truncated. Open the file to read the rest.
         </p>
       ) : null}

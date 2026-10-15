@@ -2031,7 +2031,7 @@ const make = Effect.gen(function* () {
           `Address the note to a role (${Object.keys(run.crew.roles).join(", ")}) or to a card from crew_context.`,
         );
       }
-      const noteId = `${run.runId}:note:${yield* crypto.randomUUIDv4.pipe(Effect.orDie)}`;
+      const noteId = `${run.runId}:note:${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`;
       yield* store
         .insertNote({
           noteId,

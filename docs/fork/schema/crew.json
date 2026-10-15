@@ -159,7 +159,8 @@
         },
         "maxParallel": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 9007199254740991
         },
         "autoCommit": {
           "type": "boolean"
@@ -176,7 +177,8 @@
       "properties": {
         "maxCards": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 9007199254740991
         },
         "maxHours": {
           "type": "number",
@@ -184,7 +186,8 @@
         },
         "maxFanoutItems": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       },
       "additionalProperties": false
@@ -335,7 +338,8 @@
           },
           "maxConcurrent": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 9007199254740991
           }
         },
         "required": ["name"],
@@ -438,7 +442,8 @@
                           },
                           "max": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 9007199254740991
                           },
                           "else": {
                             "type": "string",
@@ -487,7 +492,8 @@
                             },
                             "max": {
                               "type": "integer",
-                              "minimum": 1
+                              "minimum": 1,
+                              "maximum": 9007199254740991
                             },
                             "else": {
                               "type": "string",
@@ -536,7 +542,8 @@
                   },
                   "maxParallel": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   },
                   "autoCommit": {
                     "type": "boolean"
@@ -617,7 +624,8 @@
                           },
                           "max": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 9007199254740991
                           },
                           "else": {
                             "type": "string",
@@ -666,7 +674,8 @@
                             },
                             "max": {
                               "type": "integer",
-                              "minimum": 1
+                              "minimum": 1,
+                              "maximum": 9007199254740991
                             },
                             "else": {
                               "type": "string",
@@ -715,7 +724,8 @@
                   },
                   "maxParallel": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   },
                   "autoCommit": {
                     "type": "boolean"
@@ -772,7 +782,8 @@
                           },
                           "max": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 9007199254740991
                           },
                           "else": {
                             "type": "string",
@@ -821,7 +832,8 @@
                             },
                             "max": {
                               "type": "integer",
-                              "minimum": 1
+                              "minimum": 1,
+                              "maximum": 9007199254740991
                             },
                             "else": {
                               "type": "string",
@@ -870,7 +882,8 @@
                   },
                   "maxParallel": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   },
                   "autoCommit": {
                     "type": "boolean"
@@ -959,7 +972,8 @@
                           },
                           "max": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 9007199254740991
                           },
                           "else": {
                             "type": "string",
@@ -1008,7 +1022,8 @@
                             },
                             "max": {
                               "type": "integer",
-                              "minimum": 1
+                              "minimum": 1,
+                              "maximum": 9007199254740991
                             },
                             "else": {
                               "type": "string",
@@ -1057,7 +1072,8 @@
                   },
                   "maxParallel": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   },
                   "autoCommit": {
                     "type": "boolean"
@@ -1118,7 +1134,8 @@
                           },
                           "max": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 9007199254740991
                           },
                           "else": {
                             "type": "string",
@@ -1167,7 +1184,8 @@
                             },
                             "max": {
                               "type": "integer",
-                              "minimum": 1
+                              "minimum": 1,
+                              "maximum": 9007199254740991
                             },
                             "else": {
                               "type": "string",
@@ -1216,7 +1234,8 @@
                   },
                   "maxParallel": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   },
                   "autoCommit": {
                     "type": "boolean"
@@ -1257,7 +1276,8 @@
                           },
                           "max": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 9007199254740991
                           },
                           "else": {
                             "type": "string",
@@ -1306,7 +1326,8 @@
                             },
                             "max": {
                               "type": "integer",
-                              "minimum": 1
+                              "minimum": 1,
+                              "maximum": 9007199254740991
                             },
                             "else": {
                               "type": "string",
@@ -1355,7 +1376,8 @@
                   },
                   "maxParallel": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   },
                   "autoCommit": {
                     "type": "boolean"
@@ -1396,7 +1418,8 @@
                           },
                           "max": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 9007199254740991
                           },
                           "else": {
                             "type": "string",
@@ -1445,7 +1468,8 @@
                             },
                             "max": {
                               "type": "integer",
-                              "minimum": 1
+                              "minimum": 1,
+                              "maximum": 9007199254740991
                             },
                             "else": {
                               "type": "string",
@@ -1495,7 +1519,8 @@
                   },
                   "maxParallel": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   },
                   "autoCommit": {
                     "type": "boolean"
@@ -1540,7 +1565,8 @@
                           },
                           "max": {
                             "type": "integer",
-                            "minimum": 1
+                            "minimum": 1,
+                            "maximum": 9007199254740991
                           },
                           "else": {
                             "type": "string",
@@ -1589,7 +1615,8 @@
                             },
                             "max": {
                               "type": "integer",
-                              "minimum": 1
+                              "minimum": 1,
+                              "maximum": 9007199254740991
                             },
                             "else": {
                               "type": "string",
@@ -1638,7 +1665,8 @@
                   },
                   "maxParallel": {
                     "type": "integer",
-                    "minimum": 1
+                    "minimum": 1,
+                    "maximum": 9007199254740991
                   },
                   "autoCommit": {
                     "type": "boolean"

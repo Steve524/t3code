@@ -136,18 +136,20 @@ describe("native crew MCP servers", () => {
         Effect.provide(
           layerQueryRunner.pipe(
             Layer.provide(
-              Layer.succeed(ProviderEventLoggers, {
-                native: {
-                  filePath: "/tmp/events.log",
-                  write: () => Effect.void,
-                  close: () => Effect.void,
-                },
-                canonical: undefined,
-              }),
+              Layer.merge(
+                NodeServices.layer,
+                Layer.succeed(ProviderEventLoggers, {
+                  native: {
+                    filePath: "/tmp/events.log",
+                    write: () => Effect.void,
+                    close: () => Effect.void,
+                  },
+                  canonical: undefined,
+                }),
+              ),
             ),
           ),
         ),
-        Effect.provide(NodeServices.layer),
       ),
   );
 });

@@ -459,7 +459,7 @@ describe("crew runs", () => {
         );
         expect(build).toMatchObject({
           state: "blocked",
-          lane: "needs_you",
+          lane: "queued",
           attempt: 2,
           outcome: "no_report",
         });

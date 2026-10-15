@@ -418,6 +418,7 @@ export function applyServerSettingsPatch(
     sourceControlHosts: sourceControlHostsPatch,
     usagePriceOverrides: usagePriceOverridesPatch,
     usageModelAliases: usageModelAliasesPatch,
+    forkCrewSecrets: forkCrewSecretsPatch, // FORK: crew secrets merge per entry below
     // Entry replacement: deepMerge would keep keys the client meant to clear.
     projectSettingsOverrides: projectSettingsOverridesPatch,
     // Already translated into `projectSettingsOverrides` above; the legacy
@@ -620,6 +621,11 @@ export function applyServerSettingsPatch(
           ),
         }
       : {}),
+    // FORK-BEGIN: crew secrets
+    ...(forkCrewSecretsPatch !== undefined
+      ? { forkCrewSecrets: mergeSettingsEntries(current.forkCrewSecrets, forkCrewSecretsPatch) }
+      : {}),
+    // FORK-END
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
       : {}),

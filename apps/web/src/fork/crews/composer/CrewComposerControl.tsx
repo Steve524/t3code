@@ -43,11 +43,13 @@ import {
   crewHomeLine,
   crewModelDisabledReason,
   crewModelSource,
+  hasRepoToolbox,
   orderedCrewRoles,
 } from "../settings/crewsSettings.logic";
 import { crewCatalog } from "../settings/crewSettingsState";
 import { crewComposerSelectionStore, type CrewComposerTarget } from "./crewComposerSelectionStore";
 import type { CrewComposerState } from "./crewComposerState";
+import { useOpenCrewInitDraft } from "./openCrewInitDraft";
 
 function InvalidCrewOption({ crew, target }: { crew: CrewSummary; target: CrewComposerTarget }) {
   const result = useAtomValue(
@@ -206,6 +208,7 @@ export function CrewComposerControl({
   const groups = useSettingsProjectGroups();
   const navigate = useNavigate();
   const floating = useComposerMenuProps();
+  const openCrewInit = useOpenCrewInitDraft();
   const { target, selection, data } = state;
   if (!state.visible || !target || !data) return null;
   const selected = data.crews.find((crew) => crew.id === selection.crewId);
@@ -218,13 +221,7 @@ export function CrewComposerControl({
         .map((item) => `${item.kind}:${item.name}`),
     ) ?? [],
   );
-  const hasToolbox =
-    toolbox &&
-    (toolbox.grants !== null ||
-      toolbox.skills.length > 0 ||
-      Object.keys(toolbox.mcp.servers).length > 0 ||
-      Object.keys(toolbox.tools.tools).length > 0 ||
-      toolbox.diagnostics.length > 0);
+  const hasToolbox = toolbox && hasRepoToolbox(toolbox);
   const group = groups.find((group) =>
     group.memberProjects.some(
       (member) => member.environmentId === target.environmentId && member.id === target.projectId,
@@ -287,6 +284,21 @@ export function CrewComposerControl({
             <Button variant="ghost-muted" size="sm" onClick={() => openSettings(true)}>
               Repo toolbox · {toolbox.mode} · +{repoItems.size} ·{" "}
               {toolbox.diagnostics.filter((entry) => entry.severity === "warning").length} warnings
+            </Button>
+          ) : null}
+          {selected?.status === "warnings" ? (
+            <Button
+              variant="ghost-muted"
+              size="sm"
+              disabled={selection.sending}
+              onClick={() => {
+                // The command runs in an ordinary thread, so this draft stops being a crew send.
+                crewComposerSelectionStore.getState().select(target, null);
+                setOpen(false);
+                void openCrewInit(target.environmentId, target.projectId, selected.id);
+              }}
+            >
+              Fix with /crew-init
             </Button>
           ) : null}
           {Object.entries(detail?.definition?.inputs ?? {})

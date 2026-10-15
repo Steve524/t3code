@@ -1,0 +1,8 @@
+{
+  "name": "@acme/ui",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "storybook": "storybook dev -p 6006"
+  }
+}

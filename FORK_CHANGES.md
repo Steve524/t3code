@@ -142,3 +142,24 @@ was added. `CrewRoleCard.tsx` is unchanged.
 
 Steve approved the additional `ChatView.tsx` and `closedViewStore.ts` wiring on
 2026-10-14. The planned `RightPanelSheet.tsx` is only a wrapper and needs no edit.
+
+## Crews `/crew-init` touch points
+
+| File                                            | What changed                                                                                                                                                | Why                                                                                                                                                      |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/components/chat/ChatComposer.tsx` | Pushes `crewComposer.crewInitCommands(selectedProvider)` into the visible provider slash commands, and adds it to that memo's dependencies. Both marked.    | The slash menu offers `/crew-init` and one `/crew-init <crew>` entry per installed crew, through the hook the composer already calls.                    |
+| `apps/web/src/components/ChatView.tsx`          | One line inside the existing marked send block: `crewSend.blocksCommand(sendCtx, activeThread.id)`.                                                         | A typed `/crew-init` is sent as its short skill instruction, or refused with the reason where it cannot run.                                             |
+| `packages/contracts/src/settings.ts`            | Imports the fork crew secret schemas and adds `forkCrewSecrets` last to `ServerSettings` and to `ServerSettingsPatch` (all marked).                         | Crew secrets ride the existing settings RPC, settings file and client redaction instead of a new RPC.                                                    |
+| `packages/shared/src/serverSettings.ts`         | Takes `forkCrewSecrets` out of the patch before the deep merge and merges it per entry with the file's `mergeSettingsEntries` (marked line and FORK block). | `null` removes one secret; a deep merge would keep it.                                                                                                   |
+| `apps/server/src/settingsSecrets.ts`            | Imports `mapForkCrewSecrets` and spreads it last into the object `mapSettingsSecrets` returns (marked).                                                     | Upstream's settings pipeline then stores each value in the secret store as `crew-NAME`, removes it when its entry goes, and sends clients only a marker. |
+
+Steve chose the settings route for crew secrets and the fork-only disabled state for
+`/crew-init` on 2026-10-14. The composer menu has no disabled items, so on a provider that
+can't reach T3 tools the entry shows that reason as its description and a send is refused
+with it. The five `t3_*` MCP tools joined the existing crew toolkit and the read-only
+constant already spread into `ClaudeAdapterV2.ts`; they reach the catalog through
+`CrewRunService`, which the MCP registration test already stubs, so no upstream test
+changed. Settings, Crews has a Crew secrets section using upstream `SecretInput`; the
+Repo toolbox section, its empty state and the composer crew popover open a new draft with
+`/crew-init`. Web and desktop share this; mobile neither lists nor expands `/crew-init`. No
+RPC, dependency or package export was added. `CrewRoleCard.tsx` is unchanged.

@@ -8946,7 +8946,8 @@ export default function ChatView(props: ChatViewProps) {
       notifyDirectAnnotationAttached();
       return;
     }
-    // FORK-BEGIN: selected crews start runs before ordinary sends
+    // FORK-BEGIN: /crew-init expands and selected crews start runs before ordinary sends
+    if (crewSend.blocksCommand(sendCtx, activeThread.id)) return;
     if (
       crewSend.isSelected() &&
       (await crewSend.start({

@@ -168,6 +168,38 @@ export function toolboxGrantCount(grants: ProjectToolbox["grants"]) {
   );
 }
 
+/** Whether a project has any `.t3/` toolbox content, or diagnostics about one. */
+export function hasRepoToolbox(toolbox: ProjectToolbox) {
+  return (
+    toolbox.grants !== null ||
+    toolbox.skills.length > 0 ||
+    Object.keys(toolbox.mcp.servers).length > 0 ||
+    Object.keys(toolbox.tools.tools).length > 0 ||
+    toolbox.diagnostics.length > 0
+  );
+}
+
+/** Secret names the repo's MCP servers read through `${secret:NAME}`. */
+export function referencedCrewSecrets(mcp: ProjectToolbox["mcp"]) {
+  const names = Object.values(mcp.servers).flatMap((server) =>
+    Object.values(server.env ?? {}).flatMap((value) =>
+      [...value.matchAll(/\$\{secret:([\w-]+)\}/gu)].map((match) => match[1]!),
+    ),
+  );
+  return [...new Set(names)].toSorted();
+}
+
+/** Saved crew secrets, and referenced ones nothing has saved yet. A saved value is non-empty. */
+export function crewSecretStatus(
+  saved: Readonly<Record<string, string>>,
+  referenced: readonly string[],
+) {
+  const savedNames = Object.keys(saved)
+    .filter((name) => saved[name] !== "")
+    .toSorted();
+  return { saved: savedNames, missing: referenced.filter((name) => !savedNames.includes(name)) };
+}
+
 /** Same inline/file distinction as the authoring validator. */
 export function roleInstructions(roleId: string, role: CrewRole) {
   const text = role.instructions;

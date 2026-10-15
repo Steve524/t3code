@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Steve524/t3code/main/docs/fork/schema/crew.json
+version: 1
+id: ui-pair
+name: UI pair
+description: Build a UI change, then review it against the team checklist.
+
+inputs:
+  brief: { type: text, required: true, description: The UI change }
+
+roles:
+  builder:
+    name: Builder
+    description: Builds UI components and pages
+    tags: [frontend, worker]
+    instructions: roles/builder.md
+    tools: [unit-tests]
+  reviewer:
+    name: Reviewer
+    description: Reviews UI changes against the review checklist
+    tags: [reviewer]
+    instructions: roles/reviewer.md
+    skills: [review-checklist]
+
+flow:
+  start: build
+  steps:
+    build:
+      role: builder
+      task: "Build this UI change:\n\n{{inputs.brief}}"
+      next: review
+
+    review:
+      role: reviewer
+      task: "Review the change with the review checklist:\n\n{{steps.build.summary}}"
+      outcomes:
+        approve: done
+        changes: { to: build, max: 2, else: done }
+
+    done:
+      type: end

@@ -275,6 +275,8 @@ export class CrewMcpFailure extends Schema.TaggedError<CrewMcpFailure>()("CrewMc
     "invalid_report",
     "not_found",
     "unavailable",
+    // A `t3_*` tool called from a thread without a project.
+    "no_project",
   ]),
   message: Schema.String,
 }) {}

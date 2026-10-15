@@ -1,0 +1,9 @@
+# Hand-tuned by the team. Keep this order.
+tools:
+  # The fast unit run every crew uses.
+  unit-tests:
+    description: Run the unit tests
+    run: vp test run
+    timeoutSeconds: 300
+  lint:
+    run: yarn lint # lint only src

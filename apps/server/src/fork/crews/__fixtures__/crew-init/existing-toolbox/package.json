@@ -1,0 +1,8 @@
+{
+  "name": "ledger-api",
+  "private": true,
+  "scripts": {
+    "test": "jest",
+    "lint": "eslint src"
+  }
+}

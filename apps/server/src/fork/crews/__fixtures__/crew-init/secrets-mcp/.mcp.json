@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_EXAMPLE_NOT_A_REAL_TOKEN_0123456789",
+        "SENTRY_DSN": "${SENTRY_DSN}",
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "acme-web",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @acme/app dev",
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "eslint": "^9.30.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  },
+  "packageManager": "pnpm@10.12.1"
+}

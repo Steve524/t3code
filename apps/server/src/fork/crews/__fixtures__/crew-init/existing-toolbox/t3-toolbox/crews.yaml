@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Steve524/t3code/main/docs/fork/schema/crews-toolbox.json
+version: 1
+
+tags:
+  # every worker may lint
+  worker: { tools: [lint] }

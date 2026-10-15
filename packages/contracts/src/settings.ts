@@ -19,6 +19,7 @@ import {
   TrimmedString,
 } from "./baseSchemas.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
+import { ForkCrewSecretsPatch, ForkCrewSecretsSetting } from "./fork/crews/crewSecrets.ts"; // FORK: crew secrets
 import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
 import { KeybindingShortcut } from "./keybindings.ts";
 import {
@@ -1347,6 +1348,7 @@ export const ServerSettings = Schema.Struct({
   usageModelAliases: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  forkCrewSecrets: ForkCrewSecretsSetting, // FORK: crew secrets
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -1647,6 +1649,7 @@ export const ServerSettingsPatch = Schema.Struct({
   usageModelAliases: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
   ),
+  forkCrewSecrets: ForkCrewSecretsPatch, // FORK: crew secrets
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

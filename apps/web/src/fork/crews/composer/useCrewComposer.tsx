@@ -6,6 +6,7 @@ import { ProviderModelPicker as UpstreamProviderModelPicker } from "../../../com
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../../../components/ui/tooltip";
 import { CrewComposerControl } from "./CrewComposerControl";
 import { useCrewComposerState } from "./crewComposerState";
+import { useCrewInitCommands } from "./useCrewInitCommands";
 import { useCrewLive } from "../board/crewBoardState";
 import { CrewThreadComposerControl } from "../board/CrewIntegrations";
 
@@ -18,6 +19,11 @@ export function useCrewComposer(props: ChatComposerProps) {
     props.routeKind === "draft" ? props.draftId : null,
   );
   const selected = state.selection.crewId !== null;
+  const crewInitCommands = useCrewInitCommands(
+    props.environmentId,
+    props.activeProjectId,
+    selected || view !== null,
+  );
   const { multipleModelSelections, onMultipleModelSelectionsChange } = props;
   useEffect(() => {
     if (selected && multipleModelSelections !== null) onMultipleModelSelectionsChange(null);
@@ -48,7 +54,13 @@ export function useCrewComposer(props: ChatComposerProps) {
         fallback={fallback}
       />
     );
-  return { props: adjusted, selected, visible: state.visible || view !== null, control };
+  return {
+    props: adjusted,
+    selected,
+    visible: state.visible || view !== null,
+    control,
+    crewInitCommands,
+  };
 }
 
 export function ProviderModelPicker({

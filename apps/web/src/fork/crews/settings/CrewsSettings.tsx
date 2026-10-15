@@ -39,10 +39,14 @@ import {
   crewOverrideScope,
   crewPath,
   crewsDirectory,
+  hasRepoToolbox,
   orderedCrewRoles,
+  referencedCrewSecrets,
   showsRepoToolbox,
   toolboxGrantCount,
 } from "./crewsSettings.logic";
+import { CrewSecrets } from "./CrewSecrets";
+import { useOpenCrewInitDraft } from "../composer/openCrewInitDraft";
 
 function RepoToolbox({
   snapshots,
@@ -51,6 +55,7 @@ function RepoToolbox({
   editor,
   pending,
   save,
+  onSetUp,
 }: {
   snapshots: readonly CrewSettingsSnapshot[];
   snapshot: CrewSettingsSnapshot;
@@ -58,6 +63,8 @@ function RepoToolbox({
   editor: CrewEditor;
   pending: boolean;
   save: (operation: () => Promise<readonly string[]>) => void;
+  /** Opens a new draft in this project with `/crew-init` for the selected crew. */
+  onSetUp: () => void;
 }) {
   const setMode = useAtomCommand(crewCatalog.setToolboxMode, { reportFailure: false });
   const result = snapshot.toolbox;
@@ -87,14 +94,19 @@ function RepoToolbox({
       id="crew-repo-toolbox"
       variant="plain"
       headerAction={
-        <Button
-          size="xs"
-          variant="outline"
-          disabled={!editor.canOpen}
-          onClick={() => void editor.open(crewPath(directory, "crews.yaml"))}
-        >
-          {missing ? "Create crews.yaml" : "Open crews.yaml"}
-        </Button>
+        <div className="flex gap-2">
+          <Button size="xs" variant="outline" onClick={onSetUp}>
+            Set up with /crew-init
+          </Button>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={!editor.canOpen}
+            onClick={() => void editor.open(crewPath(directory, "crews.yaml"))}
+          >
+            {missing ? "Create crews.yaml" : "Open crews.yaml"}
+          </Button>
+        </div>
       }
     >
       <div className="space-y-3 px-4">
@@ -143,12 +155,21 @@ function RepoToolbox({
               Only changes which definition is used when both define the same name. Repo grants
               always add.
             </p>
-            <p className="text-sm text-muted-foreground">
-              Grants {toolboxGrantCount(toolbox.grants)} · Definitions: {toolbox.skills.length}{" "}
-              skills, {Object.keys(toolbox.mcp.servers).length} MCP servers,{" "}
-              {Object.keys(toolbox.tools.tools).length} tools · {toolbox.diagnostics.length}{" "}
-              diagnostics
-            </p>
+            {hasRepoToolbox(toolbox) ? (
+              <p className="text-sm text-muted-foreground">
+                Grants {toolboxGrantCount(toolbox.grants)} · Definitions: {toolbox.skills.length}{" "}
+                skills, {Object.keys(toolbox.mcp.servers).length} MCP servers,{" "}
+                {Object.keys(toolbox.tools.tools).length} tools · {toolbox.diagnostics.length}{" "}
+                diagnostics
+              </p>
+            ) : (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                No repo toolbox yet.
+                <Button size="xs" variant="ghost-muted" onClick={onSetUp}>
+                  Set up with /crew-init
+                </Button>
+              </p>
+            )}
             <CrewDiagnostics diagnostics={toolbox.diagnostics} editor={editor} />
           </>
         ) : result?._tag !== "Failure" ? (
@@ -198,6 +219,8 @@ function ConnectedCrewsSettings({
   const detailResult = snapshot?.detail;
   const detail = detailResult && Option.getOrNull(AsyncResult.value(detailResult));
   const editor = useCrewEditor(target.environmentId, config?.availableEditors ?? []);
+  const openCrewInit = useOpenCrewInitDraft();
+  const toolbox = snapshot?.toolbox && Option.getOrNull(AsyncResult.value(snapshot.toolbox));
   const setOverride = useAtomCommand(crewCatalog.setRoleOverride, { reportFailure: false });
   const [pending, setPending] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -387,12 +410,25 @@ function ConnectedCrewsSettings({
           editor={editor}
           pending={pending}
           save={(operation) => void save(operation)}
+          onSetUp={() => {
+            if (snapshot.target.projectId === null) return;
+            void openCrewInit(
+              snapshot.target.environmentId,
+              snapshot.target.projectId,
+              selected?.id ?? null,
+            );
+          }}
         />
       ) : (
         <p className="px-4 text-sm text-muted-foreground">
           Pick a project to see its repo toolbox.
         </p>
       )}
+      <CrewSecrets
+        environmentId={target.environmentId}
+        environmentLabel={environment?.label ?? "this environment"}
+        referenced={toolbox ? referencedCrewSecrets(toolbox.mcp) : []}
+      />
     </>
   );
 }

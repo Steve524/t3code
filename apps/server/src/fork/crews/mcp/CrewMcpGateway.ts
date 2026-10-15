@@ -36,6 +36,7 @@ import {
   CrewMcpToolList,
 } from "../../../../../../packages/contracts/src/fork/crews/crewRun.ts";
 import * as ServerSecretStore from "../../../auth/ServerSecretStore.ts";
+import { crewSecretName } from "../crewSecretsSettings.ts";
 import { resolveCrewMcpEnv, type CrewMcpServer } from "./crewMcpDelivery.ts";
 
 /** How long a server may sit unused before its process is stopped. Tests shorten it. */
@@ -48,8 +49,7 @@ const INITIALIZE_TIMEOUT = Duration.seconds(30);
 const CALL_TIMEOUT = Duration.minutes(10);
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 
-/** The store name of a crew secret, apart from the server's own secrets. */
-export const crewSecretName = (name: string) => `crew-${name}`;
+export { crewSecretName };
 
 /** Reads a crew secret as text. A store that cannot be read counts as the secret not being set. */
 export const readCrewSecret =

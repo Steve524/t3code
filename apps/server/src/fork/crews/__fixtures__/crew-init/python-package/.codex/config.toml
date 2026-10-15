@@ -1,0 +1,5 @@
+# Project-level Codex settings.
+[mcp_servers.docs]
+command = "uvx"
+args = ["mcp-docs-server", "--root", "docs"]
+env = { DOCS_API_KEY = "${DOCS_API_KEY}", DOCS_LOG = "warn" }

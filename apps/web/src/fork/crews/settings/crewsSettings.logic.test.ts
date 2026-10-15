@@ -21,10 +21,13 @@ import {
   crewOverrideScope,
   crewPath,
   crewsDirectory,
+  crewSecretStatus,
   crewToolboxChips,
   diagnosticLocation,
+  hasRepoToolbox,
   instructionMarkdown,
   orderedCrewRoles,
+  referencedCrewSecrets,
   roleInstructions,
   safeInstructionPath,
   showsRepoToolbox,
@@ -330,5 +333,40 @@ describe("bulk model availability", () => {
         { label: "Remote", entries, options: unavailable },
       ]),
     ).toContain("Remote");
+  });
+});
+
+describe("repo toolbox and crew secrets", () => {
+  const empty = {
+    mode: "extend" as const,
+    skills: [],
+    mcp: { servers: {} },
+    tools: { tools: {} },
+    grants: null,
+    diagnostics: [],
+  };
+
+  it("offers /crew-init setup only for a project with no toolbox content or diagnostics", () => {
+    expect(hasRepoToolbox(empty)).toBe(false);
+    expect(hasRepoToolbox({ ...empty, tools: { tools: { lint: { run: "pnpm lint" } } } })).toBe(
+      true,
+    );
+    expect(hasRepoToolbox({ ...empty, grants: { version: 1 } })).toBe(true);
+  });
+
+  it("finds referenced secrets and which of them are not saved", () => {
+    const referenced = referencedCrewSecrets({
+      servers: {
+        github: { command: "npx", env: { GITHUB_TOKEN: "${secret:GITHUB_TOKEN}", PORT: "3000" } },
+        sentry: { command: "uvx", env: { AUTH: "Bearer ${secret:SENTRY} ${secret:GITHUB_TOKEN}" } },
+        bare: { command: "tool" },
+      },
+    });
+    expect(referenced).toEqual(["GITHUB_TOKEN", "SENTRY"]);
+    // The server sends saved values as a redaction marker; an empty value is not saved.
+    expect(crewSecretStatus({ SENTRY: "•••", OLD: "" }, referenced)).toEqual({
+      saved: ["SENTRY"],
+      missing: ["GITHUB_TOKEN"],
+    });
   });
 });

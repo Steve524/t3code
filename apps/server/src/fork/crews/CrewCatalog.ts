@@ -32,6 +32,11 @@ import type {
   CrewSummary,
   CrewToolsFile,
 } from "../../../../../packages/contracts/src/fork/crews/crewFile.ts";
+import type {
+  CrewInitCrew,
+  CrewInitDryRun,
+  CrewInitToolbox,
+} from "../../../../../packages/contracts/src/fork/crews/crewInit.ts";
 import type { CrewRoleOverride } from "../../../../../packages/contracts/src/fork/crews/crewModel.ts";
 import {
   ForkCrewsError,
@@ -71,11 +76,15 @@ import * as ProjectService from "../../project/ProjectService.ts";
 import { loadCrew, type LoadedCrew } from "./CrewFileLoader.ts";
 import * as CrewSettingsStore from "./CrewSettingsStore.ts";
 import {
+  isToolboxFilePath,
   loadDefinitions,
   loadProjectToolbox,
+  overlayProjectToolbox,
   type LoadedProjectToolbox,
   type LoadedToolboxDefinitions,
 } from "./CrewToolboxLoader.ts";
+import { describeCrewNeeds, redactMcpEnv } from "./init/crewNeeds.ts";
+import { convertMcpConfig, MCP_IMPORT_SOURCES } from "./init/mcpImports.ts";
 
 export class CrewCatalog extends Context.Service<
   CrewCatalog,
@@ -115,6 +124,18 @@ export class CrewCatalog extends Context.Service<
     readonly resetRoleOverrides: (
       input: CrewRoleOverrideResetInput,
     ) => Effect.Effect<void, ForkCrewsError>;
+    /** One crew as `/crew-init` sees it: what it names and what this project leaves unresolved. */
+    readonly initCrew: (
+      projectId: ProjectId,
+      crewId: string,
+    ) => Effect.Effect<CrewInitCrew, ForkCrewsError>;
+    /** The project's toolbox with MCP env values redacted, and the repo's importable MCP servers. */
+    readonly initToolbox: (projectId: ProjectId) => Effect.Effect<CrewInitToolbox, ForkCrewsError>;
+    /** The project and every crew as if `files` were in `.t3/`. Nothing is written. */
+    readonly initDryRun: (
+      projectId: ProjectId,
+      files: Readonly<Record<string, string>>,
+    ) => Effect.Effect<CrewInitDryRun, ForkCrewsError>;
   }
 >()("t3/fork/crews/CrewCatalog") {}
 
@@ -474,6 +495,118 @@ const make = Effect.gen(function* () {
     return evaluateCrew(loaded, state, projectGrants(state), input.text).diagnostics;
   });
 
+  /** Each role's toolbox in `state`, for what `/crew-init` reports. */
+  const roleToolboxes = (crew: CrewFile | null, toolbox: CrewToolbox, mode: ToolboxMode) =>
+    crew === null
+      ? []
+      : Object.keys(crew.roles).map((id) => ({
+          id,
+          toolbox: resolveRoleToolbox(crew, id, toolbox, mode),
+        }));
+
+  const projectTools = (state: CatalogState) =>
+    new Set(state.project?.tools.map((tool) => tool.name));
+
+  const initCrew: CrewCatalog["Service"]["initCrew"] = Effect.fn("CrewCatalog.initCrew")(
+    function* (projectId, crewId) {
+      const { detail, state } = yield* resolve({ projectId, crewId });
+      return {
+        summary: detail.summary,
+        ...describeCrewNeeds(detail, projectTools(state)),
+        diagnostics: detail.diagnostics,
+      };
+    },
+  );
+
+  const initToolbox: CrewCatalog["Service"]["initToolbox"] = Effect.fn("CrewCatalog.initToolbox")(
+    function* (projectId) {
+      const { project, ...state } = yield* load(projectId);
+      if (project === null) return yield* new ForkCrewsError({ reason: "unavailable", projectId });
+      const { grants, diagnostics } = evaluateGrants(project, installedCrews(state.crews));
+      const exists = (name: string) =>
+        fileSystem
+          .exists(path.join(project.directory, name))
+          .pipe(Effect.orElseSucceed(() => false));
+      const files = [
+        ...(project.grantsText === null ? [] : ["crews.yaml"]),
+        ...((yield* exists("mcp.yaml")) ? ["mcp.yaml"] : []),
+        ...((yield* exists("tools.yaml")) ? ["tools.yaml"] : []),
+        ...project.skills.map((skill) => `skills/${skill.name}/SKILL.md`),
+      ];
+      const repoRoot = path.dirname(project.directory);
+      const imports = yield* Effect.forEach(MCP_IMPORT_SOURCES, (source) => {
+        const file = path.join(repoRoot, ...source.split("/"));
+        return fileSystem.readFileString(file).pipe(
+          Effect.map((text) => ({ file, ...convertMcpConfig(source, text) })),
+          Effect.orElseSucceed(() => ({ file, imports: [] })),
+        );
+      });
+      return {
+        directory: project.directory,
+        files,
+        mode: state.mode,
+        grants,
+        skills: project.skills.map((skill) => skill.name),
+        mcp: redactMcpEnv(project.mcpFile),
+        tools: project.toolsFile,
+        mcpImports: imports.flatMap((result) => result.imports),
+        diagnostics: [
+          ...project.diagnostics,
+          ...diagnostics,
+          ...imports.flatMap((result): Array<CrewDiagnostic> =>
+            "error" in result && result.error !== undefined
+              ? [
+                  {
+                    severity: "warning",
+                    message: `MCP servers in this file were not read: ${result.error}`,
+                    file: result.file,
+                    line: 1,
+                    column: 1,
+                    path: [],
+                  },
+                ]
+              : [],
+          ),
+        ],
+      };
+    },
+  );
+
+  const initDryRun: CrewCatalog["Service"]["initDryRun"] = Effect.fn("CrewCatalog.initDryRun")(
+    function* (projectId, files) {
+      const refused = Object.keys(files).filter((file) => !isToolboxFilePath(file));
+      if (refused.length > 0) {
+        return yield* new ForkCrewsError({
+          reason: "invalid_request",
+          projectId,
+          detail: `Only crews.yaml, mcp.yaml, tools.yaml and skills/<name>/SKILL.md can be checked, not ${refused.join(", ")}.`,
+        });
+      }
+      const loaded = yield* load(projectId);
+      if (loaded.project === null) {
+        return yield* new ForkCrewsError({ reason: "unavailable", projectId });
+      }
+      const state = { ...loaded, project: overlayProjectToolbox(loaded.project, files, path.join) };
+      const { grants, diagnostics } = evaluateGrants(state.project, installedCrews(state.crews));
+      return {
+        diagnostics: [...state.project.diagnostics, ...diagnostics],
+        crews: state.crews.map((loadedCrew) => {
+          const { summary, crew, diagnostics, toolbox } = evaluateCrew(loadedCrew, state, grants);
+          const needs = describeCrewNeeds(
+            { definition: crew, roles: roleToolboxes(crew, toolbox, state.mode) },
+            projectTools(state),
+          );
+          return {
+            id: summary.id,
+            status: summary.status,
+            unresolved: needs.unresolved,
+            diagnostics: diagnostics.filter((diagnostic) => diagnostic.severity !== "info"),
+          };
+        }),
+      };
+    },
+  );
+
   yield* fileSystem
     .makeDirectory(crewsDirectory, { recursive: true })
     .pipe(Effect.ignoreCause({ log: true }));
@@ -520,6 +653,9 @@ const make = Effect.gen(function* () {
     );
 
   return CrewCatalog.of({
+    initCrew,
+    initToolbox,
+    initDryRun,
     list,
     get,
     resolveRun,

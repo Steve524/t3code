@@ -118,6 +118,62 @@ export const loadDefinitions = Effect.fn("CrewToolboxLoader.loadDefinitions")(fu
   } satisfies LoadedToolboxDefinitions;
 });
 
+/** The toolbox files a dry run may propose, relative to `.t3/`. */
+const SKILL_FILE = /^skills\/([\w.-]+)\/SKILL\.md$/u;
+export const isToolboxFilePath = (file: string) =>
+  file === "crews.yaml" ||
+  file === "mcp.yaml" ||
+  file === "tools.yaml" ||
+  (SKILL_FILE.test(file) && !file.includes(".."));
+
+/**
+ * `project` as if `files` (toolbox paths to full text) were on disk; nothing is written. A
+ * proposed file replaces the one on disk, with its parse diagnostics.
+ */
+export function overlayProjectToolbox(
+  project: LoadedProjectToolbox,
+  files: Readonly<Record<string, string>>,
+  join: (...parts: ReadonlyArray<string>) => string,
+): LoadedProjectToolbox {
+  const pathOf = (relative: string) => join(project.directory, ...relative.split("/"));
+  const proposed = <T>(
+    relative: string,
+    parse: (text: string, file: string) => CrewYamlResult<T>,
+    names: (value: T) => ReadonlyArray<string>,
+  ) => {
+    const text = files[relative];
+    if (text === undefined) return null;
+    const file = pathOf(relative);
+    const { value, diagnostics } = parse(text, file);
+    const definitions = (value === null ? [] : names(value)).map((name): CrewToolboxDefinition => ({
+      name,
+      path: file,
+      realPath: file,
+    }));
+    return { file, value, definitions, diagnostics };
+  };
+  const mcp = proposed("mcp.yaml", parseCrewMcpYaml, (value) => Object.keys(value.servers));
+  const tools = proposed("tools.yaml", parseCrewToolsYaml, (value) => Object.keys(value.tools));
+  const replaced = new Set([mcp?.file, tools?.file]);
+  const skills = Object.keys(files).flatMap((relative) => {
+    const name = SKILL_FILE.exec(relative)?.[1];
+    if (name === undefined || project.skills.some((skill) => skill.name === name)) return [];
+    return [{ name, path: pathOf(relative), realPath: pathOf(relative) }];
+  });
+  return {
+    ...project,
+    ...(files["crews.yaml"] === undefined ? {} : { grantsText: files["crews.yaml"] }),
+    ...(mcp && { mcp: mcp.definitions, mcpFile: mcp.value ?? { servers: {} } }),
+    ...(tools && { tools: tools.definitions, toolsFile: tools.value ?? { tools: {} } }),
+    skills: [...project.skills, ...skills],
+    diagnostics: [
+      ...project.diagnostics.filter((diagnostic) => !replaced.has(diagnostic.file)),
+      ...(mcp?.diagnostics ?? []),
+      ...(tools?.diagnostics ?? []),
+    ],
+  };
+}
+
 /** A project's `.t3` toolbox: its definitions and the raw grant file. */
 export const loadProjectToolbox = Effect.fn("CrewToolboxLoader.loadProjectToolbox")(function* (
   workspaceRoot: string,

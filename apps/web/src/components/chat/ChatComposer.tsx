@@ -2787,6 +2787,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const visibleProviderSlashCommandItems = providerSlashCommandItems.filter(
         (item) => item.command.name !== "compact" || compactSlashCommandAvailable,
       );
+      visibleProviderSlashCommandItems.push(...crewComposer.crewInitCommands(selectedProvider)); // FORK: /crew-init entries
       const slashCommandItems = slashCommandItemsForPromptPosition(
         [...builtInSlashCommandItems, ...visibleProviderSlashCommandItems, ...skillItems],
         composerTrigger.rangeStart === 0,
@@ -2866,6 +2867,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadId,
     compactSlashCommandAvailable,
     composerTrigger,
+    crewComposer.crewInitCommands, // FORK: /crew-init entries
     environmentId,
     environmentThreadShells,
     exactPullRequestLookup.data,

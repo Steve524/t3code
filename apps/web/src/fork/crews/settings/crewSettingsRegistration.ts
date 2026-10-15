@@ -8,6 +8,6 @@ export const CREW_SETTINGS_SEARCH_ITEMS = [
     title: "Crews",
     to: CREW_SETTINGS_PATH,
     scope: "project-defaults",
-    searchTerms: ["roles models instructions toolbox skills MCP tools overrides"],
+    searchTerms: ["roles models instructions toolbox skills MCP tools overrides secrets crew-init"],
   },
 ] as const;

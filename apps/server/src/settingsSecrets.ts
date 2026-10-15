@@ -18,6 +18,7 @@ import {
   sourceControlHostSecretName,
   writeSecretFieldValues,
 } from "./sourceControl/sourceControlHostSecrets.ts";
+import { mapForkCrewSecrets } from "./fork/crews/crewSecretsSettings.ts"; // FORK: crew secrets
 
 export const SECRET_REDACTED = "\u2022\u2022\u2022\u2022\u2022\u2022";
 
@@ -146,5 +147,11 @@ export function mapSettingsSecrets(
     ]),
   ) as ServerSettings["usageLimitSources"];
 
-  return { ...settings, providerInstances, sourceControlHosts, usageLimitSources };
+  return {
+    ...settings,
+    providerInstances,
+    sourceControlHosts,
+    usageLimitSources,
+    ...mapForkCrewSecrets(settings, SECRET_REDACTED, map), // FORK: crew secrets
+  };
 }

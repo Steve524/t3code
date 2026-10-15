@@ -112,6 +112,11 @@ import { crewMcpDelivery } from "./mcp/crewMcpDelivery.ts";
 export class CrewRunService extends Context.Service<
   CrewRunService,
   {
+    /**
+     * The catalog runs resolve crews from. The crew MCP toolkit's `t3_*` tools read it here, so
+     * the toolkit's registration needs this one service. An effect, so test stubs may omit it.
+     */
+    readonly catalog: Effect.Effect<CrewCatalog.CrewCatalog["Service"]>;
     /** Starts a run and its home thread. The same `clientRequestId` returns the same run. */
     readonly start: (input: CrewRunStartInput) => Effect.Effect<CrewRunStartResult, ForkCrewsError>;
     /** The board, with each role's frozen toolbox. */
@@ -1908,6 +1913,7 @@ const make = Effect.gen(function* () {
   );
 
   return CrewRunService.of({
+    catalog: Effect.succeed(catalog),
     start,
     get: (runId) => view(runId, true),
     list: (input) =>

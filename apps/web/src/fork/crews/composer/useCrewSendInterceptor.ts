@@ -6,6 +6,7 @@ import {
   type RuntimeMode,
   type ThreadId,
 } from "@t3tools/contracts";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { serializeLegacyContextMessage } from "@t3tools/shared/composerContextLegacySend";
 import { useNavigate } from "@tanstack/react-router";
@@ -29,11 +30,13 @@ import {
   previewAnnotationContextReference,
 } from "../../../lib/composerContextRecords";
 import { ensureInlineContextReferences } from "../../../lib/composerContextReferences";
+import { readProject } from "../../../state/entities";
 import { environmentServerConfigsAtom } from "../../../state/server";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import { crewCommands, crewRuns, useCrewComposerState } from "./crewComposerState";
 import { crewComposerSelectionStore, crewComposerTargetKey } from "./crewComposerSelectionStore";
 import { mapCrewSendInput } from "./crewSend.logic";
+import { crewInitBlockReason, expandCrewInitCommand, parseCrewInitCommand } from "./crewInit.logic";
 
 type SendContext = ReturnType<ChatComposerHandle["getSendContext"]>;
 
@@ -64,14 +67,34 @@ export function useCrewSendInterceptor({
   const startRun = useAtomCommand(crewCommands.start, { reportFailure: false });
   const navigate = useNavigate();
 
+  // Ordinary sends must not yield before their existing single-flight guard is set.
+  const isSelected = () =>
+    state.target !== null &&
+    Boolean(
+      crewComposerSelectionStore.getState().selections[crewComposerTargetKey(state.target)]?.crewId,
+    );
+
   return {
-    // Ordinary sends must not yield before their existing single-flight guard is set.
-    isSelected: () =>
-      state.target !== null &&
-      Boolean(
-        crewComposerSelectionStore.getState().selections[crewComposerTargetKey(state.target)]
-          ?.crewId,
-      ),
+    isSelected,
+    /**
+     * Swaps a typed `/crew-init` for its short instruction before an ordinary send. True when it
+     * cannot run here: the reason shows on the thread and nothing is sent.
+     */
+    blocksCommand: (sendContext: SendContext, threadId: ThreadId) => {
+      const command = parseCrewInitCommand(promptRef.current);
+      if (command === null || isSelected()) return false;
+      const project = projectId ? readProject(scopeProjectRef(environmentId, projectId)) : null;
+      const reason = crewInitBlockReason({
+        driver: sendContext.selectedProvider,
+        hasProject: project !== null && project.isScratch !== true,
+      });
+      if (reason !== null) {
+        setThreadError(threadId, reason);
+        return true;
+      }
+      promptRef.current = expandCrewInitCommand(command);
+      return false;
+    },
     start: async (send: {
       prompt: string;
       sendContext: SendContext;

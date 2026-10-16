@@ -62,7 +62,6 @@ const isClosedViewEntry = (entry: unknown): entry is ClosedViewEntry => {
   switch (surface.kind) {
     case "diff":
     case "files":
-    case "crew-board": // FORK: retain crew boards in migrated closed-tab history.
     case "pull-requests":
       return surface.id === surface.kind;
     case "preview":
@@ -128,7 +127,7 @@ export const useClosedViewStore = create<ClosedViewStoreState>()(
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      version: 2,
+      version: 3, // FORK: discard retired crew board tabs from closed history
       migrate: (persisted) => {
         const entries = (persisted as Partial<Pick<ClosedViewStoreState, "entries">> | null)
           ?.entries;

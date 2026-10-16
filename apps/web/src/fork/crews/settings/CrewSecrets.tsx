@@ -12,7 +12,7 @@ import { useEnvironmentSettings } from "../../../hooks/useSettings";
 import { serverEnvironment } from "../../../state/server";
 import { useAtomCommand } from "../../../state/use-atom-command";
 import { crewSecretStatus } from "./crewsSettings.logic";
-import { CrewConfirm } from "../board/CrewControls";
+import { CrewConfirm } from "./CrewConfirm";
 
 const readCrewSecrets = (settings: UnifiedSettings) => settings.forkCrewSecrets;
 

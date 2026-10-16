@@ -24,7 +24,6 @@ vi.mock("../../../components/ui/toast", () => ({ toastManager: { add: mocks.toas
 vi.mock("../../../components/settings/settingsLayout", () => ({
   SettingsSection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
 }));
-vi.mock("../board/crewBoardState", () => ({ useCrewControl: vi.fn() }));
 
 let host: HTMLDivElement;
 let root: Root;

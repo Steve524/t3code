@@ -20,10 +20,9 @@ import { useClosedViewStore } from "./closedViewStore";
 import { resolveStorage } from "./lib/storage";
 import type { ThreadPanelPresentation } from "./rightPanelLayout";
 import type { ChatFileAttachment } from "./types";
-import { CREW_BOARD_SURFACE, type CrewBoardSurface } from "./fork/crews/board/crewBoardSurface"; // FORK: crew board surface
+import { RETIRED_CREW_BOARD_KIND } from "./fork/crews/retiredCrewBoard"; // FORK: retire saved crew tabs
 
 const RIGHT_PANEL_KINDS = [
-  CREW_BOARD_SURFACE.kind, // FORK: crew board surface
   "diff",
   "files",
   "file",
@@ -43,7 +42,6 @@ export interface DeviceTabTarget {
 }
 
 export type RightPanelSurface =
-  | CrewBoardSurface // FORK: crew board surface
   | { id: `browser:${string}`; kind: "preview"; resourceId: string }
   | { id: "browser:new"; kind: "preview"; resourceId: null }
   | { id: "device" | `device:${string}`; kind: "device"; target?: DeviceTabTarget; title?: string }
@@ -96,7 +94,7 @@ const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v11 stops persisting the pull-request list's shared panel, so a restart opens the page fresh.
 // v12 adds the device surface.
 // v14 removes the agents surface; lineage lives in the thread title bar.
-const RIGHT_PANEL_STORAGE_VERSION = 14;
+const RIGHT_PANEL_STORAGE_VERSION = 15; // FORK: remove saved crew board tabs
 
 /** A fixed workspace-level ref: each PR surface carries its own real environment. */
 export const PULL_REQUESTS_PANEL_REF = scopeThreadRef(
@@ -220,10 +218,6 @@ const singletonSurface = (
   kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
 ): RightPanelSurface => {
   switch (kind) {
-    // FORK-BEGIN: crew board surface
-    case "crew-board":
-      return CREW_BOARD_SURFACE;
-    // FORK-END
     case "diff":
       return { id: "diff", kind };
     case "files":
@@ -477,6 +471,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     // Removed surfaces: plans render inline, agents in thread lineage.
                     const kind = (surface as { kind?: string }).kind;
+                    if (kind === RETIRED_CREW_BOARD_KIND) return []; // FORK: discard retired crew board tabs
                     if (kind === "plan" || kind === "agents") return [];
                     if (surface.kind === "file") {
                       const revealLine =

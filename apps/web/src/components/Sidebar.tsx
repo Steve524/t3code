@@ -151,8 +151,6 @@ import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
-import { useCrewSidebar } from "../fork/crews/board/crewBoardState"; // FORK: reactive crew thread filter
-import { CrewSidebarBadge } from "../fork/crews/board/CrewIntegrations"; // FORK: home thread crew badge
 import {
   useEnvironmentIdentities,
   useConnectedEnvironmentIds,
@@ -1702,7 +1700,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         )}
       >
         {thread.title}
-        <CrewSidebarBadge thread={thread} /> {/* FORK: home thread crew badge */}
       </span>
     );
   const accessibleTitle = isRenaming ? null : <span className="sr-only">{thread.title}</span>;
@@ -2421,7 +2418,6 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 });
 
 export default function Sidebar() {
-  const crewCardThread = useCrewSidebar(); // FORK: crew index and preference
   const projects = useProjects();
   const threads = useThreadShells();
   const router = useRouter();
@@ -2814,7 +2810,7 @@ export default function Sidebar() {
     const preciseNow = new Date().toISOString();
     // Subagent child threads live in the parent's Agents surface, not the
     // sidebar roster (v2 models them as real threads with lineage).
-    const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, crewCardThread); // FORK: crew role filter
+    const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys);
     inboxReturns.observe(workingShelfEnabled ? threads : null);
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
@@ -2916,7 +2912,6 @@ export default function Sidebar() {
     };
   }, [
     nowMinute,
-    crewCardThread, // FORK: refresh crew visibility
     optimisticDrop,
     scopedProjectKeys,
     serverConfigs,

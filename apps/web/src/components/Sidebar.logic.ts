@@ -26,7 +26,6 @@ import type { SidebarThreadSummary, Thread } from "../types";
 import { cn, normalizeSearchText } from "../lib/utils";
 import { isLatestRunSettled } from "../session-logic";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
-import type { isCrewCardThread } from "@t3tools/client-runtime/fork/crews/runs"; // FORK: crew thread filter
 
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
@@ -568,23 +567,16 @@ export function isSidebarSubagentThread(thread: Pick<SidebarThreadSummary, "line
   return thread.lineage.relationshipToParent === "subagent";
 }
 
-// FORK-BEGIN: optional crew thread predicate
 export function filterSidebarV2VisibleThreads<
   T extends Pick<SidebarThreadSummary, "archivedAt" | "lineage"> & {
     environmentId: string;
     projectId: string;
   },
->(
-  threads: readonly T[],
-  scopedProjectKeys: ReadonlySet<string> | null,
-  crewCardThread?: (thread: Parameters<typeof isCrewCardThread>[0]) => boolean,
-): T[] {
-  // FORK-END
+>(threads: readonly T[], scopedProjectKeys: ReadonlySet<string> | null): T[] {
   return threads.filter(
     (thread) =>
       thread.archivedAt === null &&
       !isSidebarSubagentThread(thread) &&
-      !crewCardThread?.(thread) && // FORK: hide crew role threads
       (scopedProjectKeys === null ||
         scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
   );

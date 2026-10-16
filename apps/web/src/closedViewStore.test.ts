@@ -33,7 +33,7 @@ describe("closedViewStore", () => {
     "rehydrates malformed older history %j as empty history",
     async (state) => {
       useClosedViewStore.getState().remember(diff(refA));
-      const { storage, name } = useClosedViewStore.persist.getOptions();
+      const { storage, name, version } = useClosedViewStore.persist.getOptions(); // FORK: use the migrated store version
       await storage!.setItem(name!, {
         state: state as { entries: ClosedViewEntry[] },
         version: 0,
@@ -41,7 +41,7 @@ describe("closedViewStore", () => {
       await useClosedViewStore.persist.rehydrate();
       expect(useClosedViewStore.persist.hasHydrated()).toBe(true);
       expect(useClosedViewStore.getState().entries).toEqual([]);
-      expect(await storage!.getItem(name!)).toEqual({ state: { entries: [] }, version: 2 });
+      expect(await storage!.getItem(name!)).toEqual({ state: { entries: [] }, version }); // FORK: crew history migration
     },
   );
 

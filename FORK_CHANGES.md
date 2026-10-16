@@ -100,48 +100,23 @@ The server split above replaces the old handler spread. The shared contract and 
 wiring stay combined; only handler inference needed splitting. The fork handler tests check
 the merged method set and exercise ordinary and crew requests, streams and authorization.
 
-## Crews board touch points
+## Retired Crews right-panel touch points
 
-| File                                              | What changed                                                                                                                                                                       | Why                                                                                                          |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `apps/web/src/components/ChatView.tsx`            | Imports and calls the fork banner hook, spreads its items into the existing banner list, and includes them in the memo dependencies. All additions marked.                         | Home and role threads show crew counts, gate answers, and a board link.                                      |
-| `apps/web/src/components/Sidebar.logic.ts`        | Accepts an optional fork card-thread predicate and applies it alongside the existing filters, marked.                                                                              | Hides crew role threads while preserving the home thread and ordinary sidebar rules.                         |
-| `apps/web/src/components/Sidebar.tsx`             | Imports the fork sidebar hook and badge, calls the hook, passes its predicate to the filter with a memo dependency, and renders the badge in the thread row. All additions marked. | The sidebar responds to the crew index and the fork-local preference without per-thread board subscriptions. |
-| `apps/web/src/components/CommandPalette.logic.ts` | Accepts optional crew entries and spreads them into the action list, marked.                                                                                                       | Registers Crew settings, Crew runs, and the current thread's board.                                          |
-| `apps/web/src/components/CommandPalette.tsx`      | Imports and calls the fork palette hook, then passes its entries to the action builder, marked.                                                                                    | Supplies the active thread and router context that the logic module does not own.                            |
-| `apps/web/src/routeTree.gen.ts`                   | Regenerated for the runs list and full-page board route shims.                                                                                                                     | Regenerate after merging upstream; this generated file has no manual fork markers.                           |
+| File                                   | What changed                                                                                                                                    | Why                                                                           |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `apps/web/src/rightPanelStore.ts`      | Imports `fork/crews/retiredCrewBoard.ts`, filters its retired tab kind during migration, and bumps storage version to 15. All additions marked. | Removes saved Crew tabs while preserving other tabs and selecting a survivor. |
+| `apps/web/src/closedViewStore.ts`      | Bumps storage version to 3, marked, so the upstream validator reruns without the removed Crew tab case.                                         | Discards retired Crew tabs from saved closed-tab history.                     |
+| `apps/web/src/closedViewStore.test.ts` | Uses the store's configured version in the existing hydration assertion, marked.                                                                | Keeps the upstream persistence test valid after the fork migration.           |
 
-Steve approved the additional hook calls, filter argument and memo dependencies on 2026-10-14.
-The new route files only register fork components. All board, banner, model controls, sidebar
-preference and palette logic lives under `fork/`. Web and desktop share it; mobile UI is skipped.
-`CrewRoleCard.tsx` is unchanged. No dependency or RPC was added.
-
-The existing run reads now include optional display fields from the saved run: brief, historical
-send-back count, script exit, merge details, budget extensions, and role thread ids. Frozen
-toolboxes still arrive only through `runs.get`. The board's Stop action uses `stopCard` on the
-existing guarded `runs.control`; it waits for the thread's stop acknowledgement before Retry is
-available. The source of a decision no longer duplicates its decision card's needs-you count.
-The sidebar refreshes lightweight run lists on thread creation and the shared minute tick.
-No right-panel surface, gate notifications or board keybinding was added in this phase.
-
-## Crews right-panel touch points
-
-| File                                         | What changed                                                                                                                    | Why                                                                                                           |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/rightPanelStore.ts`            | Imports the fork surface descriptor/type and registers its kind, union member and singleton factory case. All additions marked. | Gives the crew board the existing per-environment/thread tab ordering, persistence and close/reopen behavior. |
-| `apps/web/src/components/RightPanelTabs.tsx` | Adds a marked icon import and label/icon cases for `crew-board`.                                                                | Displays the board in the existing draggable tab strip.                                                       |
-| `apps/web/src/components/ChatView.tsx`       | Imports and renders the fork panel component as the content fallback, both marked.                                              | Both inline and sheet layouts render the board beside the home thread.                                        |
-| `apps/web/src/closedViewStore.ts`            | Adds a marked `crew-board` case to the singleton validation.                                                                    | Keeps closed board tabs available when saved tab history migrates.                                            |
-
-Phase 12 reuses `CrewBoard` for the panel and full page. Navigation from the banner,
-composer chip, palette and full-page board lives under `fork/` and opens beside the
-run's home thread. Panel lookup uses that thread's existing crew stream. Frozen
-toolbox reads no longer subscribe to a second stream or refresh on every card update.
-Web and desktop share this code; mobile UI is skipped. No RPC, dependency or package export
-was added. `CrewRoleCard.tsx` is unchanged.
-
-Steve approved the additional `ChatView.tsx` and `closedViewStore.ts` wiring on
-2026-10-14. The planned `RightPanelSheet.tsx` is only a wrapper and needs no edit.
+The board pages, routes, banner, composer chip, sidebar badge/filter and palette
+contribution are removed. `Sidebar.tsx`, `Sidebar.logic.ts`, `CommandPalette.tsx`,
+`CommandPalette.logic.ts` and `RightPanelTabs.tsx` now match `upstream/main` exactly,
+so they need no touch-point rows. `ChatView.tsx` retains only the composer send wiring
+listed above. `routeTree.gen.ts` was regenerated; its settings route row still applies.
+Retired-tab cleanup tests live in `fork/crews/retiredCrewBoard.test.ts`. Crew secret
+confirmation moved to `fork/crews/settings/CrewConfirm.tsx`.
+Web and desktop share the removal; mobile UI is unchanged. No RPC, dependency, or
+package export changed.
 
 ## Crews `/crew-init` touch points
 

@@ -39,7 +39,6 @@ import {
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
 import { useCrewSendInterceptor } from "../fork/crews/composer/useCrewSendInterceptor"; // FORK: crew send
-import { useCrewBanner } from "../fork/crews/board/CrewIntegrations"; // FORK: crew banner
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as Schema from "effect/Schema";
 import {
@@ -577,7 +576,6 @@ import {
 } from "../lib/attachmentUploadQueue";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { RightPanelSheet } from "./RightPanelSheet";
-import { CrewBoardPanel } from "../fork/crews/board/CrewBoardPanel"; // FORK: crew board panel
 import { previewEnvironment } from "../state/preview";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -7877,16 +7875,9 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
-  // FORK-BEGIN: crew banner hook
-  const crewBannerItems = useCrewBanner(
-    environmentId,
-    routeKind === "server" ? activeThreadId : null,
-  );
-  // FORK-END
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const backgroundWorkItems = [
-      ...crewBannerItems, // FORK: crew banner
       childInputBannerItem,
       goalBannerItem,
       backgroundWorkBannerItem,
@@ -7953,7 +7944,6 @@ export default function ChatView(props: ChatViewProps) {
     ];
   }, [
     activeBranchMismatchKey,
-    crewBannerItems, // FORK: live crew banner
     activeThreadShell,
     serverRuntime?.usageLimitResetAt,
     canWriteSourceControl,
@@ -11325,10 +11315,7 @@ export default function ChatView(props: ChatViewProps) {
           workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
-    ) : (
-      // FORK: crew board panel for both inline and sheet layouts.
-      <CrewBoardPanel surface={renderedRightPanelSurface} threadRef={activeThreadRef} />
-    )
+    ) : null
   ) : null;
   const threadDetailsPanelProps: ThreadDetailsPanelProps = {
     anchor: threadPanelPopoverAnchorRef,

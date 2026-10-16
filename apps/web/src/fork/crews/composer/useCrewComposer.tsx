@@ -7,12 +7,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../../../components/ui/to
 import { CrewComposerControl } from "./CrewComposerControl";
 import { useCrewComposerState } from "./crewComposerState";
 import { useCrewInitCommands } from "./useCrewInitCommands";
-import { useCrewLive } from "../board/crewBoardState";
-import { CrewThreadComposerControl } from "../board/CrewIntegrations";
 
 export function useCrewComposer(props: ChatComposerProps) {
-  const threadId = props.routeKind === "server" ? props.activeThreadId : null;
-  const { view } = useCrewLive(props.environmentId, threadId ? { threadId } : null);
   const state = useCrewComposerState(
     props.environmentId,
     props.activeProjectId,
@@ -22,7 +18,7 @@ export function useCrewComposer(props: ChatComposerProps) {
   const crewInitCommands = useCrewInitCommands(
     props.environmentId,
     props.activeProjectId,
-    selected || view !== null,
+    selected,
   );
   const { multipleModelSelections, onMultipleModelSelectionsChange } = props;
   useEffect(() => {
@@ -37,27 +33,19 @@ export function useCrewComposer(props: ChatComposerProps) {
         sendDisabledReason: props.sendDisabledReason ?? state.error,
       }
     : props;
-  const control = (fallback: ModelSelection, size: "sm" | "xs", hidden = false) =>
-    threadId && view ? (
-      <CrewThreadComposerControl
-        environmentId={props.environmentId}
-        threadId={threadId}
-        size={size}
-        hidden={hidden}
-      />
-    ) : (
-      <CrewComposerControl
-        state={state}
-        settings={props.settings}
-        size={size}
-        hidden={hidden}
-        fallback={fallback}
-      />
-    );
+  const control = (fallback: ModelSelection, size: "sm" | "xs", hidden = false) => (
+    <CrewComposerControl
+      state={state}
+      settings={props.settings}
+      size={size}
+      hidden={hidden}
+      fallback={fallback}
+    />
+  );
   return {
     props: adjusted,
     selected,
-    visible: state.visible || view !== null,
+    visible: state.visible,
     control,
     crewInitCommands,
   };

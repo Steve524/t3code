@@ -24,7 +24,7 @@ function CrewRunsList() {
   const { environments } = useEnvironments();
   const refreshing = groups.some(({ result }) => result.waiting);
   return (
-    <main className="h-full min-w-0 space-y-6 overflow-auto p-4 sm:p-6 [overflow-wrap:anywhere]">
+    <main className="h-full min-w-0 flex-1 space-y-6 overflow-auto p-4 sm:p-6 [overflow-wrap:anywhere]">
       <header className="flex flex-wrap items-center gap-4">
         <h1 className="text-xl font-semibold">Crew runs</h1>
         <Link

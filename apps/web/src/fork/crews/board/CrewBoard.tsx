@@ -371,7 +371,7 @@ export function CrewBoard({
   const { view, result } = useCrewLive(environmentId, input);
   if (!view)
     return (
-      <div className="space-y-3 p-6 text-sm">
+      <div className="min-w-0 flex-1 space-y-3 p-6 text-sm">
         <p role={result?._tag === "Failure" ? "alert" : "status"}>
           {result?._tag === "Failure"
             ? "Could not load this crew run. Check the environment connection."
@@ -419,7 +419,7 @@ function LiveCrewBoard({
   const columns = crewBoardColumns(view, needsYouOnly);
   return (
     <main
-      className="@container h-full min-h-0 min-w-0 overflow-auto [overflow-wrap:anywhere]"
+      className="@container h-full min-h-0 min-w-0 flex-1 overflow-auto [overflow-wrap:anywhere]"
       aria-label={`${view.crewName} board`}
     >
       <header className="space-y-3 border-b p-4">

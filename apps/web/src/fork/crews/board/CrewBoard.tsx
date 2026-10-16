@@ -26,6 +26,7 @@ import { useCrewControl, useCrewLive, type CrewControl } from "./crewBoardState"
 import { CrewBudgetGate, CrewConfirm, CrewGateActions } from "./CrewControls";
 import { CrewModelLabel, CrewRoleModel } from "./CrewModel";
 import { openCrewBoard } from "./openCrewBoard";
+import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../../workspaceTitlebar";
 
 export function CrewThreadLink({
   environmentId,
@@ -371,7 +372,9 @@ export function CrewBoard({
   const { view, result } = useCrewLive(environmentId, input);
   if (!view)
     return (
-      <div className="min-w-0 flex-1 space-y-3 p-6 text-sm">
+      <div
+        className={`min-w-0 flex-1 space-y-3 p-6 text-sm ${"threadId" in input ? "" : COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS}`}
+      >
         <p role={result?._tag === "Failure" ? "alert" : "status"}>
           {result?._tag === "Failure"
             ? "Could not load this crew run. Check the environment connection."
@@ -423,7 +426,9 @@ function LiveCrewBoard({
       aria-label={`${view.crewName} board`}
     >
       <header className="space-y-3 border-b p-4">
-        <div className="flex flex-wrap items-center gap-3">
+        <div
+          className={`flex flex-wrap items-center gap-3 ${inPanel ? "" : COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS}`}
+        >
           <Link
             className="rounded-sm text-xs underline underline-offset-2 hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
             to="/crews"

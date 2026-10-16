@@ -9,6 +9,7 @@ import { useEnvironments } from "../../../state/environments";
 import { Badge } from "../../../components/ui/badge";
 import { crewRuns } from "../composer/crewComposerState";
 import { crewProjectRunsAtom, useCrewPreferences } from "./crewBoardState";
+import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../../workspaceTitlebar";
 
 export function CrewsPage() {
   const runId = useParams({ strict: false, select: (params) => params.runId });
@@ -25,7 +26,9 @@ function CrewRunsList() {
   const refreshing = groups.some(({ result }) => result.waiting);
   return (
     <main className="h-full min-w-0 flex-1 space-y-6 overflow-auto p-4 sm:p-6 [overflow-wrap:anywhere]">
-      <header className="flex flex-wrap items-center gap-4">
+      <header
+        className={`flex flex-wrap items-center gap-4 ${COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS}`}
+      >
         <h1 className="text-xl font-semibold">Crew runs</h1>
         <Link
           className="rounded-sm text-sm underline underline-offset-2 hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"

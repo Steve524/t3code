@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  decodeCrew,
-  end,
-  task,
-  withSteps,
-} from "../../../../../packages/shared/src/fork/crews/crewTestFixtures.ts";
-import { crewCardColumn, crewCardLane } from "./crewRunView.ts";
+import { crewCardLane } from "./crewRunView.ts";
 
 describe("board lanes", () => {
   it.each([
@@ -40,24 +34,4 @@ describe("board lanes", () => {
       expect(crewCardLane({ state, outcome: null }, true)).toBe("skipped");
     },
   );
-});
-
-describe("board columns", () => {
-  const crew = decodeCrew(
-    withSteps(
-      {
-        work: { ...task, next: "check" },
-        check: { ...task, column: "qa", next: "done" },
-        done: end,
-      },
-      { board: { columns: [{ id: "build", label: "Build", steps: ["work", "check"] }] } },
-    ),
-  );
-
-  it("prefers the step's own column, then the board's, then the step type", () => {
-    expect(crewCardColumn(crew, "check", "task")).toBe("qa");
-    expect(crewCardColumn(crew, "work", "task")).toBe("build");
-    const { board: _board, ...boardless } = crew;
-    expect(crewCardColumn(boardless, "work", "task")).toBe("task");
-  });
 });

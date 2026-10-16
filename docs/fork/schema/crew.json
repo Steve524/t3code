@@ -519,11 +519,6 @@
                       ]
                     }
                   },
-                  "column": {
-                    "type": "string",
-                    "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                    "maxLength": 64
-                  },
                   "timeoutMinutes": {
                     "type": "number",
                     "minimum": 1
@@ -701,11 +696,6 @@
                       ]
                     }
                   },
-                  "column": {
-                    "type": "string",
-                    "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                    "maxLength": 64
-                  },
                   "timeoutMinutes": {
                     "type": "number",
                     "minimum": 1
@@ -858,11 +848,6 @@
                         }
                       ]
                     }
-                  },
-                  "column": {
-                    "type": "string",
-                    "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                    "maxLength": 64
                   },
                   "timeoutMinutes": {
                     "type": "number",
@@ -1049,11 +1034,6 @@
                       ]
                     }
                   },
-                  "column": {
-                    "type": "string",
-                    "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                    "maxLength": 64
-                  },
                   "timeoutMinutes": {
                     "type": "number",
                     "minimum": 1
@@ -1211,11 +1191,6 @@
                       ]
                     }
                   },
-                  "column": {
-                    "type": "string",
-                    "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                    "maxLength": 64
-                  },
                   "timeoutMinutes": {
                     "type": "number",
                     "minimum": 1
@@ -1352,11 +1327,6 @@
                         }
                       ]
                     }
-                  },
-                  "column": {
-                    "type": "string",
-                    "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                    "maxLength": 64
                   },
                   "timeoutMinutes": {
                     "type": "number",
@@ -1495,11 +1465,6 @@
                       ]
                     },
                     "minProperties": 1
-                  },
-                  "column": {
-                    "type": "string",
-                    "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                    "maxLength": 64
                   },
                   "timeoutMinutes": {
                     "type": "number",
@@ -1642,11 +1607,6 @@
                       ]
                     }
                   },
-                  "column": {
-                    "type": "string",
-                    "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                    "maxLength": 64
-                  },
                   "timeoutMinutes": {
                     "type": "number",
                     "minimum": 1
@@ -1693,40 +1653,6 @@
         }
       },
       "required": ["start", "steps"],
-      "additionalProperties": false
-    },
-    "board": {
-      "type": "object",
-      "properties": {
-        "columns": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                "maxLength": 64
-              },
-              "label": {
-                "type": "string",
-                "minLength": 1
-              },
-              "steps": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
-                  "maxLength": 64
-                }
-              }
-            },
-            "required": ["id", "label", "steps"],
-            "additionalProperties": false
-          }
-        }
-      },
-      "required": ["columns"],
       "additionalProperties": false
     },
     "skills": {

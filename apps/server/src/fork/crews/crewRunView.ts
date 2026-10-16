@@ -4,7 +4,6 @@
  *
  * @module crewRunView
  */
-import type { CrewFile } from "../../../../../packages/contracts/src/fork/crews/crewFile.ts";
 import type {
   CrewRunLane,
   CrewRunStatus,
@@ -38,16 +37,6 @@ export function crewCardLane(
     default:
       return "skipped";
   }
-}
-
-/** The step's own column, else the board column listing it, else one per step type. */
-export function crewCardColumn(crew: CrewFile, stepId: string, stepType: string) {
-  const step = Object.hasOwn(crew.flow.steps, stepId) ? crew.flow.steps[stepId] : undefined;
-  return (
-    step?.column ??
-    crew.board?.columns.find((column) => column.steps.includes(stepId))?.id ??
-    stepType
-  );
 }
 
 export function buildCrewRunView(
@@ -91,15 +80,10 @@ export function buildCrewRunView(
         ? { mergedCount: card.mergedCount ?? 0, conflictPaths: card.conflictPaths ?? [] }
         : {}),
       lane: crewCardLane(row, runOver),
-      column: crewCardColumn(crew, row.stepId, row.stepType),
+      column: row.stepType,
     };
   });
-  const columns = (crew.board?.columns ?? []).map(({ id, label }) => ({ id, label }));
-  for (const card of cards) {
-    if (!columns.some((column) => column.id === card.column)) {
-      columns.push({ id: card.column, label: card.column });
-    }
-  }
+  const columns = [...new Set(cards.map((card) => card.column))].map((id) => ({ id, label: id }));
   const { budget } = snapshot;
   return {
     runId: run.runId,

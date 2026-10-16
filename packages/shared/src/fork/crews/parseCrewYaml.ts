@@ -1,7 +1,7 @@
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
-import { isNode, LineCounter, parseDocument } from "yaml";
+import { isCollection, isMap, isNode, isScalar, LineCounter, parseDocument } from "yaml";
 
 import type { CrewDiagnostic } from "../../../../contracts/src/fork/crews/crewFile.ts";
 import { CrewFile, CrewMcpFile, CrewsToolboxFile, CrewToolsFile } from "./crewFileSchema.ts";
@@ -37,6 +37,13 @@ function parseFile<S extends Schema.ConstraintDecoder<unknown>>(
     // Missing properties have no node; locate their closest containing YAML node.
     for (let length = path.length; length >= 0; length--) {
       const node = document.getIn(path.slice(0, length), true);
+      if (length === path.length && isCollection(node)) {
+        const parent = document.getIn(path.slice(0, -1), true);
+        const key = isMap(parent)
+          ? parent.items.find(({ key }) => isScalar(key) && key.value === path.at(-1))?.key
+          : undefined;
+        if (isNode(key) && key.range) return lineCounter.linePos(key.range[0]);
+      }
       if (isNode(node) && node.range) return lineCounter.linePos(node.range[0]);
     }
     return { line: 1, col: 1 };
@@ -69,7 +76,8 @@ function parseFile<S extends Schema.ConstraintDecoder<unknown>>(
       return typeof key === "number" ? key : String(key);
     });
     const { line, col } = position(path);
-    diagnostics.push({ severity: "error", message: issue.message, file, line, column: col, path });
+    const message = path.length ? `${path.join(".")}: ${issue.message}` : issue.message;
+    diagnostics.push({ severity: "error", message, file, line, column: col, path });
   }
   return { value: null, diagnostics };
 }

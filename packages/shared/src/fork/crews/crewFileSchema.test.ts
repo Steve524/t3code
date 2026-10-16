@@ -186,6 +186,14 @@ describe("crew file v1", () => {
 
   it.each([
     { type: "script" },
+    { type: "task", role: "worker", task: "Build", column: "build" },
+    { type: "parallel", branches: ["a"], column: "build" },
+    { type: "fanout", role: "worker", task: "Build", over: "artifacts.items", column: "build" },
+    { type: "merge", column: "build" },
+    { type: "script", run: "echo check", column: "build" },
+    { type: "script", tool: "tests", column: "build" },
+    { type: "gate", prompt: "Ship?", outcomes: { yes: "done" }, column: "build" },
+    { type: "end", column: "build" },
     { type: "script", tool: "tests", run: "echo duplicate" },
     { type: "fanout", role: "worker", task: "Work" },
     { type: "parallel", branches: [] },
@@ -298,6 +306,41 @@ describe("toolbox and ancillary files", () => {
 });
 
 describe("YAML diagnostics", () => {
+  it.each(["board:\n  columns: []", "board: {}", "board: null"])(
+    "rejects removed %s at the board key's line",
+    (board) => {
+      const result = parseCrewYaml(`# Retired board\n${board}\n${stringify(minimal)}`);
+      expect(result.value).toBeNull();
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({
+          severity: "error",
+          message: expect.stringContaining("board"),
+          file: "crew.yaml",
+          line: 2,
+          column: expect.any(Number),
+          path: ["board"],
+        }),
+      );
+    },
+  );
+
+  it("rejects a step column at its line", () => {
+    const result = parseCrewYaml(
+      stringify({
+        ...minimal,
+        flow: { start: "done", steps: { done: { type: "end", column: "ship" } } },
+      }),
+    );
+    expect(result.value).toBeNull();
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining("column"),
+        line: 12,
+        path: ["flow", "steps", "done", "column"],
+      }),
+    );
+  });
+
   it("locates nested schema errors at the value node", () => {
     const result = parseCrewsToolboxYaml("version: 1\ntags:\n  worker:\n    tools: false\n");
     expect(result.diagnostics).toContainEqual(

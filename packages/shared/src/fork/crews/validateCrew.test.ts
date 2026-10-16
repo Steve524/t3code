@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
 
 import { ProviderDriverKind } from "../../../../contracts/src/providerInstance.ts";
 import { detectCrewHome } from "./crewHome.ts";
@@ -321,17 +321,17 @@ describe("crew validation errors", () => {
       message: "needs owns",
     },
     {
-      name: "unknown board step",
+      name: "removed board field",
       input: {
         ...example,
         board: { columns: [{ id: "build", label: "Build", steps: ["missing"] }] },
       },
-      message: 'Unknown step "missing"',
+      path: ["board"],
     },
     {
-      name: "unknown board column",
+      name: "removed step column",
       input: withSteps({ work: { ...task, column: "missing", next: "done" }, done: end }),
-      message: "Unknown board column",
+      path: ["flow", "steps", "work", "column"],
     },
   ];
   it.each(cases)("rejects $name with a located diagnostic", (entry) => {
@@ -358,6 +358,20 @@ describe("crew validation errors", () => {
     expect(
       result.errors.find((issue) => issue.message.startsWith("Unlimited cycle")),
     ).toMatchObject({ file: "crew.yaml", line: 10, column: 7, path: ["flow", "steps", "review"] });
+  });
+
+  it("rejects board at its key's line in the original YAML", () => {
+    const text = `# Retired board\nboard:\n  columns: []\n${stringify(example)}`;
+    const result = validate(parse(text), { source: { file: "crew.yaml", text } });
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining("board"),
+        file: "crew.yaml",
+        line: 2,
+        column: 1,
+        path: ["board"],
+      }),
+    );
   });
 });
 
@@ -599,13 +613,6 @@ describe("project-dependent status and warnings", () => {
       }),
     },
     { name: "lead is used implicitly", input: { ...example, home: leadHome, roles: leadRoles } },
-    {
-      name: "valid board references",
-      input: {
-        ...example,
-        board: { columns: [{ id: "build", label: "Build", steps: ["work", "done"] }] },
-      },
-    },
   ])("accepts $name without warnings", ({ input }) => {
     const result = validate(input);
     expect(result.errors).toEqual([]);

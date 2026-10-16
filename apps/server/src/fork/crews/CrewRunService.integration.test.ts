@@ -196,7 +196,7 @@ describe("crew runs", () => {
           threadId: homeThreadId,
           state: "working",
           lane: "working",
-          column: "plan",
+          column: "task",
           outcome: null,
         });
 

@@ -1,7 +1,7 @@
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
-import { isNode, LineCounter, parseDocument } from "yaml";
+import { isCollection, isMap, isNode, isScalar, LineCounter, parseDocument } from "yaml";
 
 import type { CrewDiagnostic } from "../../../../contracts/src/fork/crews/crewFile.ts";
 
@@ -18,10 +18,21 @@ export function crewDiagnostic(source: CrewSource) {
     severity: CrewDiagnostic["severity"],
     message: string,
     path: CrewDiagnostic["path"] = [],
+    atKey = false,
   ): CrewDiagnostic => {
     if (document)
       for (let length = path.length; length >= 0; length--) {
         const node = document.getIn(path.slice(0, length), true);
+        if (atKey && length === path.length && isCollection(node)) {
+          const parent = document.getIn(path.slice(0, -1), true);
+          const key = isMap(parent)
+            ? parent.items.find(({ key }) => isScalar(key) && key.value === path.at(-1))?.key
+            : undefined;
+          if (isNode(key) && key.range) {
+            const { line, col } = lines.linePos(key.range[0]);
+            return { severity, message, file: source.file, line, column: col, path };
+          }
+        }
         if (isNode(node) && node.range) {
           const { line, col } = lines.linePos(node.range[0]);
           return { severity, message, file: source.file, line, column: col, path };
@@ -47,7 +58,12 @@ export function decodeCrewValue<S extends Schema.ConstraintDecoder<unknown>>(
       const key = typeof segment === "object" ? segment.key : segment;
       return typeof key === "number" ? key : String(key);
     });
-    return diagnostic("error", issue.message, path);
+    return diagnostic(
+      "error",
+      path.length ? `${path.join(".")}: ${issue.message}` : issue.message,
+      path,
+      true,
+    );
   });
   return { value: null, diagnostics };
 }

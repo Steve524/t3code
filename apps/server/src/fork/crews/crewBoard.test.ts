@@ -81,6 +81,25 @@ function rows(run: CrewRunRecord): CrewCardRow[] {
 }
 
 describe("board control and persisted display data", () => {
+  it("derives columns from card step types without crew board settings", () => {
+    const run = engine({
+      work: { ...task, next: "check" },
+      check: { ...task, next: "approval" },
+      approval: { type: "gate", prompt: "Ship?", outcomes: { yes: "done" } },
+      done: end,
+    });
+    run.start();
+    run.complete(run.latest("work"));
+    run.complete(run.latest("check"));
+    const saved = record(run);
+    const view = buildCrewRunView(saved, rows(saved), { toolbox: false });
+    expect(view.cards.map((card) => card.column)).toEqual(["task", "task", "gate"]);
+    expect(view.columns).toEqual([
+      { id: "task", label: "task" },
+      { id: "gate", label: "gate" },
+    ]);
+  });
+
   it("stops without routing even with onNoReport: done, waits for acknowledgement, then retries", () => {
     const run = engine({
       work: { ...task, onNoReport: "done", next: "next" },

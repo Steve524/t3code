@@ -265,11 +265,6 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
     }
   }
 
-  for (const [index, column] of (crew.board?.columns ?? []).entries())
-    column.steps.forEach((id, item) => checkStep(id, ["board", "columns", index, "steps", item]));
-  for (const { id, step } of flow.nodes)
-    if (step.column && !crew.board?.columns.some((column) => column.id === step.column))
-      error(`Unknown board column "${step.column}".`, ["flow", "steps", id, "column"]);
   const next = new Map(flow.nodes.map(({ id }) => [id, [] as string[]]));
   for (const edge of flow.edges) if (steps.has(edge.to)) next.get(edge.from)?.push(edge.to);
   const reached = new Set<string>();

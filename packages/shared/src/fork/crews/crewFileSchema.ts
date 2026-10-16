@@ -84,7 +84,6 @@ const Outcomes = Schema.Record(CrewSlug, CrewRoute);
 const StepFields = {
   next: Schema.optionalKey(CrewRoute),
   outcomes: Schema.optionalKey(Outcomes),
-  column: Schema.optionalKey(CrewSlug),
   timeoutMinutes: Schema.optionalKey(PositiveNumber),
   runtimeMode: Schema.optionalKey(CrewRuntimeMode),
   interactionMode: Schema.optionalKey(CrewInteractionMode),
@@ -232,11 +231,6 @@ export const CrewFile = Schema.Struct({
     start: CrewSlug,
     steps: Schema.Record(CrewSlug, CrewStep).check(Schema.isMinProperties(1)),
   }),
-  board: Schema.optionalKey(
-    Schema.Struct({
-      columns: Schema.Array(Schema.Struct({ id: CrewSlug, label: Text, steps: Slugs })),
-    }),
-  ),
   ...CrewToolboxGrant.fields,
 });
 

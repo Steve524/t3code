@@ -96,10 +96,3 @@ flow:
 
     done:
       type: end
-
-board:
-  columns:
-    - { id: plan, label: Plan, steps: [plan] }
-    - { id: build, label: Build, steps: [build, integrate, fix] }
-    - { id: review, label: Review, steps: [review] }
-    - { id: ship, label: Ship, steps: [approval, done] }

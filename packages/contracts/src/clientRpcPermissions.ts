@@ -14,7 +14,6 @@ import { FORK_CREWS_GUARDED_RPC_SCOPES } from "./fork/crews/crewRpc.ts"; // FORK
 export const CLIENT_GUARDED_RPC_SCOPES = {
   ...FORK_CREWS_GUARDED_RPC_SCOPES, // FORK: crews writes
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
-  // Endpoint checks exist to configure exports, so they need the same grant as saving them.
   [WS_METHODS.serverCheckOtlpEndpoint]: AuthSettingsWriteScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,
   [WS_METHODS.pullRequestsUpdate]: AuthSourceControlWriteScope,

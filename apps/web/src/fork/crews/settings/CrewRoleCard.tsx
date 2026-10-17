@@ -14,7 +14,7 @@ import {
   resolveDefaultProviderModelSelection,
   sortProviderInstanceEntries,
 } from "../../../providerInstances";
-import { useEnvironments } from "../../../state/environments";
+import { useEnvironmentProviders } from "../../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../../state/server";
 import { useScopedSettings } from "../../../components/settings/useScopedSettings";
 import { SETTINGS_PICKER_TRIGGER_CLASSNAME } from "../../../components/settings/settingsLayout";
@@ -62,16 +62,13 @@ export function CrewRoleCard({
   pending: boolean;
   onSet: (roleId: string, patch: OverridePatch) => void;
 }) {
-  const { environments } = useEnvironments();
+  const providersByEnvironment = useEnvironmentProviders();
   const settings = useScopedSettings();
   const navigate = useNavigate();
   const role = detail.definition?.roles[roleId];
   const resolved = detail.roles.find((role) => role.id === roleId);
   const { target } = snapshot;
-  const environment = environments.find(
-    (environment) => environment.environmentId === target.environmentId,
-  );
-  const providers = environment?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
+  const providers = providersByEnvironment.get(target.environmentId) ?? EMPTY_SERVER_PROVIDERS;
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(
       deriveProviderInstanceEntries(providers),
@@ -115,9 +112,7 @@ export function CrewRoleCard({
     .flatMap((snapshot) => Option.getOrNull(AsyncResult.value(snapshot.overrides)) ?? [])
     .filter((override) => override.crewId === detail.summary.id && override.roleId === roleId);
   const providerTargets = snapshots.map(({ target }) => {
-    const providers =
-      environments.find((environment) => environment.environmentId === target.environmentId)
-        ?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
+    const providers = providersByEnvironment.get(target.environmentId) ?? EMPTY_SERVER_PROVIDERS;
     return {
       label: target.label,
       entries: applyProviderInstanceSettings(

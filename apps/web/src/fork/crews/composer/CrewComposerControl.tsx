@@ -29,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../components/ui/select";
-import { useEnvironments } from "../../../state/environments";
+import { useEnvironmentProviders } from "../../../state/environments";
 import { EMPTY_SERVER_PROVIDERS } from "../../../state/server";
 import { getCustomModelOptionsByInstance } from "../../../modelSelection";
 import {
@@ -79,14 +79,12 @@ function CrewRoles({
   settings: UnifiedSettings;
   fallback: ModelSelection;
 }) {
-  const { environments } = useEnvironments();
+  const providersByEnvironment = useEnvironmentProviders();
   const navigate = useNavigate();
   const { target, data, selection } = state;
   if (!target || !data?.detail) return null;
   const detail = data.detail;
-  const providers =
-    environments.find((environment) => environment.environmentId === target.environmentId)
-      ?.serverConfig?.providers ?? EMPTY_SERVER_PROVIDERS;
+  const providers = providersByEnvironment.get(target.environmentId) ?? EMPTY_SERVER_PROVIDERS;
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(
       deriveProviderInstanceEntries(providers),

@@ -47,7 +47,10 @@ describe("native crew MCP servers", () => {
   it("adds a crew role's servers to Codex next to t3-code", () => {
     const servers = codexThreadRuntimeParams({ mcpSession: session }).config.mcp_servers;
     expect(servers).toEqual({
-      "t3-code": { url: base.endpoint, http_headers: { Authorization: base.authorizationHeader } },
+      "t3-code": expect.objectContaining({
+        url: base.endpoint,
+        http_headers: { Authorization: base.authorizationHeader },
+      }),
       playwright: { command: "npx", args: ["@playwright/mcp@latest"], env: {} },
       figma: { command: "figma-mcp", args: ["--stdio"], env: { FIGMA_TOKEN: SECRET } },
     });

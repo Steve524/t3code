@@ -1,16 +1,15 @@
-import { OrchestratorMcpFailure, type ProjectId, type ThreadId } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, type ProjectId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
-import { CrewMcpFailure } from "../../../../../../packages/contracts/src/fork/crews/crewRun.ts";
+import { CrewMcpFailure } from "../../../../../../packages/contracts/src/fork/crews/crewMcp.ts";
 import type { ForkCrewsError } from "../../../../../../packages/contracts/src/fork/crews/crewRpc.ts";
 import * as McpInvocationContext from "../../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../../mcp/McpToolAccess.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
-import type * as CrewCatalog from "../CrewCatalog.ts";
-import * as CrewRunService from "../CrewRunService.ts";
+import * as CrewCatalog from "../CrewCatalog.ts";
 import { bundledSkill, bundledSkillNames } from "../skills/bundledSkills.ts";
 import { CrewToolkit } from "./tools.ts";
 
@@ -29,15 +28,6 @@ const callingThread = McpInvocationContext.McpInvocationContext.pipe(
   Effect.flatMap((scope) => McpInvocationContext.requireThreadScope(scope, "A crew tool")),
   Effect.map((scope) => scope.thread.threadId),
 );
-
-/** Calls one run-service method as the calling thread. */
-const asCard = <A, E>(
-  call: (runs: CrewRunService.CrewRunService["Service"], threadId: ThreadId) => Effect.Effect<A, E>,
-) =>
-  Effect.gen(function* () {
-    const threadId = yield* callingThread;
-    return yield* call(yield* CrewRunService.CrewRunService, threadId);
-  });
 
 const unavailable = (message: string) => () => new CrewMcpFailure({ code: "unavailable", message });
 
@@ -90,49 +80,25 @@ const forProject = <A>(
 ) =>
   Effect.gen(function* () {
     const projectId = yield* callingProject;
-    const catalog = yield* (yield* CrewRunService.CrewRunService).catalog;
+    const catalog = yield* CrewCatalog.CrewCatalog;
     return yield* call(catalog, projectId).pipe(Effect.mapError(fromCatalogError));
   });
 
-// A card records while its own turn is live, so its writes act as the caller; nothing here
-// reaches beyond the run the calling thread works for.
+// Phase 5 binds callers to frozen grants; until then no thread can reach a server.
+const gatewayUnavailable = callingThread.pipe(
+  Effect.flatMap(() =>
+    Effect.fail(
+      new CrewMcpFailure({
+        code: "unavailable",
+        message: "Crew MCP access is disabled while Crews v2 is being built.",
+      }),
+    ),
+  ),
+);
+
 const handlers = {
-  crew_context: McpToolAccess.readsAsCaller(() =>
-    asCard((runs, threadId) => runs.context(threadId)),
-  ),
-  crew_report: McpToolAccess.actsAsCaller((input) =>
-    asCard((runs, threadId) => runs.report(threadId, input)),
-  ),
-  crew_decide: McpToolAccess.actsAsCaller((input) =>
-    asCard((runs, threadId) => runs.decide(threadId, input)),
-  ),
-  crew_artifact_read: McpToolAccess.readsAsCaller(({ name }) =>
-    asCard((runs, threadId) => runs.readArtifact(threadId, name)),
-  ),
-  crew_artifact_write: McpToolAccess.actsAsCaller((input) =>
-    asCard((runs, threadId) => runs.writeArtifact(threadId, input)),
-  ),
-  crew_skill_get: McpToolAccess.readsAsCaller((input) =>
-    asCard((runs, threadId) => runs.getSkill(threadId, input)),
-  ),
-  crew_note: McpToolAccess.actsAsCaller((input) =>
-    asCard((runs, threadId) => runs.note(threadId, input)),
-  ),
-  crew_validate: McpToolAccess.readsAsCaller((input) =>
-    asCard((runs, threadId) => runs.validate(threadId, input)),
-  ),
-  crew_tool_list: McpToolAccess.readsAsCaller(() =>
-    asCard((runs, threadId) => runs.listTools(threadId)),
-  ),
-  crew_tool_run: McpToolAccess.actsAsCaller((input) =>
-    asCard((runs, threadId) => runs.runTool(threadId, input)),
-  ),
-  crew_mcp_list_tools: McpToolAccess.actsAsCaller(({ server }) =>
-    asCard((runs, threadId) => runs.mcpListTools(threadId, server)),
-  ),
-  crew_mcp_call: McpToolAccess.actsAsCaller((input) =>
-    asCard((runs, threadId) => runs.mcpCall(threadId, input)),
-  ),
+  crew_mcp_list_tools: McpToolAccess.actsAsCaller(() => gatewayUnavailable),
+  crew_mcp_call: McpToolAccess.actsAsCaller(() => gatewayUnavailable),
   t3_skill_get: McpToolAccess.readsAsCaller(({ name, file }) =>
     callingProject.pipe(
       Effect.flatMap(() => {

@@ -119,9 +119,6 @@ describe("crew prompt", () => {
           skills: [
             {
               name: "repo-map",
-              path: "/x/SKILL.md",
-              source: "crew",
-              hash: "h",
               description: "Where things live.",
             },
           ],
@@ -182,12 +179,9 @@ describe("crew prompt", () => {
         .split("## Tools\n\n")[1]
         ?.split("\n\n## ")[0];
     const gateway = "MCP servers you reach through `crew_mcp_list_tools` and `crew_mcp_call`";
-    expect(tools("codex")).toBe("MCP servers whose tools you have directly: playwright, figma.");
-    expect(tools("opencode")).toBe(`${gateway}: playwright, figma.`);
-    // Cursor gets a server with a secret through the gateway only.
-    expect(tools("cursor")).toBe(
-      `MCP servers whose tools you have directly: playwright.\n\n${gateway}: figma.`,
-    );
+    for (const driver of ["codex", "claudeAgent", "cursor", "grok", "acpRegistry", "opencode"]) {
+      expect(tools(driver)).toBe(`${gateway}: playwright, figma.`);
+    }
   });
 
   it("tells a conflict resolver which files to fix and to leave the commit to the crew", () => {

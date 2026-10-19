@@ -1,7 +1,8 @@
 import type { CrewDetail } from "@t3tools/contracts/fork/crews/crewRpc";
-import type { CrewRunStartInput } from "@t3tools/contracts/fork/crews/crewRun";
 
-import type { CrewComposerSelection, CrewComposerTarget } from "./crewComposerSelectionStore";
+import type { CrewComposerSelection } from "./crewComposerSelectionStore";
+
+export const CREW_START_DISABLED_REASON = "Crew starts are disabled while Crews v2 is being built.";
 
 export function crewInputError(detail: CrewDetail, inputs: CrewComposerSelection["inputs"]) {
   for (const [name, field] of Object.entries(detail.definition?.inputs ?? {})) {
@@ -27,50 +28,5 @@ export function crewSelectionError(selection: CrewComposerSelection, detail: Cre
       detail.diagnostics.find((diagnostic) => diagnostic.severity === "error")?.message ??
       "This crew has errors in this project. Open Crew settings."
     );
-  return crewInputError(detail, selection.inputs);
-}
-
-export function mapCrewSendInput(options: {
-  target: CrewComposerTarget;
-  selection: CrewComposerSelection;
-  detail: CrewDetail;
-  prompt: string;
-  attachments: CrewRunStartInput["attachments"];
-  envMode: "local" | "worktree";
-  baseRef: string | null;
-  startFromOrigin: boolean;
-  runtimeMode: CrewRunStartInput["runtimeMode"];
-  modelSelection: NonNullable<CrewRunStartInput["modelSelection"]>;
-}): CrewRunStartInput {
-  const error = crewSelectionError(options.selection, options.detail);
-  if (error) throw new Error(error);
-  if (!options.selection.crewId) throw new Error("Choose a crew before starting a run.");
-  if (options.envMode === "worktree" && !options.baseRef?.trim())
-    throw new Error("Select a base branch before sending in New worktree mode.");
-  const inputs = Object.fromEntries(
-    Object.entries(options.detail.definition?.inputs ?? {}).flatMap(([name, field]) => {
-      const value = options.selection.inputs[name] ?? field.default;
-      return name === "brief" || value === undefined ? [] : [[name, value]];
-    }),
-  );
-  return {
-    projectId: options.target.projectId,
-    crewId: options.selection.crewId,
-    inputs: { ...inputs, brief: options.prompt },
-    attachments: options.attachments,
-    roleModelOverrides: options.selection.roleModelOverrides,
-    modelSelection: options.modelSelection,
-    workspace:
-      options.envMode === "worktree"
-        ? {
-            mode: "new-worktree",
-            baseRef:
-              options.startFromOrigin && !options.baseRef!.startsWith("origin/")
-                ? `origin/${options.baseRef}`
-                : options.baseRef!,
-          }
-        : { mode: "current-checkout" },
-    runtimeMode: options.runtimeMode,
-    clientRequestId: `crew:${options.target.draftId}`,
-  };
+  return crewInputError(detail, selection.inputs) ?? CREW_START_DISABLED_REASON;
 }

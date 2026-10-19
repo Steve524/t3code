@@ -148,7 +148,6 @@ import {
 } from "@t3tools/provider-core/server/subagentProjection";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import { codexExtraMcpServers } from "../../../../../packages/provider-core/src/server/fork/crewMcpServers.ts"; // FORK: crew native MCP
 
 const CODEX_PROVIDER = ProviderDriverKind.make("codex");
 export const CODEX_DRIVER_KIND = CODEX_PROVIDER;
@@ -1323,7 +1322,6 @@ export function codexThreadRuntimeParams(input: {
                   Authorization: mcpSession.authorizationHeader,
                 },
               },
-              ...codexExtraMcpServers(mcpSession), // FORK: crew native MCP
             },
           }),
     },

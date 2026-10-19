@@ -1,8 +1,7 @@
 import {
-  AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
   AuthOrchestrationReadScope,
   ProjectId,
-  ThreadId,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -17,7 +16,6 @@ import { FORK_CREWS_WS_METHODS } from "../../../../../packages/contracts/src/for
 import * as RpcAuthorization from "../../auth/RpcAuthorization.ts";
 import { rpcInstrumentationLayer } from "../../observability/RpcInstrumentation.ts";
 import * as CrewCatalog from "./CrewCatalog.ts";
-import * as CrewRunService from "./CrewRunService.ts";
 import * as CrewRpc from "./crewRpcHandlers.ts";
 
 const upstream = WsRpcGroup.omit(
@@ -50,26 +48,16 @@ describe("separate crew handler layer", () => {
                 Layer.mock(CrewCatalog.CrewCatalog)({
                   list: () => Effect.succeed([]),
                   subscribe: () => Stream.make([]),
-                }),
-              ),
-              Layer.provide(
-                Layer.mock(CrewRunService.CrewRunService)({
-                  start: () =>
+                  setToolboxMode: () =>
                     Effect.sync(() => {
-                      writes.push("start");
-                      return { runId: "run", homeThreadId: ThreadId.make("home") };
+                      writes.push("setMode");
                     }),
-                  pause: () =>
-                    Effect.sync(() => {
-                      writes.push("pause");
-                    }),
-                  subscribeByThread: () => Stream.make(null),
                 }),
               ),
             ),
             RpcAuthorization.layer(
               operate
-                ? [AuthOrchestrationReadScope, AuthOrchestrationOperateScope]
+                ? [AuthOrchestrationReadScope, AuthSettingsWriteScope]
                 : [AuthOrchestrationReadScope],
             ),
             rpcInstrumentationLayer,
@@ -79,33 +67,15 @@ describe("separate crew handler layer", () => {
       expect(yield* client[WS_METHODS.serverProbe]({})).toEqual({});
       expect(yield* client[FORK_CREWS_WS_METHODS.list]({})).toEqual([]);
       expect(yield* Stream.runCollect(client[FORK_CREWS_WS_METHODS.subscribe]({}))).toEqual([[]]);
-      expect(
-        yield* Stream.runCollect(
-          client[FORK_CREWS_WS_METHODS.runsSubscribe]({ threadId: ThreadId.make("ordinary") }),
-        ),
-      ).toEqual([null]);
-      const start = client[FORK_CREWS_WS_METHODS.runsStart]({
+      const write = client[FORK_CREWS_WS_METHODS.toolboxSetMode]({
         projectId: ProjectId.make("project"),
-        crewId: "trio",
-        inputs: { brief: "Implement it" },
-        attachments: [],
-        workspace: { mode: "current-checkout" },
-        runtimeMode: "full-access",
-        clientRequestId: "draft",
-      });
-      const pause = client[FORK_CREWS_WS_METHODS.runsControl]({
-        runId: "run",
-        action: { type: "pause" },
+        mode: "override",
       });
       if (operate) {
-        expect(yield* start).toEqual({ runId: "run", homeThreadId: "home" });
-        yield* pause;
-        expect(writes).toEqual(["start", "pause"]);
+        yield* write;
+        expect(writes).toEqual(["setMode"]);
       } else {
-        expect(yield* start.pipe(Effect.flip)).toMatchObject({
-          _tag: "EnvironmentAuthorizationError",
-        });
-        expect(yield* pause.pipe(Effect.flip)).toMatchObject({
+        expect(yield* write.pipe(Effect.flip)).toMatchObject({
           _tag: "EnvironmentAuthorizationError",
         });
         expect(writes).toEqual([]);

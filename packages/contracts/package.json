@@ -7,10 +7,6 @@
   ],
   "type": "module",
   "exports": {
-    "./fork/crews/crewRun": {
-      "types": "./src/fork/crews/crewRun.ts",
-      "default": "./src/fork/crews/crewRun.ts"
-    },
     "./fork/crews/crewFile": {
       "types": "./src/fork/crews/crewFile.ts",
       "import": "./src/fork/crews/crewFile.ts"

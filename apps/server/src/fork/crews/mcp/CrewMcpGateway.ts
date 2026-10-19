@@ -34,10 +34,10 @@ import {
   CrewMcpCallResult,
   CrewMcpFailure,
   CrewMcpToolList,
-} from "../../../../../../packages/contracts/src/fork/crews/crewRun.ts";
+} from "../../../../../../packages/contracts/src/fork/crews/crewMcp.ts";
 import * as ServerSecretStore from "../../../auth/ServerSecretStore.ts";
 import { crewSecretName } from "../crewSecretsSettings.ts";
-import { resolveCrewMcpEnv, type CrewMcpServer } from "./crewMcpDelivery.ts";
+import { resolveCrewMcpEnv, type CrewMcpServer } from "./crewMcpEnv.ts";
 
 /** How long a server may sit unused before its process is stopped. Tests shorten it. */
 export const CrewMcpIdleTimeout = Context.Reference<Duration.Duration>(

@@ -371,7 +371,7 @@ export const layerProduction = Layer.mergeAll(
   layerProviderContinuationWorkerProvided,
   layerAgentSessionImporterProvided,
   EffectOutbox.layerPruneWorker.pipe(Layer.provide(EffectOutbox.layer)),
-  // FORK-BEGIN: fork services (crews catalog and runs, their stores, fork migrations)
+  // FORK-BEGIN: fork services (crews catalog, settings, fork migrations)
   ForkLayer.layer.pipe(
     Layer.provide(
       Layer.mergeAll(

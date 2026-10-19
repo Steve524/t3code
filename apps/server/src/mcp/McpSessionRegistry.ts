@@ -11,7 +11,6 @@ import * as NetAddress from "effect/net/NetAddress";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
-import * as CrewNativeMcp from "../fork/crews/mcp/CrewNativeMcp.ts"; // FORK: crew native MCP
 
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
@@ -144,7 +143,6 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           authorizationHeader: `Bearer ${rawToken}`,
           browserToolsAvailable: scope.capabilities.has("preview"),
           capabilities: scope.capabilities,
-          ...(yield* CrewNativeMcp.forThread(scope.thread.threadId)), // FORK: crew native MCP
         },
       };
     },

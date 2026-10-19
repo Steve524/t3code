@@ -8,7 +8,6 @@ import {
 } from "../../../../../packages/contracts/src/fork/crews/crewRpc.ts";
 import { RpcInstrumentation } from "../../observability/RpcInstrumentation.ts";
 import * as CrewCatalog from "./CrewCatalog.ts";
-import * as CrewRunService from "./CrewRunService.ts";
 
 export const methods = Object.values(FORK_CREWS_WS_METHODS);
 export const group = RpcGroup.make(...ForkCrewsRpcs)
@@ -19,7 +18,6 @@ export const group = RpcGroup.make(...ForkCrewsRpcs)
 export const layer = group.toLayer(
   Effect.gen(function* () {
     const crews = yield* CrewCatalog.CrewCatalog;
-    const runs = yield* CrewRunService.CrewRunService;
     return group.of({
       [FORK_CREWS_WS_METHODS.list]: (input) => crews.list(input.projectId),
       [FORK_CREWS_WS_METHODS.get]: (input) => crews.get(input),
@@ -30,39 +28,6 @@ export const layer = group.toLayer(
       [FORK_CREWS_WS_METHODS.roleOverridesList]: (input) => crews.listRoleOverrides(input),
       [FORK_CREWS_WS_METHODS.roleOverridesSet]: (input) => crews.setRoleOverride(input),
       [FORK_CREWS_WS_METHODS.roleOverridesReset]: (input) => crews.resetRoleOverrides(input),
-      [FORK_CREWS_WS_METHODS.runsStart]: (input) => runs.start(input),
-      [FORK_CREWS_WS_METHODS.runsControl]: ({ runId, action }) => {
-        switch (action.type) {
-          case "pause":
-            return runs.pause(runId);
-          case "resume":
-            return runs.resume(runId);
-          case "cancel":
-            return runs.cancel(runId);
-          case "resolveGate":
-            return runs.resolveGate({ runId, ...action });
-          case "retryCard":
-            return runs.retryCard({ runId, ...action });
-          case "stopCard":
-            return runs.stopCard({ runId, ...action });
-          case "skipCard":
-            return runs.skipCard({ runId, ...action });
-          case "forceOutcome":
-            return runs.forceOutcome({ runId, ...action });
-          case "setRoleModel":
-            return runs.setRoleModel({ runId, ...action });
-          case "resetRoute":
-            return runs.resetRoute({ runId, ...action });
-          case "extendBudget":
-            return runs.extendBudget({ runId, ...action });
-          case "selectFanout":
-            return runs.selectFanout({ runId, ...action });
-        }
-      },
-      [FORK_CREWS_WS_METHODS.runsGet]: (input) => runs.get(input.runId),
-      [FORK_CREWS_WS_METHODS.runsList]: (input) => runs.list(input),
-      [FORK_CREWS_WS_METHODS.runsSubscribe]: (input) =>
-        "runId" in input ? runs.subscribe(input.runId) : runs.subscribeByThread(input.threadId),
     });
   }),
 );

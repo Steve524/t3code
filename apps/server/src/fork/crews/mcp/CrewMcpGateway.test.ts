@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
 
-import type { CrewMcpCallResult } from "../../../../../../packages/contracts/src/fork/crews/crewRun.ts";
+import type { CrewMcpCallResult } from "../../../../../../packages/contracts/src/fork/crews/crewMcp.ts";
 import * as ServerSecretStore from "../../../auth/ServerSecretStore.ts";
 import * as CrewMcpGateway from "./CrewMcpGateway.ts";
 

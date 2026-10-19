@@ -33,7 +33,6 @@ import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.t
 import * as ProjectService from "../../../project/ProjectService.ts";
 import { runForkMigrations } from "../../persistence/ForkMigrations.ts";
 import * as CrewCatalog from "../CrewCatalog.ts";
-import * as CrewRunService from "../CrewRunService.ts";
 import * as CrewSettingsStore from "../CrewSettingsStore.ts";
 import * as CrewMcp from "../mcp/handlers.ts";
 
@@ -138,14 +137,7 @@ export const makeStandaloneCrewInitTools = Effect.fn("makeStandaloneCrewInitTool
           );
         },
       }),
-      // The toolkit reaches the catalog through the run service; nothing else of it runs here.
-      Layer.effect(
-        CrewRunService.CrewRunService,
-        Effect.gen(function* () {
-          const service = yield* CrewCatalog.CrewCatalog;
-          return CrewRunService.CrewRunService.of({ catalog: Effect.succeed(service) } as never);
-        }),
-      ).pipe(Layer.provide(catalog)),
+      catalog,
     );
     const context = yield* Layer.build(services);
     const toolkit = yield* CrewMcp.CrewToolkit.pipe(

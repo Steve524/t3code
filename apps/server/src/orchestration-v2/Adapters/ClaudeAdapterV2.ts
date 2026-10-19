@@ -174,7 +174,6 @@ import {
   subagentThreadTitle,
 } from "@t3tools/provider-core/server/subagentProjection";
 import { CLAUDE_READ_ONLY_CREW_MCP_ALLOWED_TOOLS } from "../../fork/crews/mcp/readOnlyTools.ts"; // FORK: crew tools
-import { withExtraClaudeMcpServers } from "../../../../../packages/provider-core/src/server/fork/crewMcpServers.ts"; // FORK: crew native MCP
 
 export const CLAUDE_PROVIDER = ProviderDriverKind.make("claudeAgent");
 export const CLAUDE_AGENT_SDK_QUERY_PROTOCOL = "claude-agent-sdk.query" as const;
@@ -1197,7 +1196,7 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__t3-code__t3_queue_read",
   "mcp__t3-code__html_preview",
   "mcp__t3-code__html_render",
-  ...CLAUDE_READ_ONLY_CREW_MCP_ALLOWED_TOOLS, // FORK: a read-only crew role can still report
+  ...CLAUDE_READ_ONLY_CREW_MCP_ALLOWED_TOOLS, // FORK: read-only threads can use /crew-init
 ];
 
 // Claude Code aborts an HTTP MCP call after 60 s ("The operation timed out.")
@@ -1240,7 +1239,6 @@ export function claudeMcpQueryOverrides(input: {
         timeout: CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
       },
     },
-    ...withExtraClaudeMcpServers(input, claudeMcpQueryOverrides), // FORK: crew native MCP
   };
 }
 

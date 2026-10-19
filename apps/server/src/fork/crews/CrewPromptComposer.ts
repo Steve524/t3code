@@ -12,10 +12,21 @@ import type {
   CrewFile,
   CrewRoute,
 } from "../../../../../packages/contracts/src/fork/crews/crewFile.ts";
-import type { CrewRunToolbox } from "../../../../../packages/contracts/src/fork/crews/crewRun.ts";
 import { normalizedPath } from "../../../../../packages/shared/src/fork/crews/validateCrew.ts";
-import { crewStepOutcomes, crewStepProduces } from "./crewReport.ts";
-import { crewMcpDelivery } from "./mcp/crewMcpDelivery.ts";
+
+/** A step's routed outcomes, plus `done` when it has a plain `next` or routes nothing. */
+function crewStepOutcomes(crew: CrewFile, stepId: string): ReadonlyArray<string> {
+  const step = Object.hasOwn(crew.flow.steps, stepId) ? crew.flow.steps[stepId] : undefined;
+  if (step === undefined || step.type === "end") return [];
+  const outcomes = Object.keys(step.outcomes ?? {});
+  return step.next !== undefined || outcomes.length === 0 ? [...outcomes, "done"] : outcomes;
+}
+
+/** The artifacts a step must hand over. Only steps a role runs produce any. */
+function crewStepProduces(crew: CrewFile, stepId: string): ReadonlyArray<string> {
+  const step = Object.hasOwn(crew.flow.steps, stepId) ? crew.flow.steps[stepId] : undefined;
+  return step !== undefined && "produces" in step ? (step.produces ?? []) : [];
+}
 
 /** Crew files by path relative to the crew folder. */
 type CrewFiles = Readonly<Record<string, string>>;
@@ -37,7 +48,11 @@ export interface CrewPromptInput {
   readonly branch: string | null;
   /** Picks the role's model-family overlay. */
   readonly driver: string | null;
-  readonly toolbox: CrewRunToolbox;
+  readonly toolbox: {
+    readonly skills: ReadonlyArray<{ readonly name: string; readonly description: string }>;
+    readonly mcp: ReadonlyArray<{ readonly name: string }>;
+    readonly tools: ReadonlyArray<{ readonly name: string; readonly description?: string }>;
+  };
   /** Notes teammates left for this role or card. */
   readonly notes: ReadonlyArray<string>;
 }
@@ -152,11 +167,7 @@ function compose(input: CrewPromptInput, inlineArtifacts: boolean) {
   const owns = step.owns === undefined ? [] : [step.owns].flat().map(render);
   const outcomes = crewStepOutcomes(crew, input.stepId);
   const produces = crewStepProduces(crew, input.stepId);
-  // Each server once, the way this role's provider gets it.
-  const native = input.toolbox.mcp.filter(
-    (server) => crewMcpDelivery(input.driver, server) === "native",
-  );
-  const gateway = input.toolbox.mcp.filter((server) => !native.includes(server));
+  const gateway = input.toolbox.mcp;
 
   const sections: ReadonlyArray<readonly [title: string, body: ReadonlyArray<string>]> = [
     ["Task", [render(crewText(input.files, step.task)).trim()]],
@@ -200,11 +211,6 @@ function compose(input: CrewPromptInput, inlineArtifacts: boolean) {
                 )
                 .join("\n"),
               "Run one with `crew_tool_run`. It runs in your checkout and returns its exit code and the end of its output.",
-            ]),
-        ...(native.length === 0
-          ? []
-          : [
-              `MCP servers whose tools you have directly: ${native.map((server) => server.name).join(", ")}.`,
             ]),
         ...(gateway.length === 0
           ? []

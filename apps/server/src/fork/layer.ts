@@ -5,23 +5,13 @@
 import * as Layer from "effect/Layer";
 
 import * as OrchestratorMcpService from "../mcp/OrchestratorMcpService.ts";
-import * as ProcessRunner from "../processRunner.ts";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as CrewCatalog from "./crews/CrewCatalog.ts";
-import * as CrewRunService from "./crews/CrewRunService.ts";
 import * as CrewSettingsStore from "./crews/CrewSettingsStore.ts";
-import * as CrewMcpGateway from "./crews/mcp/CrewMcpGateway.ts";
-import * as CrewNativeMcp from "./crews/mcp/CrewNativeMcp.ts";
 import * as ForkMigrations from "./persistence/ForkMigrations.ts";
 
-export const layer = Layer.mergeAll(CrewRunService.layer, CrewNativeMcp.layer).pipe(
-  Layer.provideMerge(CrewCatalog.layer),
+export const layer = CrewCatalog.layer.pipe(
   Layer.provide(CrewSettingsStore.layer),
-  Layer.provide(CrewMcpGateway.layer),
   Layer.provide(OrchestratorMcpService.layer),
-  // Runs merge, commit and script steps. The same layers the server builds for everything else.
-  Layer.provide(GitVcsDriver.layer),
-  Layer.provide(ProcessRunner.layer),
-  // Fork tables exist before a fork service reads them; a failed migration stops startup.
+  // Migration 002 stays in history until phase 3 drops its tables.
   Layer.provide(ForkMigrations.layer.pipe(Layer.orDie)),
 );

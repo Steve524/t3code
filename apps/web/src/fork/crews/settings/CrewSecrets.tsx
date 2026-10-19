@@ -50,21 +50,19 @@ export function CrewSecrets({
     if (!canWrite || locked.current || !validName || (value !== null && !value.trim())) return;
     locked.current = true;
     setSaving(true);
-    try {
-      const result = await updateSettings({
-        environmentId,
-        input: { patch: { forkCrewSecrets: { [trimmedName]: value } } },
-      });
-      if (result._tag === "Success") {
-        setDraft("");
-        toastManager.add({
-          type: "success",
-          title: value === null ? "Crew secret removed" : "Crew secret saved",
-        });
-      }
-    } finally {
+    const result = await updateSettings({
+      environmentId,
+      input: { patch: { forkCrewSecrets: { [trimmedName]: value } } },
+    }).finally(() => {
       locked.current = false;
       setSaving(false);
+    });
+    if (result._tag === "Success") {
+      setDraft("");
+      toastManager.add({
+        type: "success",
+        title: value === null ? "Crew secret removed" : "Crew secret saved",
+      });
     }
   };
 

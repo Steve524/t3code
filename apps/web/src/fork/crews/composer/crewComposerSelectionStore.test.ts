@@ -30,7 +30,7 @@ function memoryStorage() {
 }
 
 describe("crew composer selection", () => {
-  it("isolates drafts and remembers only the crew for a new draft in that project", () => {
+  it("keeps a selected crew in its draft without blocking the next draft", () => {
     const storage = memoryStorage();
     const store = createCrewComposerSelectionStore(() => storage);
     const actions = store.getState();
@@ -40,17 +40,14 @@ describe("crew composer selection", () => {
     actions.setRoleModel(target, "worker", model);
     const next = { ...target, draftId: "draft-b" as DraftId };
     actions.initialize(next);
-    expect(store.getState().selections[crewComposerTargetKey(next)]).toEqual({
-      ...EMPTY_CREW_SELECTION,
-      crewId: "trio",
-    });
+    expect(store.getState().selections[crewComposerTargetKey(next)]).toEqual(EMPTY_CREW_SELECTION);
     expect(
       store.getState().selections[crewComposerTargetKey(target)]?.roleModelOverrides.worker,
     ).toEqual(model);
     expect([...storage.values.values()]).toEqual(["trio"]);
   });
 
-  it("keeps projects and environments separate, including after reloading", () => {
+  it("ignores a saved crew after reloading while crew starts are disabled", () => {
     const storage = memoryStorage();
     createCrewComposerSelectionStore(() => storage)
       .getState()
@@ -65,7 +62,8 @@ describe("crew composer selection", () => {
       store.getState().initialize(other);
       expect(store.getState().selections[crewComposerTargetKey(other)]?.crewId).toBeNull();
     }
-    expect(store.getState().selections[crewComposerTargetKey(target)]?.crewId).toBe("trio");
+    expect(store.getState().selections[crewComposerTargetKey(target)]?.crewId).toBeNull();
+    expect([...storage.values.values()]).toEqual(["trio"]);
   });
 
   it("clears run-only values when switching crews or choosing No crew", () => {

@@ -10,6 +10,7 @@ Files that only exist in the fork (`FORK.md`, this file, anything under a
 Synced with `upstream/main` at `1451e7cb23` (2026-10-19). The merge preserved the
 marked wiring below without conflicts; native MCP injection remains removed.
 Retained crew hooks use React Compiler caching to satisfy the current lint rules.
+Crew settings save handlers also avoid unsupported `try`/`finally` syntax.
 
 ## Touch points
 
@@ -38,6 +39,7 @@ Phase 1 of Crews v2 removes the run engine, run RPCs and client exports, ten old
 use `CrewCatalog` directly. `crew_mcp_list_tools` and `crew_mcp_call` remain registered
 but refuse access until the gate supplies role grants. Migration 002 stays in history;
 phase 3 will drop its tables. Crew starts are disabled in the shared web/desktop composer.
+New drafts start with No crew so a saved crew choice cannot block ordinary sends.
 
 ## Added dependencies
 

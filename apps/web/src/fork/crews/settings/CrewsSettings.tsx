@@ -237,11 +237,10 @@ function ConnectedCrewsSettings({
       else toastManager.add({ type: "success", title: "Crew settings saved" });
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
-    } finally {
-      refresh();
-      saving.current = false;
-      setPending(false);
     }
+    refresh();
+    saving.current = false;
+    setPending(false);
   };
   const onSet = (
     roleId: string,

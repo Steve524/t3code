@@ -63,13 +63,8 @@ export function createCrewComposerSelectionStore(
       selections: {},
       initialize: (target) => {
         if (get().selections[crewComposerTargetKey(target)]) return;
-        let crewId: string | null = null;
-        try {
-          crewId = storage().getItem(lastCrewKey(target)) || null;
-        } catch {
-          /* Storage can be unavailable. */
-        }
-        update(target, () => ({ ...EMPTY_CREW_SELECTION, crewId }));
+        // New drafts must allow ordinary sends while crew starts are disabled.
+        update(target, () => EMPTY_CREW_SELECTION);
       },
       select: (target, crewId) => {
         const previous = get().selections[crewComposerTargetKey(target)];

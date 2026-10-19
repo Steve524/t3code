@@ -4,7 +4,6 @@ import type { EnvironmentId, ProjectId, ProviderDriverKind } from "@t3tools/cont
 import type { CrewSummary } from "@t3tools/contracts/fork/crews/crewFile";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { useCallback } from "react";
 
 import type { ComposerCommandItem } from "../../../components/chat/ComposerCommandMenu";
 import { useProject } from "../../../state/entities";
@@ -30,20 +29,16 @@ export function useCrewInitCommands(
       ? crewCatalog.crewsLive({ environmentId, input: { projectId } })
       : noCrews,
   );
-  // A stable empty list keeps the callback, and the composer's menu memo, from changing each render.
   const crews = (list && Option.getOrNull(AsyncResult.value(list))) ?? NO_CREWS;
-  return useCallback(
-    (
-      driver: ProviderDriverKind,
-    ): Array<Extract<ComposerCommandItem, { type: "provider-slash-command" }>> =>
-      crewInitSlashCommands({ driver, hasProject, crewThread }, crews).map((command) => ({
-        id: `fork:${command.name}`,
-        type: "provider-slash-command",
-        provider: driver,
-        command,
-        label: `/${command.name}`,
-        description: command.description,
-      })),
-    [hasProject, crewThread, crews],
-  );
+  return (
+    driver: ProviderDriverKind,
+  ): Array<Extract<ComposerCommandItem, { type: "provider-slash-command" }>> =>
+    crewInitSlashCommands({ driver, hasProject, crewThread }, crews).map((command) => ({
+      id: `fork:${command.name}`,
+      type: "provider-slash-command",
+      provider: driver,
+      command,
+      label: `/${command.name}`,
+      description: command.description,
+    }));
 }

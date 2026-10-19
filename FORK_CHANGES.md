@@ -7,6 +7,10 @@ upstream's version, then re-apply each row.
 Files that only exist in the fork (`FORK.md`, this file, anything under a
 `fork/` directory, `docs/fork/`) are not listed.
 
+Synced with `upstream/main` at `1451e7cb23` (2026-10-19). The merge preserved the
+marked wiring below without conflicts; native MCP injection remains removed.
+Retained crew hooks use React Compiler caching to satisfy the current lint rules.
+
 ## Touch points
 
 | File                                                                | What changed                                                                                                                                                                           | Why                                                                                                                                                                                  |

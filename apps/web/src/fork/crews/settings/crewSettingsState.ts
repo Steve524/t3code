@@ -1,7 +1,7 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";
 import * as Option from "effect/Option";
-import { useContext, useMemo } from "react";
+import { useContext } from "react";
 
 import { createCrewCatalogAtoms } from "@t3tools/client-runtime/fork/crews/catalog";
 import { connectionAtomRuntime } from "../../../connection/runtime";
@@ -16,35 +16,31 @@ export function useCrewSettingsState(
 ) {
   const registry = useContext(RegistryContext);
   const snapshots = useAtomValue(
-    useMemo(
-      () =>
-        Atom.make((get) =>
-          targets.map((target) => {
-            const { environmentId, projectId } = target;
-            const input = projectId === null ? {} : { projectId };
-            const list = get(crewCatalog.crewsLive({ environmentId, input }));
-            const installed =
-              crewId !== null &&
-              Option.getOrNull(AsyncResult.value(list))?.some((crew) => crew.id === crewId);
-            return {
-              target,
-              list,
-              detail: installed
-                ? get(crewCatalog.detail({ environmentId, input: { ...input, crewId } }))
-                : null,
-              overrides: get(
-                crewCatalog.overrides({ environmentId, input: crewOverrideScope(projectId) }),
-              ),
-              toolbox:
-                projectId === null
-                  ? null
-                  : get(crewCatalog.toolbox({ environmentId, input: { projectId } })),
-              canSet: get(crewCatalog.setRoleOverride.permissionAtom(environmentId)),
-              canSetMode: get(crewCatalog.setToolboxMode.permissionAtom(environmentId)),
-            };
-          }),
-        ),
-      [targets, crewId],
+    Atom.make((get) =>
+      targets.map((target) => {
+        const { environmentId, projectId } = target;
+        const input = projectId === null ? {} : { projectId };
+        const list = get(crewCatalog.crewsLive({ environmentId, input }));
+        const installed =
+          crewId !== null &&
+          Option.getOrNull(AsyncResult.value(list))?.some((crew) => crew.id === crewId);
+        return {
+          target,
+          list,
+          detail: installed
+            ? get(crewCatalog.detail({ environmentId, input: { ...input, crewId } }))
+            : null,
+          overrides: get(
+            crewCatalog.overrides({ environmentId, input: crewOverrideScope(projectId) }),
+          ),
+          toolbox:
+            projectId === null
+              ? null
+              : get(crewCatalog.toolbox({ environmentId, input: { projectId } })),
+          canSet: get(crewCatalog.setRoleOverride.permissionAtom(environmentId)),
+          canSetMode: get(crewCatalog.setToolboxMode.permissionAtom(environmentId)),
+        };
+      }),
     ),
   );
   const refresh = () => {

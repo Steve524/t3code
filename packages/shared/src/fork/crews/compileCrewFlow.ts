@@ -231,10 +231,7 @@ export function crewStepIsolation(crew: CrewFile, step: CrewStep, parallel = fal
   );
 }
 
-/** A worker step that can send work back through a limited route: one pass is a review round. */
+/** A step marked `review: true`; each pass through it is a review round. */
 export function isCrewReviewStep(step: CrewStep) {
-  return (
-    (step.type === "task" || step.type === "fanout") &&
-    Object.values(step.outcomes ?? {}).some((route) => typeof route === "object")
-  );
+  return (step.type === "task" || step.type === "fanout") && step.review === true;
 }

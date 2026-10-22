@@ -580,6 +580,9 @@
                     "type": "string",
                     "enum": ["fresh", "same-thread"]
                   },
+                  "review": {
+                    "type": "boolean"
+                  },
                   "owns": {
                     "anyOf": [
                       {
@@ -909,6 +912,9 @@
                   "continue": {
                     "type": "string",
                     "enum": ["fresh", "same-thread"]
+                  },
+                  "review": {
+                    "type": "boolean"
                   },
                   "owns": {
                     "anyOf": [

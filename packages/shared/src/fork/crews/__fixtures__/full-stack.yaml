@@ -35,6 +35,7 @@ flow:
     review:
       {
         role: qa,
+        review: true,
         task: prompts/review.md,
         outcomes: { approve: ship, changes: { to: triage, max: 3, else: ship } },
       }

@@ -61,6 +61,31 @@ function ownershipMayOverlap(left: string, right: string) {
   );
 }
 
+// Every step type decodes these keys, but each type allows only those the orchestrator prompt
+// gives a meaning; the rest are errors.
+const STEP_SETTINGS = [
+  "next",
+  "outcomes",
+  "timeoutMinutes",
+  "runtimeMode",
+  "interactionMode",
+  "isolation",
+  "maxParallel",
+  "autoCommit",
+  "onNoReport",
+] as const;
+const WORKER_SETTINGS = ["next", "outcomes", "runtimeMode", "interactionMode", "isolation"];
+const STEP_SETTINGS_BY_TYPE: Record<CrewStep["type"], ReadonlyArray<string>> = {
+  // A fan-out's workers run async together, so the orchestrator has no clock to time them out.
+  task: [...WORKER_SETTINGS, "timeoutMinutes", "autoCommit", "onNoReport"],
+  fanout: [...WORKER_SETTINGS, "maxParallel", "autoCommit", "onNoReport"],
+  parallel: ["next", "outcomes", "isolation", "maxParallel"],
+  merge: ["next", "outcomes"],
+  script: ["next", "outcomes", "timeoutMinutes"],
+  gate: ["outcomes"],
+  end: [],
+};
+
 export function validateCrew(input: unknown, context: CrewValidationContext) {
   const source = context.source ?? { file: "crew.yaml" };
   const diagnostic = crewDiagnostic(source);
@@ -201,15 +226,42 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
   const branchSteps = new Set(
     flow.joins.flatMap((join) => join.branches.flatMap((branch) => branch.steps)),
   );
+  const loopSteps = new Set(flow.loopRegions.flatMap((region) => region.steps));
   for (const { id, step } of flow.nodes) {
     const path = ["flow", "steps", id];
+    for (const key of STEP_SETTINGS)
+      if (step[key] !== undefined && !STEP_SETTINGS_BY_TYPE[step.type].includes(key))
+        error(`"${key}" has no effect on a ${step.type} step.`, [...path, key]);
     if ("role" in step) {
       checkRole(step.role, [...path, "role"]);
-      if (isCrewReviewStep(step) && step.continue === "same-thread")
-        error("A review step starts a fresh reviewer every round; remove continue: same-thread.", [
-          ...path,
-          "continue",
-        ]);
+      if (isCrewReviewStep(step)) {
+        if (step.continue === "same-thread")
+          error(
+            "A review step starts a fresh reviewer every round; remove continue: same-thread.",
+            [...path, "continue"],
+          );
+        if (step.autoCommit === true)
+          error("A review step changes no files, so it has nothing to commit.", [
+            ...path,
+            "autoCommit",
+          ]);
+        if (step.role === lead)
+          error(`A review step needs a fresh reviewer, so lead role "${lead}" cannot run it.`, [
+            ...path,
+            "role",
+          ]);
+      } else if (
+        step.review === undefined &&
+        (crew.roles[step.role]?.tags?.includes("reviewer") === true ||
+          Object.entries(step.outcomes ?? {}).some(
+            ([outcome, route]) =>
+              typeof route === "object" || (outcome === "changes" && loopSteps.has(id)),
+          ))
+      )
+        warning(
+          "This step looks like a review. Declare review: true, or false for ordinary work.",
+          [...path],
+        );
       if (step.role === lead && (step.type === "fanout" || branchSteps.has(id)))
         error(`Lead role "${lead}" cannot run in fanout or parallel branches.`, [...path, "role"]);
       checkFile(step.task, [...path, "task"], step);

@@ -31,6 +31,7 @@ flow:
 
     review:
       role: reviewer
+      review: true
       task: "Review the change with the review checklist:\n\n{{steps.build.summary}}"
       outcomes:
         approve: done

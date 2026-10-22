@@ -70,6 +70,7 @@ const reviewLoop = (review: Record<string, unknown> = {}, work: Record<string, u
       review: {
         ...task,
         role: "reviewer",
+        review: true,
         task: "Review {{steps.work.summary}} for {{inputs.brief}}",
         outcomes: { approve: "done", changes: { to: "work", max: 3, else: "done", resetOn: [] } },
         ...review,
@@ -142,6 +143,26 @@ describe("orchestrator prompt: roles and rules", () => {
     expect(text).toContain('#### `worker`\n\n> You are the Worker of the "Example" crew.');
   });
 
+  it("falls back to defaults.interactionMode and keeps an explicit empty options list", () => {
+    const crew = crewOf(
+      { work: { ...task, next: "done" }, done: end },
+      { defaults: { interactionMode: "plan" } },
+    );
+    const [role] = roles(crew);
+    const text = prompt(crew, {
+      roles: [
+        {
+          ...role!,
+          model: {
+            ...role!.model,
+            selection: { instanceId: codex, model: "gpt-6.1-sol", options: [] },
+          },
+        },
+      ],
+    });
+    expect(text).toContain("`model: gpt-6.1-sol`, `options: []`, `interactionMode: plan` |");
+  });
+
   it("copies the WORKER RULES verbatim, banning schedule_task", () => {
     const text = prompt(reviewLoop());
     expect(CREW_WORKER_RULES).toContain("`schedule_task`");
@@ -185,11 +206,62 @@ describe("orchestrator prompt: review, ledger, and finish", () => {
       "Review step: start a fresh worker as `reviewer` with `delegate_task` every round",
     );
     expect(section(text, "work")).toContain(
-      "send the new task to that worker's `childThreadId` with `t3_thread_send`",
+      "Continue the latest `worker` worker of this run, whichever step started it",
     );
     expect(section(text, "review")).not.toContain("commit");
+    expect(section(text, "review")).toContain("The reviewer creates, edits, and deletes no files.");
+    expect(CREW_WORKER_RULES).toContain("The reviewer, and any read-only worker, creates, edits");
     expect(text).toContain("Never continue a reviewer with `t3_thread_send`.");
     expect(text).toContain("Use the same reviewer model every round.");
+  });
+
+  it("treats only steps marked review: true as reviews", () => {
+    // An implementer retry loop is not a review, even with a limited route.
+    const retry = prompt(
+      crewOf({
+        work: {
+          ...task,
+          outcomes: { done: "end", failed: { to: "work", max: 2, else: "end" } },
+        },
+        end,
+      }),
+    );
+    expect(retry).not.toContain("## Review rounds");
+    // A one-pass review, or one that loops back only through a user gate, still is one.
+    const gated = prompt(
+      crewOf({
+        work: { ...task, next: "check" },
+        check: { ...task, review: true, outcomes: { approve: "done", changes: "ask" } },
+        ask: { type: "gate", prompt: "Fix?", outcomes: { yes: "work", no: "done" } },
+        done: end,
+      }),
+    );
+    expect(gated).toContain("Review steps: `check`.");
+    expect(section(gated, "check")).toContain("Review step: start a fresh worker as `worker`");
+    // The same role implements in one step and reviews in another.
+    expect(section(gated, "work")).toContain("Tell the worker to commit its changes");
+    expect(section(gated, "check")).toContain(
+      "If the reviewer ends without a `RESULT:` line, do not message it: start one fresh reviewer",
+    );
+    const fanout = prompt(
+      crewOf(
+        {
+          work: { ...task, produces: ["items"], next: "each" },
+          each: {
+            ...task,
+            type: "fanout",
+            over: "artifacts.items",
+            review: true,
+            owns: "{{item}}",
+            next: "done",
+          },
+          done: end,
+        },
+        { artifacts: { items: { type: "list", item: "string" } } },
+      ),
+    );
+    expect(fanout).toContain("Review steps: `each`.");
+    expect(section(fanout, "each")).toContain("The reviewer creates, edits, and deletes no files.");
   });
 
   it("keeps review-notes.md as an issue record that never drops an open objection", () => {
@@ -222,6 +294,12 @@ describe("orchestrator prompt: review, ledger, and finish", () => {
       "step=<step> clientRequestId=run-7-<n> taskId=? childThreadId=? : <why>",
     );
     expect(ledger).toContain("A retry of the same dispatch reuses its line and id.");
+    expect(ledger).toContain(
+      "after that it goes to `done`. The count never resets.\nWORKER RULES:",
+    );
+    expect(ledger).toContain(
+      "append `route <step> <outcome> <count>/<max>`; when its count resets, append `reset <step> <outcome>`.",
+    );
   });
 
   it("puts the ledger and notes in the run folder and requires crew_finish", () => {
@@ -278,9 +356,11 @@ describe("orchestrator prompt: every crew-file field", () => {
             join: "any",
             next: "each",
             owns: ["x/**"],
+            isolation: "read-only",
           },
-          a: { ...task, owns: ["a/**"] },
-          b: { ...task, owns: ["b/**"] },
+          a: { ...task, owns: ["a/**"], next: "a2" },
+          a2: { ...task, owns: ["a/**"] },
+          b: { ...task, owns: ["b/**"], isolation: "worktree" },
           each: {
             ...task,
             type: "fanout",
@@ -298,7 +378,10 @@ describe("orchestrator prompt: every crew-file field", () => {
       "Start `a`, `b` at the same time. Each branch follows its own routes until it would leave the group. Continue on the first result and cancel the others with `task_cancel`.",
     );
     expect(section(text, "build")).toContain("Workers in these branches own only: `x/**`.");
-    expect(section(text, "a")).toContain('Pass `isolation: "worktree"`');
+    // Every step inside a branch, not only its first, takes the group's isolation.
+    expect(section(text, "a")).toContain("Read-only: omit `isolation`");
+    expect(section(text, "a2")).toContain("Read-only: omit `isolation`");
+    expect(section(text, "b")).toContain('Pass `isolation: "worktree"`');
     expect(section(text, "each")).toContain(
       "Fan-out over `artifacts.tasks`: start one worker per item of that list",
     );
@@ -383,7 +466,7 @@ describe("orchestrator prompt: every crew-file field", () => {
     const text = prompt(
       crewOf({
         work: { ...task, next: "lint" },
-        lint: { type: "script", run: "vp lint {{inputs.brief}}", next: "test" },
+        lint: { type: "script", run: "vp lint {{inputs.brief}}", timeoutMinutes: 3, next: "test" },
         test: { type: "script", tool: "unit-tests", outcomes: { pass: "done", fail: "work" } },
         done: end,
       }),
@@ -396,6 +479,7 @@ describe("orchestrator prompt: every crew-file field", () => {
       "Run `vp test` in your own shell in this checkout (repo tool `unit-tests`).",
     );
     expect(section(text, "test")).toContain("Exit code 0 is `pass`, anything else `fail`");
+    expect(section(text, "lint")).toContain("Stop it after 3 minutes and count that as `fail`.");
   });
 
   it("gate by user ends the turn; by lead the orchestrator decides", () => {
@@ -403,7 +487,11 @@ describe("orchestrator prompt: every crew-file field", () => {
       crewOf(
         {
           work: { ...task, next: "ask" },
-          ask: { type: "gate", prompt: "Ship it?", outcomes: { yes: "pick", no: "work" } },
+          ask: {
+            type: "gate",
+            prompt: "Ship {{inputs.brief}}?",
+            outcomes: { yes: "pick", no: "work" },
+          },
           pick: { type: "gate", by: "lead", prompt: "Which?", outcomes: { a: "done" } },
           done: end,
         },
@@ -414,7 +502,7 @@ describe("orchestrator prompt: every crew-file field", () => {
       ),
     );
     expect(section(text, "ask")).toContain(
-      "End your turn and ask the user: Ship it? Route on their answer.",
+      "End your turn and ask the user: Ship add a /health route? Route on their answer.",
     );
     expect(section(text, "pick")).toContain(
       "Decide yourself: Which? If you cannot decide, ask the user.",
@@ -450,10 +538,10 @@ describe("orchestrator prompt: every crew-file field", () => {
     expect(section(text, "more")).toContain("Tell the worker not to commit");
   });
 
-  it("step timeoutMinutes cancels a worker that runs over", () => {
+  it("step timeoutMinutes waits on the worker and cancels it when it runs over", () => {
     const text = prompt(crewOf({ work: { ...task, timeoutMinutes: 20, next: "done" }, done: end }));
     expect(section(text, "work")).toContain(
-      "If its worker is still running 20 minutes after it started, cancel it with `task_cancel`",
+      'Dispatch it with `mode: "wait"` and `timeoutMs: 1200000`. If the wait times out, cancel it with `task_cancel` and treat it as `RESULT: blocked`.',
     );
   });
 
@@ -477,11 +565,19 @@ describe("orchestrator prompt: every crew-file field", () => {
           build: { ...task, consumes: ["plan"], task: "Build {{artifacts.plan}}", next: "done" },
           done: end,
         },
-        { artifacts: { plan: { type: "markdown" } } },
+        {
+          artifacts: {
+            plan: { type: "object", schema: { tasks: { type: "list", item: { id: "string" } } } },
+            notes: { type: "markdown" },
+          },
+        },
       ),
     );
     expect(section(text, "plan")).toContain(
-      "It must hand over `plan`: one fenced block per artifact after its detail lines",
+      "It must hand over `plan`: after its detail lines, one fenced block per artifact",
+    );
+    expect(text).toContain(
+      '## Artifacts\n\n- `plan`: a JSON object shaped as `{"tasks":{"type":"list","item":{"id":"string"}}}`\n- `notes`: markdown text, as a JSON string',
     );
     expect(section(text, "plan")).toContain(
       "Save each to `artifacts/<name>.json` in the run folder.",
@@ -510,17 +606,35 @@ describe("orchestrator prompt: every crew-file field", () => {
     );
   });
 
-  it("home lead mode makes the orchestrator the lead", () => {
+  it("home lead mode makes the orchestrator the lead, with its own ownership and tools", () => {
     const crew = crewOf(
       { work: { ...task, next: "wrap" }, wrap: { ...task, role: "lead", next: "done" }, done: end },
       {
-        roles: { worker, lead: { name: "Lead", instructions: "You coordinate." } },
+        roles: {
+          worker,
+          lead: { name: "Lead", instructions: "You coordinate.", owns: ["docs/**"] },
+        },
         home: { mode: "lead", role: "lead", canEdit: true, updates: "decisions" },
       },
     );
-    const text = prompt(crew);
+    const leadRole = roles(crew).find((role) => role.id === "lead")!;
+    const text = prompt(crew, {
+      roles: [
+        ...roles(crew).filter((role) => role.id !== "lead"),
+        {
+          ...leadRole,
+          toolbox: {
+            items: [
+              { kind: "tool", name: "lint", path: "tools.yaml", source: "repo", grantedBy: [] },
+            ],
+            diagnostics: [],
+          },
+        },
+      ],
+      tools: { tools: { lint: { run: "vp lint" } } },
+    });
     expect(text).toContain(
-      '## Your role\n\nYou are the Lead of the "Example" crew.\n\nYou coordinate.',
+      '## Your role\n\nYou are the Lead of the "Example" crew.\n\nYou coordinate.\n\nYou edit only: `docs/**`.\n\nYour tools: tool `lint`: run `vp lint`.',
     );
     expect(text).toContain("Message the user only for their decisions and the final report.");
     expect(text).toContain("You may edit this checkout for the steps you do yourself.");

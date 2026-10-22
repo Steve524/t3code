@@ -98,6 +98,8 @@ const TaskFields = {
   produces: Schema.optionalKey(Slugs),
   consumes: Schema.optionalKey(Slugs),
   continue: Schema.optionalKey(Schema.Literals(["fresh", "same-thread"])),
+  // A review gets a fresh, read-only reviewer every round; nothing else infers it.
+  review: Schema.optionalKey(Schema.Boolean),
   owns: Schema.optionalKey(Schema.Union([Text, Names])),
 };
 

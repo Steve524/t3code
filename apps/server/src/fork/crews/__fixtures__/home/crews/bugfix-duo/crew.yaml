@@ -29,6 +29,7 @@ flow:
 
     check:
       role: checker
+      review: true
       task: "Check the fix:\n\n{{steps.fix.summary}}"
       outcomes:
         approve: done

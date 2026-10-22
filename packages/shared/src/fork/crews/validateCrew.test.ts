@@ -339,12 +339,62 @@ describe("crew validation errors", () => {
         work: { ...task, next: "review" },
         review: {
           ...task,
+          review: true,
           continue: "same-thread",
           outcomes: { approve: "done", changes: { to: "work", max: 2, else: "done" } },
         },
         done: end,
       }),
       message: "fresh reviewer every round",
+    },
+    {
+      name: "a review that commits",
+      input: withSteps({
+        work: { ...task, next: "review" },
+        review: { ...task, review: true, autoCommit: true, next: "done" },
+        done: end,
+      }),
+      path: ["flow", "steps", "review", "autoCommit"],
+    },
+    {
+      name: "a review the lead runs",
+      input: withSteps(
+        {
+          work: { ...task, next: "review" },
+          review: { ...task, role: "lead", review: true, next: "done" },
+          done: end,
+        },
+        { roles: leadRoles, home: leadHome },
+      ),
+      message: 'lead role "lead" cannot run it',
+    },
+    {
+      name: "a setting a gate cannot use",
+      input: withSteps({
+        work: { ...task, next: "ask" },
+        ask: { type: "gate", prompt: "Go?", isolation: "worktree", outcomes: { yes: "done" } },
+        done: end,
+      }),
+      path: ["flow", "steps", "ask", "isolation"],
+    },
+    {
+      name: "a timeout on a fanout",
+      input: withSteps(
+        {
+          work: { ...task, next: "each" },
+          each: {
+            ...task,
+            type: "fanout",
+            over: "artifacts.items",
+            owns: "{{item}}",
+            timeoutMinutes: 5,
+            next: "done",
+          },
+          done: end,
+        },
+        { artifacts: { items: { type: "list", item: "string" } } },
+      ),
+      message: '"timeoutMinutes" has no effect on a fanout step.',
     },
     {
       name: "removed step column",
@@ -390,6 +440,34 @@ describe("crew validation errors", () => {
         path: ["board"],
       }),
     );
+  });
+});
+
+describe("review marker", () => {
+  const looksLikeReview = (review: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    validate(
+      withSteps(
+        {
+          work: { ...task, next: "review" },
+          review: { ...task, ...review },
+          ask: { type: "gate", prompt: "Again?", outcomes: { yes: "work", no: "done" } },
+          done: end,
+        },
+        extra,
+      ),
+    ).warnings.filter((entry) => entry.message.includes("looks like a review"));
+
+  it("asks an unmarked step that looks like a review to declare itself", () => {
+    const limited = { outcomes: { ok: "done", changes: { to: "work", max: 2, else: "done" } } };
+    expect(looksLikeReview(limited)).toHaveLength(1);
+    expect(looksLikeReview({ outcomes: { ok: "done", changes: "ask" } })).toHaveLength(1);
+    expect(
+      looksLikeReview({ next: "done" }, { roles: { worker: { ...worker, tags: ["reviewer"] } } }),
+      // The tagged role runs both `work` and `review`.
+    ).toHaveLength(2);
+    expect(looksLikeReview({ ...limited, review: false })).toEqual([]);
+    expect(looksLikeReview({ ...limited, review: true })).toEqual([]);
+    expect(looksLikeReview({ next: "done" })).toEqual([]);
   });
 });
 

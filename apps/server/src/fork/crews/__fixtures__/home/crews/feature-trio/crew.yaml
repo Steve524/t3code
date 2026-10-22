@@ -78,6 +78,7 @@ flow:
 
     review:
       role: reviewer
+      review: true
       task: prompts/review.md
       outcomes:
         approve: approval

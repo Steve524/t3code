@@ -230,3 +230,11 @@ export function crewStepIsolation(crew: CrewFile, step: CrewStep, parallel = fal
     (parallel || step.type === "fanout" || step.type === "parallel" ? "worktree" : "shared")
   );
 }
+
+/** A worker step that can send work back through a limited route: one pass is a review round. */
+export function isCrewReviewStep(step: CrewStep) {
+  return (
+    (step.type === "task" || step.type === "fanout") &&
+    Object.values(step.outcomes ?? {}).some((route) => typeof route === "object")
+  );
+}

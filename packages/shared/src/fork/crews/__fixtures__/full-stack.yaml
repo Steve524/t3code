@@ -6,7 +6,6 @@ home:
   role: orchestrator
   canEdit: false # default: lead reads everything, changes go through roles
   updates: milestones # or `decisions` (cheaper: only woken to decide)
-  decisionTimeoutMinutes: 30 # optional: escalate an unanswered lead decision to you
 roles:
   orchestrator: { name: Orchestrator, tags: [lead], instructions: roles/orchestrator.md }
   architect: { name: Architect, tags: [planner], instructions: roles/architect.md }

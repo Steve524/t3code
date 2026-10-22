@@ -67,7 +67,6 @@ describe("crew file v1", () => {
       role: "orchestrator",
       canEdit: false,
       updates: "milestones",
-      decisionTimeoutMinutes: 30,
     });
     expect(result.value?.flow.steps.build).toMatchObject({
       type: "parallel",

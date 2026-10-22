@@ -1,317 +1,533 @@
-import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@t3tools/contracts";
+import {
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { CrewFile } from "../../../../../packages/contracts/src/fork/crews/crewFile.ts";
 import {
   decodeCrew,
   end,
   task,
   withSteps,
+  worker,
 } from "../../../../../packages/shared/src/fork/crews/crewTestFixtures.ts";
 import {
-  composeCrewCardPrompt,
-  composeCrewConflictPrompt,
-  composeCrewLeadKickoff,
-  crewDecisionPrompt,
-  crewLeadUpdatePrompt,
-  crewPromptFiles,
-  crewReminderPrompt,
-  renderCrewTemplate,
-  type CrewPromptInput,
+  composeCrewOrchestratorPrompt,
+  CREW_REVIEWER_LINE,
+  CREW_WORKER_RULES,
+  type CrewOrchestratorPromptInput,
 } from "./CrewPromptComposer.ts";
 
-const steps = {
-  plan: { ...task, role: "planner", task: "prompts/plan.md", produces: ["plan"], next: "review" },
-  review: {
-    ...task,
-    role: "reviewer",
-    task: "Review {{run.branch}} against:\n{{steps.plan.summary}}",
-    consumes: ["plan"],
-    outcomes: { approve: "done", changes: "plan" },
-  },
-  done: end,
-};
-const definition = decodeCrew({
-  ...withSteps(steps, {
-    roles: {
-      planner: { name: "Planner", instructions: "roles/planner.md" },
-      reviewer: {
-        name: "Reviewer",
-        persona: { identity: "A careful reader.", principles: ["Cite the line."] },
-      },
+const codex = ProviderInstanceId.make("codex");
+const claude = ProviderInstanceId.make("claudeAgent");
+
+const roles = (crew: CrewFile): CrewOrchestratorPromptInput["roles"] =>
+  Object.keys(crew.roles).map((id) => ({
+    id,
+    model: {
+      selection: { instanceId: codex, model: "gpt-6.1-sol" },
+      source: "crew-hint",
+      warnings: [],
     },
-    artifacts: { plan: { type: "object", schema: { tasks: "string[]" } } },
-  }),
-  flow: { start: "plan", steps },
-});
+    runtimeMode: { runtimeMode: "full-access", source: "inherit", clamped: false },
+    toolbox: { items: [], diagnostics: [] },
+  }));
 
-const files = {
-  "prompts/plan.md": "Plan this:\n\n{{inputs.brief}}",
-  "roles/planner.md": "---\nname: planner\nmodel: opus\n---\nYou plan the work.",
-  "roles/reviewer/role.md": "You review the work.",
-  "overlays/gpt.md": "Prefer short answers.",
-  "templates/unused.md": "Not referenced.",
+const compose = (crew: CrewFile, extra: Partial<CrewOrchestratorPromptInput> = {}) =>
+  composeCrewOrchestratorPrompt({
+    crew,
+    files: {},
+    inputs: { brief: "add a /health route" },
+    runId: "run-7",
+    runFolder: "/repo/.t3/crew-runs/run-7",
+    roles: roles(crew),
+    tools: { tools: {} },
+    providers: [
+      { instanceId: codex, driver: ProviderDriverKind.make("codex"), models: ["gpt-6.1-sol"] },
+    ],
+    ...extra,
+  });
+
+const prompt = (crew: CrewFile, extra: Partial<CrewOrchestratorPromptInput> = {}) => {
+  const result = compose(crew, extra);
+  expect(result.errors).toEqual([]);
+  return result.prompt;
 };
 
-const input = (stepId: string, extra: Partial<CrewPromptInput> = {}): CrewPromptInput => ({
-  crew: definition,
-  files,
-  stepId,
-  inputs: { brief: "add a /health route" },
-  artifacts: {},
-  steps: {},
-  previousSteps: [],
-  item: null,
-  branch: "crew/example/abc12345",
-  driver: null,
-  toolbox: { skills: [], mcp: [], tools: [] },
-  notes: [],
-  ...extra,
-});
+/** One step's section, so assertions can't match text from another step. */
+const section = (text: string, stepId: string) =>
+  text.split(`### \`${stepId}\``)[1]?.split("\n### ")[0]?.split("\n## ")[0] ?? "";
 
-describe("crew prompt", () => {
-  it("leads with the rendered task, then the role, and ends with how to report", () => {
-    const prompt = composeCrewCardPrompt(input("plan"));
-    expect(prompt.startsWith("## Task\n\nPlan this:\n\nadd a /health route")).toBe(true);
-    expect(prompt).toContain("## Your role\n\nYou are the Planner");
-    expect(prompt).toContain("You plan the work.");
-    expect(prompt).toContain("Allowed outcomes: done.");
-    expect(prompt).toContain("Required artifact `plan`");
-    expect(prompt).toContain("Call `crew_report` once");
-    expect(prompt).toContain("```crew-report");
-    expect(prompt.indexOf("## Your role")).toBeLessThan(prompt.indexOf("## Protocol"));
-  });
+const crewOf = (steps: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+  decodeCrew({ ...withSteps(steps, extra), flow: { start: Object.keys(steps)[0], steps } });
 
-  it("drops a role file's frontmatter", () => {
-    expect(composeCrewCardPrompt(input("plan"))).not.toContain("model: opus");
-  });
-
-  it("falls back to the role folder's file, and adds persona and the model family's overlay", () => {
-    const prompt = composeCrewCardPrompt(input("review", { driver: "codex" }));
-    expect(prompt).toContain("You review the work.");
-    expect(prompt).toContain("Identity: A careful reader.");
-    expect(prompt).toContain("Principles:\n- Cite the line.");
-    expect(prompt).toContain("Prefer short answers.");
-    expect(composeCrewCardPrompt(input("review", { driver: "claudeAgent" }))).not.toContain(
-      "Prefer short answers.",
-    );
-  });
-
-  it("gives the reviewer the branch, the previous step's result, its artifacts and its notes", () => {
-    const prompt = composeCrewCardPrompt(
-      input("review", {
-        artifacts: { plan: { tasks: ["route", "test"] } },
-        steps: { plan: { summary: "Two tasks.", outcome: "done" } },
-        previousSteps: ["plan"],
-        notes: ["Check the status code."],
-      }),
-    );
-    expect(prompt).toContain("Review crew/example/abc12345 against:\nTwo tasks.");
-    expect(prompt).toContain("Step `plan` finished with `done`:\nTwo tasks.");
-    expect(prompt).toContain('Artifact `plan`:\n{\n  "tasks": [');
-    expect(prompt).toContain("Note from a teammate:\nCheck the status code.");
-    expect(prompt).toContain("Allowed outcomes: approve, changes.");
-  });
-
-  it("lists the role's skills by name and description", () => {
-    const prompt = composeCrewCardPrompt(
-      input("plan", {
-        toolbox: {
-          skills: [
-            {
-              name: "repo-map",
-              description: "Where things live.",
-            },
-          ],
-          mcp: [],
-          tools: [],
-        },
-      }),
-    );
-    expect(prompt).toContain("## Skills\n\n- repo-map: Where things live.");
-    expect(prompt).toContain("crew_skill_get");
-  });
-
-  it("names an artifact too large to paste, and never exceeds the provider limit", () => {
-    const big = { tasks: ["x".repeat(10_000)] };
-    expect(composeCrewCardPrompt(input("review", { artifacts: { plan: big } }))).toContain(
-      "Artifact `plan`: read it with `crew_artifact_read`.",
-    );
-    const long = { brief: "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS) };
-    expect(composeCrewCardPrompt(input("plan", { inputs: long })).length).toBe(
-      PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-    );
-  });
-
-  it("renders a missing template key as nothing and an object as JSON", () => {
-    expect(renderCrewTemplate("a{{ missing.key }}b", {})).toBe("ab");
-    expect(renderCrewTemplate("{{item.owns}}", { item: { owns: ["a", "b"] } })).toBe(
-      '[\n  "a",\n  "b"\n]',
-    );
-    expect(renderCrewTemplate("{{item.owns.1}}", { item: { owns: ["a", "b"] } })).toBe("b");
-  });
-
-  it("lists the role's tools and how to run one", () => {
-    const tools = [
-      { name: "unit-tests", source: "repo" as const, description: "Run the tests", run: "vp test" },
-      { name: "lint", source: "repo" as const, run: "vp lint" },
-    ];
-    const prompt = composeCrewCardPrompt(
-      input("plan", { toolbox: { skills: [], mcp: [], tools } }),
-    );
-    expect(prompt).toContain("## Tools\n\n- unit-tests: Run the tests\n- lint\n\nRun one with");
-    expect(prompt.indexOf("## Tools")).toBeLessThan(prompt.indexOf("## Protocol"));
-    expect(composeCrewCardPrompt(input("plan"))).not.toContain("## Tools");
-  });
-
-  it("lists each MCP server once, the way the role's provider reaches it", () => {
-    const mcp = [
-      { name: "playwright", source: "home" as const, command: "npx", args: [], env: {} },
-      {
-        name: "figma",
-        source: "repo" as const,
-        command: "figma-mcp",
-        args: [],
-        env: { TOKEN: "${secret:FIGMA}" },
+const reviewLoop = (review: Record<string, unknown> = {}, work: Record<string, unknown> = {}) =>
+  crewOf(
+    {
+      work: { ...task, next: "review", ...work },
+      review: {
+        ...task,
+        role: "reviewer",
+        task: "Review {{steps.work.summary}} for {{inputs.brief}}",
+        outcomes: { approve: "done", changes: { to: "work", max: 3, else: "done", resetOn: [] } },
+        ...review,
       },
-    ];
-    const tools = (driver: string) =>
-      composeCrewCardPrompt(input("plan", { driver, toolbox: { skills: [], mcp, tools: [] } }))
-        .split("## Tools\n\n")[1]
-        ?.split("\n\n## ")[0];
-    const gateway = "MCP servers you reach through `crew_mcp_list_tools` and `crew_mcp_call`";
-    for (const driver of ["codex", "claudeAgent", "cursor", "grok", "acpRegistry", "opencode"]) {
-      expect(tools(driver)).toBe(`${gateway}: playwright, figma.`);
-    }
-  });
+      done: end,
+    },
+    { roles: { worker, reviewer: { name: "Reviewer", instructions: "You review." } } },
+  );
 
-  it("tells a conflict resolver which files to fix and to leave the commit to the crew", () => {
-    const prompt = composeCrewConflictPrompt({
-      crew: definition,
-      files,
-      roleId: "reviewer",
-      driver: "codex",
-      branch: "crew/example/abc12345",
-      paths: ["src/a.ts", "README.md"],
-    });
-    expect(prompt).toContain(
-      "into `crew/example/abc12345` stopped on conflicts in:\n\n- src/a.ts\n- README.md",
-    );
-    expect(prompt).toContain("## Your role\n\nYou are the Reviewer");
-    expect(prompt).toContain("Prefer short answers.");
-    expect(prompt).toContain("Do not commit, abort the merge");
-    expect(prompt).toContain("outcome `done`");
-  });
-
-  it("freezes only the files a prompt can read", () => {
-    expect(Object.keys(crewPromptFiles(definition, files)).toSorted()).toEqual([
-      "overlays/gpt.md",
-      "prompts/plan.md",
-      "roles/planner.md",
-      "roles/reviewer/role.md",
-    ]);
-  });
-
-  it("reminds a silent role of the outcomes it may report", () => {
-    expect(crewReminderPrompt(definition, "review")).toContain(
-      "Report now with one of: approve, changes, failed.",
-    );
-  });
-});
-
-describe("lead prompts", () => {
-  const led = decodeCrew({
-    ...withSteps(
-      {},
+describe("orchestrator prompt: roles and rules", () => {
+  it("lists each role's model, ownership, and tools, and starts worker tasks with the role tag", () => {
+    const crew = crewOf(
+      { work: { ...task, next: "done" }, done: end },
       {
-        home: { mode: "lead", role: "lead" },
         roles: {
-          lead: { name: "Lead", instructions: "You coordinate." },
-          builder: { name: "Builder", description: "Writes the code" },
+          worker: {
+            ...worker,
+            owns: ["src/**"],
+            pool: ["codex-2"],
+            interactionMode: "plan",
+          },
         },
       },
-    ),
-    flow: {
-      start: "build",
-      steps: {
-        build: { ...task, role: "builder", next: "review" },
-        review: {
+    );
+    const text = prompt(crew, {
+      roles: [
+        {
+          ...roles(crew)[0]!,
+          model: {
+            selection: {
+              instanceId: codex,
+              model: "gpt-6.1-sol",
+              options: [{ id: "reasoningEffort", value: "xhigh" }],
+            },
+            source: "crew-hint",
+            warnings: [],
+          },
+          runtimeMode: { runtimeMode: "auto-accept-edits", source: "crew-hint", clamped: false },
+          toolbox: {
+            items: [
+              {
+                kind: "skill",
+                name: "repo-map",
+                path: "/skills/repo-map",
+                source: "crew",
+                grantedBy: [],
+              },
+              {
+                kind: "tool",
+                name: "unit-tests",
+                path: ".t3/tools.yaml",
+                source: "repo",
+                grantedBy: [],
+              },
+              { kind: "mcp", name: "playwright", path: "mcp.yaml", source: "home", grantedBy: [] },
+            ],
+            diagnostics: [],
+          },
+        },
+      ],
+      tools: { tools: { "unit-tests": { run: "vp test" } } },
+    });
+    expect(text).toContain(
+      '| `worker` Worker | `providerInstanceId: codex`, `model: gpt-6.1-sol`, `options: [{"id":"reasoningEffort","value":"xhigh"}]`, `runtimeMode: auto-accept-edits`, `interactionMode: plan`, if that instance fails to start, use `codex-2` | `src/**` |',
+    );
+    expect(text).toContain("skill `repo-map`: read `/skills/repo-map`");
+    expect(text).toContain("tool `unit-tests`: run `vp test`");
+    expect(text).toContain("MCP `playwright` through `crew_mcp_list_tools` and `crew_mcp_call`");
+    expect(text).toContain("Every worker task starts with the line `[crew-role: <role id>]`.");
+    expect(text).toContain('#### `worker`\n\n> You are the Worker of the "Example" crew.');
+  });
+
+  it("copies the WORKER RULES verbatim, banning schedule_task", () => {
+    const text = prompt(reviewLoop());
+    expect(CREW_WORKER_RULES).toContain("`schedule_task`");
+    expect(text).toContain(
+      `### WORKER RULES (copy verbatim into every worker task)\n\n${CREW_WORKER_RULES}`,
+    );
+  });
+
+  it("rejects a role model that orchestrator_capabilities does not offer", () => {
+    const crew = reviewLoop();
+    const [first, second] = roles(crew);
+    const errors = compose(crew, {
+      roles: [
+        { ...first!, model: { ...first!.model, selection: { instanceId: codex, model: "gpt-0" } } },
+        { ...second!, model: { ...second!.model, selection: { instanceId: claude, model: "x" } } },
+      ],
+    }).errors;
+    expect(errors).toEqual([
+      'Role "worker" uses model "gpt-0", which "codex" does not offer.',
+      'Role "reviewer" uses provider "claudeAgent", which is not available.',
+    ]);
+    const unset = compose(crew, {
+      roles: [{ ...first!, model: { ...first!.model, selection: null } }, second!],
+    }).errors;
+    expect(unset).toEqual(['Role "worker" has no model.']);
+  });
+
+  it("refuses a prompt larger than one message", () => {
+    const crew = reviewLoop();
+    const { errors } = compose(crew, {
+      inputs: { brief: "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS) },
+    });
+    expect(errors[0]).toMatch(/^The crew prompt is \d+ characters/u);
+  });
+});
+
+describe("orchestrator prompt: review, ledger, and finish", () => {
+  it("starts a fresh reviewer every round on the same model, and reuses the implementer", () => {
+    const text = prompt(reviewLoop({}, { continue: "same-thread" }));
+    expect(section(text, "review")).toContain(
+      "Review step: start a fresh worker as `reviewer` with `delegate_task` every round",
+    );
+    expect(section(text, "work")).toContain(
+      "send the new task to that worker's `childThreadId` with `t3_thread_send`",
+    );
+    expect(section(text, "review")).not.toContain("commit");
+    expect(text).toContain("Never continue a reviewer with `t3_thread_send`.");
+    expect(text).toContain("Use the same reviewer model every round.");
+  });
+
+  it("keeps review-notes.md as an issue record that never drops an open objection", () => {
+    const text = prompt(reviewLoop());
+    expect(text).toContain("`| id | finding | source thread | claimed fix | status | evidence |`");
+    expect(text).toContain("A fix claim is not verification");
+    expect(text).toContain("Never drop an open objection");
+    expect(text).toContain(`"${CREW_REVIEWER_LINE}"`);
+    expect(CREW_REVIEWER_LINE).toBe(
+      "Check every earlier finding, then review the whole change against the original requirements and look for new regressions. Approval covers only this revision.",
+    );
+  });
+
+  it("hands a worktree reviewer the change when the implementer does not commit", () => {
+    const text = prompt(reviewLoop({ isolation: "worktree" }, { autoCommit: false }));
+    expect(section(text, "work")).toContain("Tell the worker not to commit");
+    expect(section(text, "review")).toContain('Pass `isolation: "worktree"`');
+    expect(text).toContain(
+      "A worktree reviewer starts from this checkout's `HEAD`, without uncommitted edits or the run folder. Before you start one, commit the change on the crew branch (a WIP commit when the implementer does not commit) and name that commit, or paste the full diff into its task.",
+    );
+  });
+
+  it("restates the limits and WORKER RULES in the ledger header and gives each line a stable id", () => {
+    const ledger = prompt(reviewLoop()).split("## Ledger")[1]!.split("\n## ")[0]!;
+    expect(ledger).toContain(
+      "# Crew ledger run-7\nLimits: 30 dispatches, 3 live workers, 4 hours.\n- `review` `changes` goes to `work` at most 3 times",
+    );
+    expect(ledger).toContain(`WORKER RULES:\n${CREW_WORKER_RULES}\n\`\`\``);
+    expect(ledger).toContain(
+      "step=<step> clientRequestId=run-7-<n> taskId=? childThreadId=? : <why>",
+    );
+    expect(ledger).toContain("A retry of the same dispatch reuses its line and id.");
+  });
+
+  it("puts the ledger and notes in the run folder and requires crew_finish", () => {
+    const text = prompt(reviewLoop());
+    expect(text).toContain(
+      "Run folder: `/repo/.t3/crew-runs/run-7` (absolute). It holds `ledger.md`, `review-notes.md`, and `artifacts/`.",
+    );
+    expect(text).toContain("then call `crew_finish` with run id `run-7`");
+  });
+});
+
+describe("orchestrator prompt: every crew-file field", () => {
+  it("task, next, outcomes, and route max/else/resetOn shape the flow and round limits", () => {
+    const text = prompt(
+      crewOf({
+        work: { ...task, next: "check" },
+        check: {
           ...task,
-          role: "builder",
-          outcomes: { approve: "wrap", changes: { to: "triage", max: 2, else: "wrap" } },
+          outcomes: {
+            approve: "done",
+            changes: { to: "work", max: 2, else: "done", resetOn: ["work"] },
+          },
         },
-        triage: {
-          type: "gate",
-          by: "lead",
-          prompt: "Who fixes it?",
-          outcomes: { builder: "build", accept: "wrap" },
+        done: end,
+      }),
+    );
+    expect(text).toContain("Start at `work`.");
+    expect(section(text, "work")).toContain("> Work on add a /health route.");
+    expect(section(text, "work")).toContain("Routes: then `check`.\nTask:");
+    expect(section(text, "check")).toContain(
+      "Routes: `approve` goes to `done`; `changes` goes to `work` (at most 2 times in this run, then `done`; this counter resets only when `work` finishes).",
+    );
+    expect(section(text, "check")).toContain("RESULT outcomes: `approve`, `changes`.");
+    expect(text).toContain(
+      "- `check` `changes` goes to `work` at most 2 times; after that it goes to `done`.",
+    );
+  });
+
+  it("continue: fresh starts a new implementer each time", () => {
+    const text = prompt(reviewLoop({}, { continue: "fresh" }));
+    expect(section(text, "work")).toContain(
+      "Start a new worker as `worker` with `delegate_task` each time the flow reaches this step.",
+    );
+  });
+
+  it("parallel and fanout with join all/any", () => {
+    const text = prompt(
+      crewOf(
+        {
+          plan: { ...task, produces: ["tasks"], next: "build" },
+          build: {
+            type: "parallel",
+            branches: ["a", "b"],
+            join: "any",
+            next: "each",
+            owns: ["x/**"],
+          },
+          a: { ...task, owns: ["a/**"] },
+          b: { ...task, owns: ["b/**"] },
+          each: {
+            ...task,
+            type: "fanout",
+            over: "artifacts.tasks",
+            task: "Do {{item}}",
+            owns: "{{item}}/**",
+            next: "done",
+          },
+          done: end,
         },
-        wrap: { ...task, role: "lead", next: "done" },
+        { artifacts: { tasks: { type: "list", item: "string" } } },
+      ),
+    );
+    expect(section(text, "build")).toContain(
+      "Start `a`, `b` at the same time. Each branch follows its own routes until it would leave the group. Continue on the first result and cancel the others with `task_cancel`.",
+    );
+    expect(section(text, "build")).toContain("Workers in these branches own only: `x/**`.");
+    expect(section(text, "a")).toContain('Pass `isolation: "worktree"`');
+    expect(section(text, "each")).toContain(
+      "Fan-out over `artifacts.tasks`: start one worker per item of that list",
+    );
+    expect(section(text, "each")).toContain("Continue when every one has reported.");
+  });
+
+  it("maxParallel becomes the run's worker cap, and role maxConcurrent a per-role cap", () => {
+    const crew = crewOf(
+      {
+        work: { ...task, next: "each" },
+        each: {
+          ...task,
+          type: "fanout",
+          over: "artifacts.items",
+          maxParallel: 2,
+          owns: "{{item}}",
+          next: "done",
+        },
         done: end,
       },
-    },
-  });
-  const kickoff = (canEdit: boolean) =>
-    composeCrewLeadKickoff({
-      crew: led,
-      files: {},
-      driver: null,
-      inputs: { brief: "add a /health route" },
-      roleId: "lead",
-      models: { lead: "claudeAgent/claude-opus-5-5", builder: "codex/gpt-5.6-terra" },
-      canEdit,
-      updates: "milestones",
-    });
-
-  it("opens the home thread with the brief, the roster, the flow and how to decide", () => {
-    const prompt = kickoff(false);
-    expect(prompt.startsWith("## Brief\n\nbrief: add a /health route")).toBe(true);
-    expect(prompt).toContain("## Your role\n\nYou are the Lead");
-    expect(prompt).toContain("- Lead (`lead`), on claudeAgent/claude-opus-5-5 (you)");
-    expect(prompt).toContain("- Builder (`builder`): Writes the code, on codex/gpt-5.6-terra");
-    expect(prompt).toContain("It starts at `build` when this turn of yours ends.");
-    expect(prompt).toContain("- `build`: Builder works on it; then `review`.");
-    expect(prompt).toContain(
-      "- `review`: Builder works on it; `approve` goes to `wrap`, `changes` goes to `triage` (at most 2 times, then `wrap`).",
+      {
+        defaults: { maxParallel: 5 },
+        roles: { worker: { ...worker, maxConcurrent: 1 } },
+        artifacts: { items: { type: "list", item: "string" } },
+      },
     );
-    expect(prompt).toContain(
-      "- `triage`: you decide: Who fixes it?; `builder` goes to `build`, `accept` goes to `wrap`.",
-    );
-    expect(prompt).toContain("- `wrap`: you work on it; then `done`.");
-    expect(prompt).toContain("- `done`: the run ends.");
-    expect(prompt).toContain("Answer it with `crew_decide`");
-    expect(prompt).toContain("You read the checkout but do not change it");
-    expect(kickoff(true)).toContain("You may edit the shared checkout.");
+    const text = prompt(crew);
+    expect(text).toContain("- At most 5 workers running at once.");
+    expect(text).toContain("- At most 1 `worker` workers at once.");
+    expect(section(text, "each")).toContain("At most 2 of these workers run at once.");
   });
 
-  it("batches what the lead missed into one message", () => {
-    expect(crewLeadUpdatePrompt(["Merge `integrate` finished."])).toBe(
-      "## Crew update\n\n- Merge `integrate` finished.\n\nNo answer is needed.",
+  it("limits.maxFanoutItems caps a fan-out", () => {
+    const text = prompt(
+      crewOf(
+        {
+          work: { ...task, next: "each" },
+          each: {
+            ...task,
+            type: "fanout",
+            over: "artifacts.items",
+            owns: "{{item}}",
+            next: "done",
+          },
+          done: end,
+        },
+        {
+          limits: { maxFanoutItems: 4 },
+          artifacts: { items: { type: "list", item: "string" } },
+        },
+      ),
     );
-    expect(crewLeadUpdatePrompt(["one", "two"])).toContain(
-      "## While you were working\n\n- one\n- two\n",
+    expect(section(text, "each")).toContain(
+      "At most 4 items: if the list is longer, start none and stop with `LIMIT: fan-out items`.",
     );
   });
 
-  it("asks for a decision with its id, the outcomes and the block to answer with", () => {
-    const ask = (reminder: boolean) =>
-      crewDecisionPrompt({
-        decisionId: "run:triage:1",
-        prompt: "Who fixes it?",
-        outcomes: ["builder", "accept"],
-        context: ["`review` (Builder) finished with `changes`: Missing a route."],
-        reminder,
-      });
-    expect(ask(false)).toContain(
-      "## Decision needed\n\nWho fixes it?\n\n- `review` (Builder) finished with `changes`: Missing a route.",
+  it("merge with checkOwnership and onConflict", () => {
+    const merge = (step: Record<string, unknown>) =>
+      section(
+        prompt(
+          crewOf({
+            work: { ...task, next: "join" },
+            join: { type: "merge", next: "done", ...step },
+            done: end,
+          }),
+        ),
+        "join",
+      );
+    const blocking = merge({ checkOwnership: "block", onConflict: { role: "worker" } });
+    expect(blocking).toContain("with `git merge`, one at a time");
+    expect(blocking).toContain("Do not merge a branch that touched files it does not own");
+    expect(blocking).toContain("On a conflict, start a worker as `worker` in this checkout");
+    const warning = merge({ checkOwnership: "warn" });
+    expect(warning).toContain(
+      "List files outside a worker's ownership in your report, then merge.",
     );
-    expect(ask(false)).toContain("Decision id: `run:triage:1`");
-    expect(ask(false)).toContain(
-      "Allowed outcomes: builder, accept, or `escalate` to hand the decision to the user.",
+    expect(warning).toContain("ask the user how to resolve it");
+  });
+
+  it("script run and tool run in the orchestrator's shell", () => {
+    const text = prompt(
+      crewOf({
+        work: { ...task, next: "lint" },
+        lint: { type: "script", run: "vp lint {{inputs.brief}}", next: "test" },
+        test: { type: "script", tool: "unit-tests", outcomes: { pass: "done", fail: "work" } },
+        done: end,
+      }),
+      { tools: { tools: { "unit-tests": { run: "vp test" } } } },
     );
-    expect(ask(false)).toContain(
-      '```crew-decision\n{ "decisionId": "run:triage:1", "outcome": "<outcome>", "note": "<why>" }\n```',
+    expect(section(text, "lint")).toContain(
+      "Run `vp lint add a /health route` in your own shell in this checkout.",
     );
-    expect(ask(false)).not.toContain("without deciding");
-    expect(ask(true)).toContain("You ended your turn without deciding. Decide now.");
+    expect(section(text, "test")).toContain(
+      "Run `vp test` in your own shell in this checkout (repo tool `unit-tests`).",
+    );
+    expect(section(text, "test")).toContain("Exit code 0 is `pass`, anything else `fail`");
+  });
+
+  it("gate by user ends the turn; by lead the orchestrator decides", () => {
+    const text = prompt(
+      crewOf(
+        {
+          work: { ...task, next: "ask" },
+          ask: { type: "gate", prompt: "Ship it?", outcomes: { yes: "pick", no: "work" } },
+          pick: { type: "gate", by: "lead", prompt: "Which?", outcomes: { a: "done" } },
+          done: end,
+        },
+        {
+          roles: { worker, lead: { name: "Lead", instructions: "Lead." } },
+          home: { mode: "lead", role: "lead" },
+        },
+      ),
+    );
+    expect(section(text, "ask")).toContain(
+      "End your turn and ask the user: Ship it? Route on their answer.",
+    );
+    expect(section(text, "pick")).toContain(
+      "Decide yourself: Which? If you cannot decide, ask the user.",
+    );
+  });
+
+  it("isolation worktree and read-only", () => {
+    const text = prompt(
+      crewOf({
+        work: { ...task, isolation: "worktree", next: "look" },
+        look: { ...task, isolation: "read-only", next: "done" },
+        done: end,
+      }),
+    );
+    expect(section(text, "work")).toContain(
+      'Pass `isolation: "worktree"`: the worker gets its own checkout from this checkout\'s `HEAD`.',
+    );
+    expect(section(text, "look")).toContain(
+      "Read-only: omit `isolation` and tell the worker to create, edit, and delete no files.",
+    );
+    expect(section(text, "look")).not.toContain("commit");
+  });
+
+  it("autoCommit tells the implementer whether to commit", () => {
+    const text = prompt(
+      crewOf({
+        work: { ...task, next: "more" },
+        more: { ...task, autoCommit: false, next: "done" },
+        done: end,
+      }),
+    );
+    expect(section(text, "work")).toContain("Tell the worker to commit its changes");
+    expect(section(text, "more")).toContain("Tell the worker not to commit");
+  });
+
+  it("step timeoutMinutes cancels a worker that runs over", () => {
+    const text = prompt(crewOf({ work: { ...task, timeoutMinutes: 20, next: "done" }, done: end }));
+    expect(section(text, "work")).toContain(
+      "If its worker is still running 20 minutes after it started, cancel it with `task_cancel`",
+    );
+  });
+
+  it("limits.maxHours sets the run deadline and limits.maxCards the dispatch budget", () => {
+    const text = prompt(
+      crewOf(
+        { work: { ...task, next: "done" }, done: end },
+        { limits: { maxHours: 2, maxCards: 9 } },
+      ),
+    );
+    expect(text).toContain("- At most 9 dispatches in this run");
+    expect(text).toContain("- The run ends 2 hours after it starts.");
+    expect(text).toContain("`LIMIT: ...` means: dispatch nothing more and write the final report");
+  });
+
+  it("artifacts, produces, and consumes pass through files in the run folder", () => {
+    const text = prompt(
+      crewOf(
+        {
+          plan: { ...task, produces: ["plan"], next: "build" },
+          build: { ...task, consumes: ["plan"], task: "Build {{artifacts.plan}}", next: "done" },
+          done: end,
+        },
+        { artifacts: { plan: { type: "markdown" } } },
+      ),
+    );
+    expect(section(text, "plan")).toContain(
+      "It must hand over `plan`: one fenced block per artifact after its detail lines",
+    );
+    expect(section(text, "plan")).toContain(
+      "Save each to `artifacts/<name>.json` in the run folder.",
+    );
+    expect(section(text, "build")).toContain(
+      "Paste the artifacts `plan` from the run folder into the task.",
+    );
+    expect(section(text, "build")).toContain("> Build {{artifacts.plan}}");
+  });
+
+  it("onNoReport sets what happens to a worker without a RESULT line", () => {
+    const text = prompt(
+      crewOf(
+        { work: { ...task, onNoReport: "done", next: "done" }, done: end },
+        { defaults: { onNoReport: "ask" } },
+      ),
+    );
+    expect(text).toContain(
+      "If a worker ends its turn without a `RESULT:` line, end your turn and ask the user what to do. A step below can override this.",
+    );
+    expect(section(text, "work")).toContain(
+      "For this step: if a worker ends its turn without a `RESULT:` line, treat it as `RESULT: done`.",
+    );
+    expect(prompt(crewOf({ work: { ...task, next: "done" }, done: end }))).toContain(
+      "send it one `t3_thread_send` asking for that line (a dispatch). If it still has none, ask the user.",
+    );
+  });
+
+  it("home lead mode makes the orchestrator the lead", () => {
+    const crew = crewOf(
+      { work: { ...task, next: "wrap" }, wrap: { ...task, role: "lead", next: "done" }, done: end },
+      {
+        roles: { worker, lead: { name: "Lead", instructions: "You coordinate." } },
+        home: { mode: "lead", role: "lead", canEdit: true, updates: "decisions" },
+      },
+    );
+    const text = prompt(crew);
+    expect(text).toContain(
+      '## Your role\n\nYou are the Lead of the "Example" crew.\n\nYou coordinate.',
+    );
+    expect(text).toContain("Message the user only for their decisions and the final report.");
+    expect(text).toContain("You may edit this checkout for the steps you do yourself.");
+    expect(section(text, "wrap")).toContain("You do this step yourself, in this thread.");
+    expect(text).not.toContain("| `lead` Lead |");
+    const firstStep = prompt(crewOf({ work: { ...task, next: "done" }, done: end }));
+    expect(firstStep).toContain("You do not edit project files yourself.");
+    expect(firstStep).not.toContain("## Your role");
   });
 });

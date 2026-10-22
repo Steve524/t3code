@@ -5,7 +5,12 @@ import type {
 } from "../../../../contracts/src/fork/crews/crewFile.ts";
 import type { ToolboxMode } from "../../../../contracts/src/fork/crews/crewToolbox.ts";
 import type { ServerProvider } from "../../../../contracts/src/server.ts";
-import { compileCrewFlow, crewStepIsolation, findUnlimitedCrewCycles } from "./compileCrewFlow.ts";
+import {
+  compileCrewFlow,
+  crewStepIsolation,
+  findUnlimitedCrewCycles,
+  isCrewReviewStep,
+} from "./compileCrewFlow.ts";
 import { crewDiagnostic, decodeCrewValue, type CrewSource } from "./crewDiagnostics.ts";
 import { CrewFile } from "./crewFileSchema.ts";
 import { detectCrewHome } from "./crewHome.ts";
@@ -78,6 +83,11 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
   const detected = detectCrewHome(crew, source);
   diagnostics.push(...detected.diagnostics);
   const lead = detected.home?.mode === "lead" ? detected.home.roleId : undefined;
+  if (crew.home?.mode === "lead" && crew.home.decisionTimeoutMinutes !== undefined)
+    error(
+      "decisionTimeoutMinutes has no effect: the orchestrator decides lead gates itself and asks you for the rest.",
+      ["home", "decisionTimeoutMinutes"],
+    );
   const flow = compileCrewFlow(crew);
   const steps = new Map(flow.nodes.map(({ id, step }) => [id, step]));
   const usedRoles = new Set(lead ? [lead] : []);
@@ -195,6 +205,11 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
     const path = ["flow", "steps", id];
     if ("role" in step) {
       checkRole(step.role, [...path, "role"]);
+      if (isCrewReviewStep(step) && step.continue === "same-thread")
+        error("A review step starts a fresh reviewer every round; remove continue: same-thread.", [
+          ...path,
+          "continue",
+        ]);
       if (step.role === lead && (step.type === "fanout" || branchSteps.has(id)))
         error(`Lead role "${lead}" cannot run in fanout or parallel branches.`, [...path, "role"]);
       checkFile(step.task, [...path, "task"], step);

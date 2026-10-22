@@ -329,6 +329,24 @@ describe("crew validation errors", () => {
       path: ["board"],
     },
     {
+      name: "lead decision timeout",
+      input: { ...example, roles: leadRoles, home: { ...leadHome, decisionTimeoutMinutes: 30 } },
+      path: ["home", "decisionTimeoutMinutes"],
+    },
+    {
+      name: "reused reviewer",
+      input: withSteps({
+        work: { ...task, next: "review" },
+        review: {
+          ...task,
+          continue: "same-thread",
+          outcomes: { approve: "done", changes: { to: "work", max: 2, else: "done" } },
+        },
+        done: end,
+      }),
+      message: "fresh reviewer every round",
+    },
+    {
       name: "removed step column",
       input: withSteps({ work: { ...task, column: "missing", next: "done" }, done: end }),
       path: ["flow", "steps", "work", "column"],

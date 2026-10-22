@@ -12,6 +12,10 @@ marked wiring below without conflicts; native MCP injection remains removed.
 Retained crew hooks use React Compiler caching to satisfy the current lint rules.
 Crew settings save handlers also avoid unsupported `try`/`finally` syntax.
 
+Crew run folders (`.t3/crew-runs/`) rely on upstream checkpoints staging with `add -A` (no
+force) and restoring with `clean -fd` (no `-x`). After a merge that touches checkpointing, run
+`apps/server/src/fork/crews/crewRunFolder.test.ts`.
+
 ## Touch points
 
 | File                                                                | What changed                                                                                                                                                                           | Why                                                                                                                                                                                  |

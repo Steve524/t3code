@@ -402,6 +402,23 @@ describe("crew validation errors", () => {
       message: "A continued worker cannot be timed",
     },
     {
+      name: "a mode change on a continued worker",
+      input: withSteps({
+        work: { ...task, next: "more" },
+        more: { ...task, continue: "same-thread", interactionMode: "default", next: "done" },
+        done: end,
+      }),
+      message: "A continued worker keeps the interactionMode it started with",
+    },
+    {
+      name: "an uncommitted worktree worker",
+      input: withSteps({
+        work: { ...task, isolation: "worktree", autoCommit: false, next: "done" },
+        done: end,
+      }),
+      message: "must commit for its work to be merged",
+    },
+    {
       name: "a worker setting on a lead step",
       input: withSteps(
         { work: { ...task, role: "lead", isolation: "worktree", next: "done" }, done: end },

@@ -169,7 +169,9 @@ function workerStep(
   // Validation rejects worker settings on a step the lead does itself.
   const delegated = step.role !== leadRoleId;
   const writes = isolation !== "read-only" && !review && delegated;
-  const autoCommit = step.autoCommit ?? crew.defaults?.autoCommit ?? true;
+  // Only commits travel from a worktree, so `autoCommit: false` applies to a shared checkout.
+  const autoCommit =
+    isolation === "worktree" || (step.autoCommit ?? crew.defaults?.autoCommit ?? true);
   const owns = step.owns === undefined ? [] : [step.owns].flat();
   const runtime = [
     ...(step.runtimeMode === undefined || step.runtimeMode === "inherit"
@@ -200,7 +202,7 @@ function workerStep(
         ]),
     ...(step.continue === "same-thread" && delegated && !review
       ? [
-          "If the continued worker has its own worktree, its new commits reach this checkout only by a merge: unless the next step is a merge step, merge its branch here with `git merge` before the flow moves on.",
+          "If the continued worker has its own worktree, tell it to commit before it reports, whatever this step says about commits. Its commits reach this checkout only by a merge: unless the next step is a merge step, merge its branch here with `git merge` before the flow moves on.",
         ]
       : []),
     ...(review ? ["The reviewer creates, edits, and deletes no files."] : []),

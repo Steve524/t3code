@@ -209,7 +209,7 @@ describe("orchestrator prompt: review, ledger, and finish", () => {
       "Continue the latest worker that did non-review work as `worker` in this run, whichever step started it",
     );
     expect(section(text, "work")).toContain(
-      "its new commits reach this checkout only by a merge: unless the next step is a merge step, merge its branch here",
+      "If the continued worker has its own worktree, tell it to commit before it reports, whatever this step says about commits. Its commits reach this checkout only by a merge: unless the next step is a merge step, merge its branch here",
     );
     expect(section(text, "review")).not.toContain("commit");
     expect(section(text, "review")).toContain("The reviewer creates, edits, and deletes no files.");
@@ -546,16 +546,21 @@ describe("orchestrator prompt: every crew-file field", () => {
     expect(section(text, "look")).not.toContain("commit");
   });
 
-  it("autoCommit tells the implementer whether to commit", () => {
+  it("autoCommit tells the implementer whether to commit, except in a worktree", () => {
     const text = prompt(
-      crewOf({
-        work: { ...task, next: "more" },
-        more: { ...task, autoCommit: false, next: "done" },
-        done: end,
-      }),
+      crewOf(
+        {
+          work: { ...task, next: "more" },
+          more: { ...task, autoCommit: false, next: "away" },
+          away: { ...task, isolation: "worktree", next: "done" },
+          done: end,
+        },
+        { defaults: { autoCommit: false } },
+      ),
     );
-    expect(section(text, "work")).toContain("Tell the worker to commit its changes");
     expect(section(text, "more")).toContain("Tell the worker not to commit");
+    // Only commits travel from a worktree, so the crew-wide default does not apply there.
+    expect(section(text, "away")).toContain("Tell the worker to commit its changes");
   });
 
   it("step timeoutMinutes waits on the worker and cancels it when it runs over", () => {

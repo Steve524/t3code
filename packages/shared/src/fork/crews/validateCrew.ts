@@ -260,6 +260,20 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
           ...path,
           "timeoutMinutes",
         ]);
+      // `t3_thread_send` carries only a message, so a continued worker keeps its modes.
+      if (step.continue === "same-thread")
+        for (const key of ["runtimeMode", "interactionMode"] as const)
+          if (step[key] !== undefined)
+            error(`A continued worker keeps the ${key} it started with; remove ${key}.`, [
+              ...path,
+              key,
+            ]);
+      // Only commits travel from a worktree, so its worker must commit.
+      if (step.autoCommit === false && isolationOf(id) === "worktree")
+        error("A worker in its own worktree must commit for its work to be merged.", [
+          ...path,
+          "autoCommit",
+        ]);
       if (step.role === lead)
         for (const key of [...LEAD_UNUSED_SETTINGS, "continue"] as const)
           if (step[key] !== undefined)

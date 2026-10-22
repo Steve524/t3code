@@ -235,3 +235,40 @@ export function crewStepIsolation(crew: CrewFile, step: CrewStep, parallel = fal
 export function isCrewReviewStep(step: CrewStep) {
   return (step.type === "task" || step.type === "fanout") && step.review === true;
 }
+
+/** Each parallel branch member's nearest enclosing parallel step: the smallest branch holding it. */
+export function crewParallelGroups(crew: CrewFile, flow: CompiledCrewFlow = compileCrewFlow(crew)) {
+  const nearest = new Map<string, { readonly group: string; readonly size: number }>();
+  for (const join of flow.joins) {
+    if (crew.flow.steps[join.stepId]?.type !== "parallel") continue;
+    for (const branch of join.branches)
+      for (const id of branch.steps) {
+        const current = nearest.get(id);
+        if (id !== join.stepId && (current === undefined || branch.steps.length < current.size))
+          nearest.set(id, { group: join.stepId, size: branch.steps.length });
+      }
+  }
+  return new Map([...nearest].map(([id, { group }]) => [id, group]));
+}
+
+/** A step's own isolation, else its nearest group's that sets one, else the crew default. */
+export function crewEffectiveIsolation(
+  crew: CrewFile,
+  id: string,
+  groups: ReadonlyMap<string, string>,
+) {
+  const step = crew.flow.steps[id]!;
+  if (step.isolation !== undefined) return step.isolation;
+  // A branch that loops back into its own group must not walk forever.
+  const seen = new Set<string>();
+  for (
+    let group = groups.get(id);
+    group !== undefined && !seen.has(group);
+    group = groups.get(group)
+  ) {
+    seen.add(group);
+    const isolation = crew.flow.steps[group]?.isolation;
+    if (isolation !== undefined) return isolation;
+  }
+  return crewStepIsolation(crew, step, groups.has(id));
+}

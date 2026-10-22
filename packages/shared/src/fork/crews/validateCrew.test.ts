@@ -369,6 +369,52 @@ describe("crew validation errors", () => {
       message: 'lead role "lead" cannot run it',
     },
     {
+      name: "a fanout continuing one thread",
+      input: withSteps(
+        {
+          work: { ...task, next: "each" },
+          each: {
+            ...task,
+            type: "fanout",
+            over: "artifacts.items",
+            owns: "{{item}}",
+            continue: "same-thread",
+            next: "done",
+          },
+          done: end,
+        },
+        { artifacts: { items: { type: "list", item: "string" } } },
+      ),
+      path: ["flow", "steps", "each", "continue"],
+    },
+    {
+      name: "a timeout past T3's 60-minute wait",
+      input: withSteps({ work: { ...task, timeoutMinutes: 90, next: "done" }, done: end }),
+      message: "timeoutMinutes can be at most 60.",
+    },
+    {
+      name: "a timed continued worker",
+      input: withSteps({
+        work: { ...task, next: "more" },
+        more: { ...task, continue: "same-thread", timeoutMinutes: 5, next: "done" },
+        done: end,
+      }),
+      message: "A continued worker cannot be timed",
+    },
+    {
+      name: "a worker setting on a lead step",
+      input: withSteps(
+        { work: { ...task, role: "lead", isolation: "worktree", next: "done" }, done: end },
+        { roles: leadRoles, home: leadHome },
+      ),
+      message: '"isolation" has no effect when the lead does the step itself.',
+    },
+    {
+      name: "a shared parallel group without ownership",
+      input: parallel({}, {}, { isolation: "shared" }),
+      message: 'Concurrent shared step "left" needs owns',
+    },
+    {
       name: "a setting a gate cannot use",
       input: withSteps({
         work: { ...task, next: "ask" },

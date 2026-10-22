@@ -206,7 +206,10 @@ describe("orchestrator prompt: review, ledger, and finish", () => {
       "Review step: start a fresh worker as `reviewer` with `delegate_task` every round",
     );
     expect(section(text, "work")).toContain(
-      "Continue the latest `worker` worker of this run, whichever step started it",
+      "Continue the latest worker that did non-review work as `worker` in this run, whichever step started it",
+    );
+    expect(section(text, "work")).toContain(
+      "its new commits reach this checkout only by a merge: unless the next step is a merge step, merge its branch here",
     );
     expect(section(text, "review")).not.toContain("commit");
     expect(section(text, "review")).toContain("The reviewer creates, edits, and deletes no files.");
@@ -386,6 +389,23 @@ describe("orchestrator prompt: every crew-file field", () => {
       "Fan-out over `artifacts.tasks`: start one worker per item of that list",
     );
     expect(section(text, "each")).toContain("Continue when every one has reported.");
+  });
+
+  it("a step in nested parallel groups takes the nearest group's isolation", () => {
+    const text = prompt(
+      crewOf({
+        work: { ...task, next: "outer" },
+        outer: { type: "parallel", branches: ["inner", "c"], isolation: "shared", next: "done" },
+        inner: { type: "parallel", branches: ["a", "b"], isolation: "read-only", next: "c" },
+        a: { ...task, owns: ["a/**"] },
+        b: { ...task, owns: ["b/**"] },
+        c: { ...task, owns: ["c/**"] },
+        done: end,
+      }),
+    );
+    expect(section(text, "a")).toContain("Read-only: omit `isolation`");
+    expect(section(text, "a")).not.toContain("commit");
+    expect(section(text, "c")).toContain("Omit `isolation`: the worker shares this checkout.");
   });
 
   it("maxParallel becomes the run's worker cap, and role maxConcurrent a per-role cap", () => {

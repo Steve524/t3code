@@ -21,8 +21,8 @@ import type {
   ResolvedRoleRuntimeMode,
 } from "../../../../../packages/contracts/src/fork/crews/crewModel.ts";
 import {
-  compileCrewFlow,
-  crewStepIsolation,
+  crewEffectiveIsolation,
+  crewParallelGroups,
   isCrewReviewStep,
 } from "../../../../../packages/shared/src/fork/crews/compileCrewFlow.ts";
 import { detectCrewHome } from "../../../../../packages/shared/src/fork/crews/crewHome.ts";
@@ -156,22 +156,19 @@ function stepOutcomes(step: CrewStep) {
   return step.next !== undefined || outcomes.length === 0 ? [...outcomes, "done"] : outcomes;
 }
 
-/** Branch members take their parallel group's isolation unless they set their own. */
-type BranchGroups = ReadonlyMap<string, Extract<CrewStep, { readonly type: "parallel" }>>;
-
 function workerStep(
   input: CrewOrchestratorPromptInput,
   id: string,
   step: Extract<CrewStep, { readonly role: string }>,
   leadRoleId: string | undefined,
-  groups: BranchGroups,
+  groups: ReadonlyMap<string, string>,
 ) {
   const { crew } = input;
-  const group = groups.get(id);
-  const isolation =
-    step.isolation ?? group?.isolation ?? crewStepIsolation(crew, step, group !== undefined);
+  const isolation = crewEffectiveIsolation(crew, id, groups);
   const review = isCrewReviewStep(step);
-  const writes = isolation !== "read-only" && !review;
+  // Validation rejects worker settings on a step the lead does itself.
+  const delegated = step.role !== leadRoleId;
+  const writes = isolation !== "read-only" && !review && delegated;
   const autoCommit = step.autoCommit ?? crew.defaults?.autoCommit ?? true;
   const owns = step.owns === undefined ? [] : [step.owns].flat();
   const runtime = [
@@ -183,20 +180,29 @@ function workerStep(
       : [`interactionMode ${code(step.interactionMode)}`]),
   ];
   const lines = [
-    step.role === leadRoleId
+    !delegated
       ? "You do this step yourself, in this thread."
       : review
         ? `Review step: start a fresh worker as ${code(step.role)} with \`delegate_task\` every round (see Review rounds).`
         : step.continue === "same-thread"
-          ? `Continue the latest ${code(step.role)} worker of this run, whichever step started it: once its last task has finished, send this task to its \`childThreadId\` with \`t3_thread_send\`. Start one with \`delegate_task\` only when this run has no ${code(step.role)} worker yet.`
+          ? `Continue the latest worker that did non-review work as ${code(step.role)} in this run, whichever step started it: once its last task has finished, send this task to its \`childThreadId\` with \`t3_thread_send\`. It keeps its own checkout. Start one with \`delegate_task\` only when there is none yet.`
           : step.type === "fanout"
             ? `Start each item's worker as ${code(step.role)} with \`delegate_task\`.`
             : `Start a new worker as ${code(step.role)} with \`delegate_task\` each time the flow reaches this step.`,
-    isolation === "worktree"
-      ? 'Pass `isolation: "worktree"`: the worker gets its own checkout from this checkout\'s `HEAD`.'
-      : isolation === "read-only"
-        ? "Read-only: omit `isolation` and tell the worker to create, edit, and delete no files."
-        : "Omit `isolation`: the worker shares this checkout.",
+    ...(!delegated
+      ? []
+      : [
+          isolation === "worktree"
+            ? 'Pass `isolation: "worktree"`: the worker gets its own checkout from this checkout\'s `HEAD`.'
+            : isolation === "read-only"
+              ? "Read-only: omit `isolation` and tell the worker to create, edit, and delete no files."
+              : "Omit `isolation`: the worker shares this checkout.",
+        ]),
+    ...(step.continue === "same-thread" && delegated && !review
+      ? [
+          "If the continued worker has its own worktree, its new commits reach this checkout only by a merge: unless the next step is a merge step, merge its branch here with `git merge` before the flow moves on.",
+        ]
+      : []),
     ...(review ? ["The reviewer creates, edits, and deletes no files."] : []),
     ...(runtime.length === 0 ? [] : [`Pass ${runtime.join(" and ")} for this step.`]),
     ...(step.timeoutMinutes === undefined
@@ -204,7 +210,7 @@ function workerStep(
       : [
           `Dispatch it with \`mode: "wait"\` and \`timeoutMs: ${step.timeoutMinutes * 60_000}\`. If the wait times out, cancel it with \`task_cancel\` and treat it as \`RESULT: blocked\`.`,
         ]),
-    ...(writes && step.role !== leadRoleId
+    ...(writes
       ? [
           autoCommit
             ? "Tell the worker to commit its changes on its current branch before it reports."
@@ -254,7 +260,7 @@ function stepSection(
   id: string,
   step: CrewStep,
   leadRoleId: string | undefined,
-  groups: BranchGroups,
+  groups: ReadonlyMap<string, string>,
 ) {
   const { crew } = input;
   const limits = crew.limits;
@@ -389,14 +395,7 @@ export function composeCrewOrchestratorPrompt(input: CrewOrchestratorPromptInput
   for (const [, step] of steps)
     if (step.type === "merge" && typeof step.onConflict === "object")
       used.add(step.onConflict.role);
-  const groups: BranchGroups = new Map(
-    compileCrewFlow(crew).joins.flatMap((join) => {
-      const group = crew.flow.steps[join.stepId];
-      return group?.type === "parallel"
-        ? join.branches.flatMap((branch) => branch.steps.map((id) => [id, group] as const))
-        : [];
-    }),
-  );
+  const groups = crewParallelGroups(crew);
 
   const roleRows: string[] = [];
   const briefs: string[] = [];

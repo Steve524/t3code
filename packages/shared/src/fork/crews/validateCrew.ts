@@ -7,7 +7,8 @@ import type { ToolboxMode } from "../../../../contracts/src/fork/crews/crewToolb
 import type { ServerProvider } from "../../../../contracts/src/server.ts";
 import {
   compileCrewFlow,
-  crewStepIsolation,
+  crewEffectiveIsolation,
+  crewParallelGroups,
   findUnlimitedCrewCycles,
   isCrewReviewStep,
 } from "./compileCrewFlow.ts";
@@ -85,6 +86,15 @@ const STEP_SETTINGS_BY_TYPE: Record<CrewStep["type"], ReadonlyArray<string>> = {
   gate: ["outcomes"],
   end: [],
 };
+
+const LEAD_UNUSED_SETTINGS = [
+  "timeoutMinutes",
+  "runtimeMode",
+  "interactionMode",
+  "isolation",
+  "autoCommit",
+  "onNoReport",
+] as const;
 
 export function validateCrew(input: unknown, context: CrewValidationContext) {
   const source = context.source ?? { file: "crew.yaml" };
@@ -226,6 +236,8 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
   const branchSteps = new Set(
     flow.joins.flatMap((join) => join.branches.flatMap((branch) => branch.steps)),
   );
+  const groups = crewParallelGroups(crew, flow);
+  const isolationOf = (id: string) => crewEffectiveIsolation(crew, id, groups);
   const loopSteps = new Set(flow.loopRegions.flatMap((region) => region.steps));
   for (const { id, step } of flow.nodes) {
     const path = ["flow", "steps", id];
@@ -234,6 +246,24 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
         error(`"${key}" has no effect on a ${step.type} step.`, [...path, key]);
     if ("role" in step) {
       checkRole(step.role, [...path, "role"]);
+      if (step.type === "fanout" && step.continue === "same-thread")
+        error("A fanout starts a worker per item, so it cannot continue one thread.", [
+          ...path,
+          "continue",
+        ]);
+      // The orchestrator times a step by waiting on `delegate_task`, which T3 caps at 60 minutes
+      // and `t3_thread_send` cannot do at all.
+      if (step.timeoutMinutes !== undefined && step.timeoutMinutes > 60)
+        error("timeoutMinutes can be at most 60.", [...path, "timeoutMinutes"]);
+      if (step.timeoutMinutes !== undefined && step.continue === "same-thread")
+        error("A continued worker cannot be timed; remove timeoutMinutes or continue.", [
+          ...path,
+          "timeoutMinutes",
+        ]);
+      if (step.role === lead)
+        for (const key of [...LEAD_UNUSED_SETTINGS, "continue"] as const)
+          if (step[key] !== undefined)
+            error(`"${key}" has no effect when the lead does the step itself.`, [...path, key]);
       if (isCrewReviewStep(step)) {
         if (step.continue === "same-thread")
           error(
@@ -321,7 +351,7 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
     ownership.forEach((glob, index) => checkText(glob, [...path, "owns", index], step));
     if (
       (step.type === "parallel" || step.type === "fanout" || branchSteps.has(id)) &&
-      crewStepIsolation(crew, step, branchSteps.has(id)) === "shared" &&
+      isolationOf(id) === "shared" &&
       ownership.length === 0 &&
       (step.type === "parallel" || step.type === "fanout" || step.type === "task")
     ) {
@@ -365,7 +395,7 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
           step.type === "fanout" ||
           step.type === "script" ||
           step.type === "merge") &&
-        crewStepIsolation(crew, step, branchSteps.has(id)) === "shared",
+        isolationOf(id) === "shared",
     )
   ) {
     warning("The lead can edit while shared steps use the same integration worktree.", [
@@ -390,8 +420,8 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
             const a = steps.get(left)!;
             const b = steps.get(right)!;
             if (
-              crewStepIsolation(crew, a, true) === "read-only" ||
-              crewStepIsolation(crew, b, true) === "read-only" ||
+              isolationOf(left) === "read-only" ||
+              isolationOf(right) === "read-only" ||
               ("role" in a &&
                 "role" in b &&
                 a.role === b.role &&
@@ -410,7 +440,7 @@ export function validateCrew(input: unknown, context: CrewValidationContext) {
   for (const { id, step } of flow.nodes)
     if (
       step.type === "fanout" &&
-      crewStepIsolation(crew, step) !== "read-only" &&
+      isolationOf(id) !== "read-only" &&
       Math.min(
         step.maxParallel ?? Infinity,
         crew.defaults?.maxParallel ?? Infinity,
